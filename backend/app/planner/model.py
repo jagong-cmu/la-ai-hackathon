@@ -3,6 +3,11 @@
 Why this model: one year of data, no seasonality to learn, launches and declines. Damping
 stops a trend from running away. Parameters are chosen by grid search on one-step error.
 The range uses the spread of recent one-step errors, widened with the horizon.
+
+In a product's first weeks the model has too few errors to know its own spread (the backtest
+found that only about half of those weeks fell inside the range). For those weeks the range
+comes from split conformal prediction instead: the 90% quantile of the relative errors that
+earlier product launches had in their first weeks.
 """
 
 from __future__ import annotations
@@ -16,6 +21,9 @@ PHIS = (0.8, 0.9, 0.98)
 Z_RANGE = 1.645  # 90% range: a week outside it is a "miss"
 MIN_HISTORY = 3
 RESID_WINDOW = 12
+LAUNCH_WEEKS = 6  # forecast weeks after a launch that use the launch range
+RANGE_LEVEL = 0.90  # the same 90% as Z_RANGE
+MIN_LAUNCH_SCORES = 3  # fewer earlier launch errors than this: keep the normal range
 
 
 @dataclass
@@ -71,6 +79,23 @@ def fit(y: list[float]) -> Fit:
     sigma = math.sqrt(sum(r * r for r in recent) / len(recent)) if recent else 1.0
     sigma = max(sigma, 0.1 * max(level, 1.0), 1.0)
     return Fit(level, trend, a, b, p, sigma, len(y))
+
+
+def conformal_quantile(scores: list[float], level: float = RANGE_LEVEL) -> float:
+    """Split conformal quantile: the ceil((n + 1) * level)-th smallest score (the largest if n is small)."""
+    ordered = sorted(scores)
+    k = math.ceil((len(ordered) + 1) * level)
+    return ordered[min(k, len(ordered)) - 1]
+
+
+def launch_range(mean: float, low: float, high: float, launch_errors: list[float]) -> tuple[float, float]:
+    """Widen a launch week's range to the conformal quantile of earlier launches' relative errors.
+
+    The range never gets narrower than the normal one."""
+    if len(launch_errors) < MIN_LAUNCH_SCORES:
+        return low, high
+    half = conformal_quantile(launch_errors) * max(mean, 1.0)
+    return min(low, max(0.0, mean - half)), max(high, mean + half)
 
 
 def wape(actual: list[float], forecast: list[float]) -> float | None:

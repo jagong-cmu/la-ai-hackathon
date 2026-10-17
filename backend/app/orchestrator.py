@@ -53,6 +53,8 @@ from app.stages.rules import SpendingRules, check_plan
 
 T = TypeVar("T")
 SUMMARY_TIMEOUT_S = 12
+# A job in one of these states is done. Any other saved state means that a process was running it.
+FINAL_JOB_STATES = {JobState.at_payment, JobState.partial_handoff, JobState.rejected, JobState.failed}
 
 
 class ApprovalError(Exception):
@@ -131,7 +133,14 @@ class Orchestrator:
         existing = self.db.job_for_idempotency_key(idempotency_key)
         if existing:
             view = self.get_view(existing)
-            return JobCreated(job_id=existing, state=view.state if view else JobState.created)
+            if existing in self.jobs or (view is not None and view.state in FINAL_JOB_STATES):
+                return JobCreated(job_id=existing, state=view.state if view else JobState.created)
+            # An earlier server process saved this job and stopped before it ended. Nothing runs
+            # it now, so mark it failed and start a new job with the same key.
+            if view is not None:
+                view.state = JobState.failed
+                self.db.save_job(view)
+            self.db.release_idempotency_key(existing)
         job_id = "job_" + secrets.token_hex(5)
         insights = await self.insights_provider()
         approved = [s.id for s in request.suppliers]

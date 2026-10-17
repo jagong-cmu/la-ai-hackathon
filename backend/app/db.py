@@ -108,6 +108,11 @@ class Database:
                 (view.job_id, idempotency_key, view.state.value, snapshot, now, now),
             )
 
+    def release_idempotency_key(self, job_id: str) -> None:
+        """Free the key of a job that no process runs, so a new job can take it."""
+        with self._lock:
+            self._conn.execute("UPDATE jobs SET idempotency_key = NULL WHERE job_id = ?", (job_id,))
+
     def load_job(self, job_id: str) -> JobView | None:
         with self._lock:
             row = self._conn.execute(

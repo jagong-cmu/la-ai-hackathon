@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-from app.planner.model import MIN_HISTORY, Fit, fit
+from app.planner.model import LAUNCH_WEEKS, MIN_HISTORY, Z_RANGE, Fit, fit, launch_range
 from app.planner.sales import SalesData
 
 Variant = Literal["plain", "fixed_rule", "jev"]
@@ -69,6 +69,28 @@ class ItemState:
 
 
 Diagnoser = Callable[[MissContext], Awaitable[Diagnosis]]
+
+
+@dataclass(frozen=True)
+class LaunchError:
+    """A one-step error from a product's first forecast weeks, relative to the forecast."""
+    week: int
+    item_id: str
+    relative: float
+
+
+async def launch_errors(sales: SalesData) -> list[LaunchError]:
+    """The calibration set for launch ranges: plain one-step errors in each product's first weeks.
+
+    The plain variant never changes its history, so its errors do not depend on the ranges."""
+    errors: list[LaunchError] = []
+    for item_id in sales.products:
+        if sales.launch_week(item_id) is None:
+            continue
+        state = await replay(sales, item_id, "plain")
+        for t, actual, mean, _, _ in state.forecasts[:LAUNCH_WEEKS]:
+            errors.append(LaunchError(t, item_id, abs(actual - mean) / max(mean, 1.0)))
+    return errors
 
 
 def bucket(actual: float, low: float, high: float) -> str:
@@ -129,7 +151,10 @@ def apply_cause(state: ItemState, ctx: MissContext, cause: str, sales: SalesData
 async def replay(
     sales: SalesData, item_id: str, variant: Variant, diagnose: Diagnoser | None = None,
     owner_notes: dict[int, list[str]] | None = None, answered: dict[str, str] | None = None,
+    calibration: list[LaunchError] | None = None,
 ) -> ItemState:
+    """Replay the year for one product. With `calibration`, launch weeks use the launch range,
+    calibrated only on other products' errors from earlier weeks (no look-ahead)."""
     raw = sales.series(item_id)
     launch = sales.launch_week(item_id) or 0
     state = ItemState(item_id=item_id, launch=launch, raw=raw, clean=list(raw), fit_start=launch)
@@ -139,6 +164,9 @@ async def replay(
         f = fit(state.clean[state.fit_start:t])
         mean = f.mean(1)
         low, high = f.range(1)
+        if calibration is not None and len(state.forecasts) < LAUNCH_WEEKS:
+            pool = [e.relative for e in calibration if e.week < t and e.item_id != item_id]
+            low, high = launch_range(mean, low, high, pool)
         state.forecasts.append((t, raw[t], mean, low, high))
         b = bucket(raw[t], low, high)
         if b == "inside the range":
@@ -164,4 +192,12 @@ async def replay(
         state.misses.append(MissRecord(miss_id, ctx, diag, applied))
         prev_bucket = b
     state.fit = fit(state.clean[state.fit_start:])
+    if calibration is not None and len(state.forecasts) < LAUNCH_WEEKS:
+        # Still in its launch weeks: widen the spread, so the future range and the safety stock
+        # use the launch range too.
+        pool = [e.relative for e in calibration if e.item_id != item_id]
+        mean = state.fit.mean(1)
+        _, high = launch_range(mean, 0.0, mean, pool)
+        if high > mean:
+            state.fit.sigma = max(state.fit.sigma, (high - mean) / Z_RANGE)
     return state

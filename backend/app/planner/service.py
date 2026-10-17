@@ -18,8 +18,8 @@ from app.db import Database
 from app.decide import Decider
 from app.judgments import MISS_CAUSES, j11_miss_cause, j12_owner_message
 from app.planner.adjust import date_phrases, phrase_quantity, quantity_phrases, resolve_date
-from app.planner.loop import Diagnosis, ItemState, MissContext, replay
-from app.planner.model import Z_RANGE, bias, wape
+from app.planner.loop import Diagnosis, ItemState, LaunchError, MissContext, launch_errors, replay
+from app.planner.model import LAUNCH_WEEKS, Z_RANGE, bias, wape
 from app.planner.policy import advise
 from app.planner.ratios import load_ratios
 from app.planner.sales import SalesData
@@ -58,6 +58,7 @@ class Planner:
             ForecastAdjustment.model_validate(a) for a in saved.get("adjustments", [])
         ]
         self._view: PlannerView | None = None
+        self._launch_errors: list[LaunchError] | None = None
         self._states: dict[str, ItemState] = {}
         self._lock = asyncio.Lock()
 
@@ -93,10 +94,12 @@ class Planner:
     async def _build(self) -> PlannerView:
         notes = self._owner_notes()
         self._states = {}
+        calibration = await self._calibration()
         for item_id in self.sales.products:
             if self.sales.launch_week(item_id) is None:
                 continue
-            self._states[item_id] = await replay(self.sales, item_id, "jev", self._diagnose, notes, self.answers)
+            self._states[item_id] = await replay(self.sales, item_id, "jev", self._diagnose, notes, self.answers,
+                                                 calibration)
         products = [self._product_view(s) for s in self._states.values()]
         supplies = [self._supply_plan(sid) for sid in self.ratios]
         misses = [m for s in self._states.values() for m in self._miss_views(s)]
@@ -105,6 +108,11 @@ class Planner:
             misses=misses, adjustments=self.adjustments,
             cash_low_point=min(self.sales.cash) if self.sales.cash else None, disclosure=DISCLOSURE,
         )
+
+    async def _calibration(self) -> list[LaunchError]:
+        if self._launch_errors is None:
+            self._launch_errors = await launch_errors(self.sales)
+        return self._launch_errors
 
     def _future(self, state: ItemState) -> list[ForecastPoint]:
         assert state.fit is not None
@@ -290,6 +298,7 @@ class Planner:
     async def backtest(self) -> BacktestReport:
         scores = []
         sources: set[str] = set()
+        calibration = await self._calibration()
 
         async def diagnose(ctx: MissContext) -> Diagnosis:
             diag = await self._diagnose(ctx)
@@ -304,7 +313,8 @@ class Planner:
             for item_id in self.sales.products:
                 if self.sales.launch_week(item_id) is None:
                     continue
-                state = await replay(self.sales, item_id, variant, diagnose if variant == "jev" else None)
+                state = await replay(self.sales, item_id, variant, diagnose if variant == "jev" else None,
+                                     calibration=calibration)
                 for _, a, mean, lo, hi in state.forecasts:
                     actual.append(a)
                     forecast.append(mean)
@@ -325,6 +335,8 @@ class Planner:
             jev_source="jev" if "jev" in sources else ("stub" if "stub" in sources else ",".join(sorted(sources))),
             notes=[
                 "One-step-ahead forecasts, refit every week (rolling origin).",
+                f"Launch weeks (the first {LAUNCH_WEEKS} forecast weeks) use a split conformal 90% range from "
+                "earlier launches' errors; the calibration uses no later weeks.",
                 "Stock simulation: weekly order-up-to rule, 1-week delivery, same rule for every variant.",
                 "jevSource 'stub' means fixture rules answered J11; it is NOT a Jev result.",
                 "Data is simulated (qb-world-sim); results apply to this simulator.",

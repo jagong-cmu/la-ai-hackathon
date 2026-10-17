@@ -7,6 +7,7 @@ import hmac
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -29,7 +30,7 @@ from app.contracts import (
 )
 from app.data.insights import build_insights, draft_request
 from app.data.loader import Books, load_books
-from app.db import Database
+from app.db import Database, stable_hash
 from app.decide import Decider
 from app.discovery import Discovery, selected_suppliers
 from app.events import EventBus
@@ -45,6 +46,7 @@ from app.planner.schemas import (
     OwnerMessage,
     PlannerCheck,
     PlannerView,
+    SupplyPlan,
 )
 from app.planner.service import Planner
 from app.preflight import PreflightReport, run_preflight
@@ -52,6 +54,11 @@ from app.stages.rules import SpendingRules
 
 DEFAULT_CATEGORY = "packaging_disposables"
 TERMINAL_JOB_STATES = {"at_payment", "partial_handoff", "rejected", "failed"}
+
+
+def due_supplies(view: PlannerView) -> list[SupplyPlan]:
+    """The supplies to order now or soon. /planner/check and the draft list use the same rule."""
+    return [p for p in view.supplies if p.status != "ok" and p.recommended_qty > 0]
 
 
 class ModeChange(BaseModel):
@@ -97,8 +104,8 @@ class AppState:
         found = await self.discovery.discover(category, self.settings.demo_zip, self.distributor(),
                                               items=[i.bill_item_name for i in insights.items])
         request = draft_request(insights, selected_suppliers(found), self.distributor(), self.settings.demo_zip)
-        plan = {p.item_id: p for p in (await self.planner.view()).supplies}
-        due = [i for i in request.items if plan.get(i.id) and plan[i.id].recommended_qty > 0]
+        plan = {p.item_id: p for p in due_supplies(await self.planner.view())}
+        due = [i for i in request.items if i.id in plan]
         for item in due:
             item.quantity = plan[item.id].recommended_qty
         if due:
@@ -174,12 +181,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if token is not None and not hmac.compare_digest(authorization, f"Bearer {token}"):
             raise HTTPException(401, "bearer token required")
         view = await s.planner.view()
-        due = [p for p in view.supplies if p.status != "ok" and p.recommended_qty > 0]
+        due = due_supplies(view)
         if not due:
             return PlannerCheck(due=[], message="No supply needs an order this week.")
         job_id = None
         if autostart:
-            created = await s.orchestrator.create_job(await s.draft(), f"planner-{view.as_of.isoformat()}")
+            # One job per calendar day and order: a repeat call on the same day gets the same job,
+            # but a new day or changed quantities start a new one. (view.as_of is the last week of
+            # the data, so it never changes and cannot be the key alone.)
+            order = stable_hash(sorted((p.item_id, p.recommended_qty) for p in due))[:12]
+            created = await s.orchestrator.create_job(await s.draft(), f"planner-{date.today().isoformat()}-{order}")
             job_id = created.job_id
         names = ", ".join(f"{p.name} ({p.recommended_qty} {p.unit}s)" for p in due)
         return PlannerCheck(due=due, job_id=job_id, message=f"Order soon: {names}.")
