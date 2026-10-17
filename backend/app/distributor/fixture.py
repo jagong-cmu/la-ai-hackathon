@@ -35,12 +35,13 @@ class FixtureDistributor:
     async def run(self, ctx: DistributorContext) -> SupplierOffers | None:
         s = self.script
         loop = asyncio.get_running_loop()
-        await ctx.emit("message_sent", {"channel": "sms", "to": ctx.distributor.name,
-                                        "text": "Hi, this is an AI assistant for Hearthloaf Bakeries. "
-                                                "Could you quote these supplies for delivery?"})
-        await ctx.sleep(ctx.settings.distributor_reply_wait_s)
-        if s.get("smsReply") is None:
-            await ctx.emit("reply_received", {"channel": "sms", "intent": "no_reply"})
+        if ctx.settings.distributor_flow == "sms_first":
+            await ctx.emit("message_sent", {"channel": "sms", "to": ctx.distributor.name,
+                                            "text": "Hi, this is an AI assistant for Hearthloaf Bakeries. "
+                                                    "Could you quote these supplies for delivery?"})
+            await ctx.sleep(ctx.settings.distributor_reply_wait_s)
+            if s.get("smsReply") is None:
+                await ctx.emit("reply_received", {"channel": "sms", "intent": "no_reply"})
         await wait_for_call_start(ctx, loop.time)
 
         plan = ctx.best_plan()

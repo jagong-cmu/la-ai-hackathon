@@ -3,7 +3,7 @@
  *   POST /sms    {jobId, to, text}                                   -> {messageId}
  *   POST /calls  {jobId, to, openingContext: {bestTotal, items, businessName}} -> {callId, status}
  *   GET  /health
- *   POST /photon/webhook            (Spectrum webhook mode only; signed by Spectrum)
+ *   POST /photon/webhook            (Photon beta webhook destination; signature-verified)
  *   POST /elevenlabs/post-call      (ElevenLabs post-call webhook; HMAC-verified)
  *
  * Guardrail: /sms and /calls accept only numbers in the allowlist (DEMO_DISTRIBUTOR_PHONE,
@@ -114,7 +114,7 @@ export function createApp(deps: Deps, state: ServiceState = { jobByPhone: new Ma
   });
 
   app.post("/photon/webhook", async (c) => {
-    if (!messenger.webhook) return c.json({ error: "Spectrum webhook mode is off" }, 404);
+    if (!messenger.webhook) return c.json({ error: "Photon webhook is not available (dry-run)" }, 404);
     return messenger.webhook(c.req.raw, onInboundText);
   });
 

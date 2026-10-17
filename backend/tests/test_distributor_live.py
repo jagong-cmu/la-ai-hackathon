@@ -101,6 +101,10 @@ def _ctx(settings: Settings, decider: Decider, events: list[tuple[str, dict]],
     )
 
 
+def _sms_first(settings: Settings) -> Settings:
+    return settings.model_copy(update={"distributor_flow": "sms_first"})
+
+
 def _config(**kw: Any) -> LiveDistributorConfig:
     base = dict(_env_file=None, photon_service_url="http://photon.test", demo_distributor_phone="+15551234567",
                 call_connect_timeout_s=0.3, call_max_s=2.0, post_call_grace_s=0.3, call_redials=1)
@@ -114,7 +118,7 @@ def j9_decider(decider: Decider) -> Decider:
     return decider
 
 
-async def test_call_offer_flows_through_j9_and_code_selection(settings: Settings, j9_decider: Decider) -> None:
+async def test_sms_first_call_offer_flows_through_j9_and_code_selection(settings: Settings, j9_decider: Decider) -> None:
     script = [
         {"type": "call_started"},
         {"type": "transcript_line", "seq": 1, "speaker": "agent",
@@ -130,7 +134,7 @@ async def test_call_offer_flows_through_j9_and_code_selection(settings: Settings
     fake = FakePhoton(script)
     events: list[tuple[str, dict]] = []
     offers: list[SupplierOffers] = []
-    ctx = _ctx(settings, j9_decider, events, offers)
+    ctx = _ctx(_sms_first(settings), j9_decider, events, offers)
     fake.ctx = ctx
     channel = LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler))
 
@@ -194,7 +198,7 @@ async def test_call_never_connects_degrades_to_sms_only(settings: Settings, j9_d
     fake = FakePhoton(script=[])  # the call is placed, but no call_started ever arrives
     events: list[tuple[str, dict]] = []
     offers: list[SupplierOffers] = []
-    ctx = _ctx(settings, j9_decider, events, offers)
+    ctx = _ctx(_sms_first(settings), j9_decider, events, offers)
     fake.ctx = ctx
     result = await asyncio.wait_for(
         LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler)).run(ctx), timeout=5)
@@ -209,7 +213,7 @@ async def test_call_never_connects_degrades_to_sms_only(settings: Settings, j9_d
 async def test_photon_service_down_degrades_without_hanging(settings: Settings, j9_decider: Decider) -> None:
     fake = FakePhoton(call_status=503, sms_status=503)
     events: list[tuple[str, dict]] = []
-    ctx = _ctx(settings, j9_decider, events, [])
+    ctx = _ctx(_sms_first(settings), j9_decider, events, [])
     fake.ctx = ctx
     result = await asyncio.wait_for(
         LiveDistributor(_config(photon_sms_retries=0), transport=httpx.MockTransport(fake.handler)).run(ctx),
@@ -230,7 +234,7 @@ async def test_sms_quote_skips_the_call(settings: Settings, j9_decider: Decider)
     fake = FakePhoton()
     events: list[tuple[str, dict]] = []
     offers: list[SupplierOffers] = []
-    ctx = _ctx(settings, j9_decider, events, offers)
+    ctx = _ctx(_sms_first(settings), j9_decider, events, offers)
     fake.ctx = ctx
     await ctx.inbox.put({"provider": "photon", "eventId": "s1", "jobId": "job_t", "type": "sms_in",
                          "text": "Gloves $250.00\nBoxes $140.00\nDelivery is free, 2 days."})
@@ -268,3 +272,79 @@ def test_live_channel_is_registered() -> None:
             return "live"
 
     assert isinstance(channel_for(Modes()), LiveDistributor)  # type: ignore[arg-type]
+
+
+async def test_call_first_calls_before_any_text(settings: Settings, j9_decider: Decider) -> None:
+    """Default flow: the agent calls the distributor first; the only text is the recap after the call."""
+    assert settings.distributor_flow == "call_first"
+    script = [
+        {"type": "call_started"},
+        {"type": "transcript_line", "seq": 1, "speaker": "agent",
+         "text": "Hi, this is an AI assistant calling for Hearthloaf Bakeries. Is now a good time?"},
+        {"type": "transcript_line", "seq": 2, "speaker": "user",
+         "text": "I can do 395 dollars for everything, free delivery on Thursday."},
+        {"type": "call_ended", "outcome": "completed"},
+    ]
+    fake = FakePhoton(script)
+    events: list[tuple[str, dict]] = []
+    offers: list[SupplierOffers] = []
+    ctx = _ctx(settings, j9_decider, events, offers)
+    fake.ctx = ctx
+    result = await asyncio.wait_for(
+        LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler)).run(ctx), timeout=5)
+    types = [t for t, _ in events]
+    assert types[0] == "call_started" and "reply_received" not in types
+    assert types[-1] == "message_sent" and "not an order" in events[-1][1]["text"]  # the recap
+    assert [p for p, _ in fake.requests] == ["/calls", "/sms"]
+    assert result is not None and result.bundle_total == 395.0
+
+
+async def test_call_first_no_answer_redials_once_and_sends_nothing(settings: Settings, j9_decider: Decider) -> None:
+    fake = FakePhoton(script=[])
+    events: list[tuple[str, dict]] = []
+    ctx = _ctx(settings, j9_decider, events, [])
+    fake.ctx = ctx
+    result = await asyncio.wait_for(
+        LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler)).run(ctx), timeout=5)
+    assert result is None
+    assert [p for p, _ in fake.requests] == ["/calls", "/calls"]  # one redial, no texts
+
+
+def test_spoken_price_basis_from_the_first_real_call() -> None:
+    """Lines from the first real test call (Oct 17). Per-unit prices are multiplied in code."""
+    from app.distributor.live import spoken_price
+    assert spoken_price("It's around 50 cents a glove.", 716.34, "glove") == (0.50, "per_unit")
+    assert spoken_price("Uh, that's around a $1.60 per box.", 716.34, "box") == (1.60, "per_unit")
+    assert spoken_price("Um, 26 cents a bag.", 716.34, "bag") == (0.26, "per_unit")
+    assert spoken_price("We can do $700.", 716.34, None) == (700.0, "total")
+    assert spoken_price("Gloves are $12 a box.", None, "glove") == (12.0, "per_pack")
+    assert spoken_price("$40 per case", None, "sheet") == (40.0, "per_pack")
+    assert spoken_price("about 395 dollars for everything", 410.0, None) == (395.0, "total")
+    assert spoken_price("free delivery", None, None) is None
+
+
+async def test_per_unit_price_becomes_a_line_total(settings: Settings, j9_decider: Decider) -> None:
+    def j9(state: dict, questions: dict) -> dict:
+        return {
+            "new_offer": {"type": "noul", "noul": 0.95},
+            "offer_for": choice_answer(list(questions["offer_for"]["criteria"]), "item_gloves", 0.95),
+            "beats": {"type": "noul", "noul": 0.5},
+        }
+
+    j9_decider.jev.stub.rules["J9"] = j9
+    script = [
+        {"type": "call_started"},
+        {"type": "transcript_line", "seq": 1, "speaker": "user", "text": "It's around 10 cents a glove."},
+        {"type": "call_ended", "outcome": "completed"},
+    ]
+    fake = FakePhoton(script)
+    events: list[tuple[str, dict]] = []
+    ctx = _ctx(settings, j9_decider, events, [])
+    fake.ctx = ctx
+    result = await asyncio.wait_for(
+        LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler)).run(ctx), timeout=5)
+    offer = next(d for t, d in events if t == "call_offer")
+    assert offer["basis"] == "per_unit" and offer["unitPrice"] == 0.10
+    assert offer["price"] == 200.0  # 0.10 x 2,000 gloves, computed in code
+    assert offer["beats"] is True  # $200 beats the $260 web line for gloves
+    assert result is not None and [(p.item_id, p.pack_price) for p in result.products] == [("gloves", 200.0)]

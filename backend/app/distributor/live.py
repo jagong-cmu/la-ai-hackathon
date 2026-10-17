@@ -19,6 +19,7 @@ only, never to `ctx.distributor.phone`.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime as dt
 import re
 import time
@@ -30,7 +31,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config import BACKEND_DIR, REPO_DIR
 from app.contracts import Evidence, Product, SupplierOffers
-from app.distributor.base import DistributorContext, wait_for_call_start
+from app.distributor.base import DistributorContext, allocate_total, call_scope, wait_for_call_start
 from app.judgments import j8_reply, j9_call_line, j10_terms
 from app.stages.extract import money_candidates
 
@@ -49,6 +50,8 @@ class LiveDistributorConfig(BaseSettings):
     photon_service_token: SecretStr | None = None  # optional shared token for the service routes
     demo_distributor_phone: str | None = None  # the ONLY number that this channel texts or calls
     photon_http_timeout_s: float = 10  # spec §10.2: Photon SMS 10 s per send
+    # POST /calls returns only after ElevenLabs has set up the SIP call (up to the ringing time).
+    photon_call_start_timeout_s: float = 50
     photon_sms_retries: int = 2
     # spec §10.2: 20 s to answer, 1 redial. The service sets ElevenLabs ringing_timeout_secs=20;
     # the extra seconds cover dialing and the service's poll interval.
@@ -74,14 +77,58 @@ LEAD_DAYS = re.compile(r"\b(\d{1,2}|one|two|three|four|five|six|seven)\s+(?:busi
 WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
 
 
+SPOKEN_CENTS = re.compile(r"(?<![\w$.])(\d{1,2})\s*cents?\b", re.I)
+DOLLAR_AMOUNT = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?")
+GENERIC_UNITS = {"each", "apiece", "unit", "piece", "item", "one"}
+PACK_WORDS = {"case", "pack", "roll", "carton", "bundle", "sleeve", "pallet", "dozen", "ream"}
+AFTER_AMOUNT = re.compile(r"^\s*(?:(each|apiece)\b|(?:per|a|an|/)\s*([a-z]+))", re.I)
+
+
 def normalize_spoken_money(text: str) -> str:
-    """'395 dollars' -> '$395' so that `money_candidates` (which needs '$') finds it."""
+    """'395 dollars' -> '$395' and '50 cents' -> '$0.50', so that the '$' parsers find them."""
 
     def repl(m: re.Match[str]) -> str:
         cents = f".{m.group(2)}" if m.group(2) else ""
         return f"${m.group(1)}{cents}"
 
-    return SPOKEN_MONEY.sub(repl, text)
+    text = SPOKEN_MONEY.sub(repl, text)
+    return SPOKEN_CENTS.sub(lambda m: f"$0.{int(m.group(1)):02d}", text)
+
+
+def _singular(word: str) -> str:
+    word = word.lower()
+    if word.endswith("es") and word[:-2] in ("box",):
+        return word[:-2]
+    return word[:-1] if word.endswith("s") and not word.endswith("ss") else word
+
+
+def spoken_price(text: str, anchor: float | None, unit: str | None) -> tuple[float, str] | None:
+    """The offered amount in one supplier line and its basis: "total", "per_unit" or "per_pack".
+
+    "50 cents a glove" and "$1.60 per box" (for an item sold by the box) are per unit, so code
+    multiplies them by the requested quantity. "$40 a case" is per pack: the pack size is unknown.
+    Our own anchor total is dropped when other amounts exist. Arithmetic stays in code."""
+    norm = normalize_spoken_money(text)
+    found: list[tuple[float, str]] = []
+    for m in DOLLAR_AMOUNT.finditer(norm):
+        value = float(m.group(1).replace(",", "") + (f".{m.group(2)}" if m.group(2) else ""))
+        if value <= 0:
+            continue
+        basis = "total"
+        after = AFTER_AMOUNT.match(norm[m.end():m.end() + 24])
+        if after:
+            word = _singular(after.group(1) or after.group(2) or "")
+            if word in GENERIC_UNITS or (unit and word == _singular(unit)):
+                basis = "per_unit"
+            elif word in PACK_WORDS or word in ("box", "bag"):
+                basis = "per_pack"  # a box of gloves, a bag of liners: a pack, not one unit
+        found.append((value, basis))
+    if not found:
+        return None
+    if anchor is not None:
+        others = [f for f in found if abs(f[0] - anchor) > 0.01]
+        found = others or found
+    return max(found, key=lambda f: f[0])
 
 
 def select_price(text: str, anchor: float | None) -> float | None:
@@ -150,6 +197,9 @@ class _CallOffer:
 
 
 class LiveDistributor:
+    _line_costs: dict[str, float] = {}
+    _scoped: bool = False
+
     def __init__(self, config: LiveDistributorConfig | None = None,
                  transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.cfg = config or LiveDistributorConfig()
@@ -158,17 +208,19 @@ class LiveDistributor:
 
     # ------------------------------------------------------------ HTTP to the Photon service
 
-    async def _post(self, path: str, body: dict[str, Any], retries: int) -> dict[str, Any]:
+    async def _post(self, path: str, body: dict[str, Any], retries: int,
+                    timeout_s: float | None = None) -> dict[str, Any]:
+        timeout_s = timeout_s or self.cfg.photon_http_timeout_s
         headers = {}
         if self.cfg.photon_service_token is not None:
             headers["X-Service-Token"] = self.cfg.photon_service_token.get_secret_value()
         last: Exception | None = None
         async with httpx.AsyncClient(base_url=self.cfg.photon_service_url, transport=self._transport,
-                                     timeout=self.cfg.photon_http_timeout_s) as client:
+                                     timeout=timeout_s) as client:
             for attempt in range(retries + 1):
                 try:
                     resp = await asyncio.wait_for(client.post(path, json=body, headers=headers),
-                                                  timeout=self.cfg.photon_http_timeout_s)
+                                                  timeout=timeout_s)
                     if resp.status_code >= 500 and attempt < retries:
                         last = httpx.HTTPStatusError(f"HTTP {resp.status_code}", request=resp.request,
                                                      response=resp)
@@ -284,7 +336,7 @@ class LiveDistributor:
             },
         }
         try:
-            data = await self._post("/calls", body, retries=0)
+            data = await self._post("/calls", body, retries=0, timeout_s=self.cfg.photon_call_start_timeout_s)
         except RuntimeError as exc:
             await ctx.emit("dependency_degraded", {"dep": "phone", "reason": "call_failed", "detail": str(exc)})
             return None
@@ -292,13 +344,21 @@ class LiveDistributor:
 
     def _offers_from(self, ctx: DistributorContext, call: _CallOffer, transcript_url: str | None) -> SupplierOffers:
         names = {i.id: i for i in ctx.items}
-        products = [Product(item_id=item_id, title=f"{names[item_id].name} (phone quote)", sku=f"DIST-{item_id}",
-                            pack_price=price, units_per_pack=names[item_id].quantity)
-                    for item_id, price in call.item_prices.items() if item_id in names]
-        complete = call.bundle_total is not None or len(products) == len(ctx.items)
+        prices = dict(call.item_prices)
+        bundle = call.bundle_total
+        if bundle is not None and self._scoped:
+            # The total covers only the call's items, not the whole list: split it across them in
+            # proportion to their web line costs, so the optimizer prices those items, not the list.
+            prices = allocate_total(bundle, {i: self._line_costs.get(i, 0.0) for i in names})
+            bundle = None
+        products = [Product(item_id=item_id, title=f"{names[item_id].name} (phone quote"
+                            + (", split from a total)" if call.bundle_total is not None and self._scoped else ")"),
+                            sku=f"DIST-{item_id}", pack_price=price, units_per_pack=names[item_id].quantity)
+                    for item_id, price in prices.items() if item_id in names]
+        complete = bundle is not None or len(products) == len(ctx.items)
         return SupplierOffers(
             supplier_id=ctx.distributor.id, source="call", status="ok" if complete else "partial",
-            products=products, bundle_total=call.bundle_total,
+            products=products, bundle_total=bundle,
             quoted_delivery_fee=call.delivery_fee, quoted_lead_time_days=call.lead_days,
             evidence=Evidence(transcript_url=transcript_url),
         )
@@ -315,15 +375,28 @@ class LiveDistributor:
             call.lead_days = days
         decision = await j9_call_line(ctx.decider, text, transcript, names, job_id=ctx.job_id)
         p_offer = _noul(decision.answers, "new_offer")
-        price = select_price(text, best_total)
-        if price is None or p_offer < self.cfg.offer_min_p:
-            return
         target = _choice(decision.answers, "offer_for") or "whole_list"
         item_id = target[len("item_"):] if target.startswith("item_") else None
         if item_id is not None and item_id not in names:
             item_id = None
+        item = next((i for i in ctx.items if i.id == item_id), None)
+        parsed = spoken_price(text, best_total, item.unit if item else None)
+        if parsed is None or p_offer < self.cfg.offer_min_p:
+            return
+        price, basis = parsed
+        unit_price = None
+        if basis == "per_unit" and item is not None:
+            unit_price, price = price, round(price * item.quantity, 2)  # code does the arithmetic
+        unconfirmed = None
         if decision.band == "unsure":  # spec §6 J9 fallback: show it, do not re-plan on it
-            await ctx.emit("call_offer", {"itemId": item_id, "price": price, "p": p_offer, "confirmed": False})
+            unconfirmed = "j9_unsure"
+        elif basis == "per_pack":
+            unconfirmed = "pack_size_unknown"
+        elif basis == "per_unit" and item is None:
+            unconfirmed = "unit_price_without_item"
+        if unconfirmed:
+            await ctx.emit("call_offer", {"itemId": item_id, "price": price, "basis": basis, "p": p_offer,
+                                          "confirmed": False, "reason": unconfirmed})
             return
         if item_id is None:
             call.bundle_total = price
@@ -333,8 +406,8 @@ class LiveDistributor:
             call.item_prices[item_id] = price
             total = round(sum(call.item_prices.values()), 2) if len(call.item_prices) == len(names) else None
             beats = price < line_costs.get(item_id, float("inf"))
-        await ctx.emit("call_offer", {"itemId": item_id, "price": price, "total": total, "p": p_offer,
-                                      "beats": beats, "confirmed": True})
+        await ctx.emit("call_offer", {"itemId": item_id, "price": price, "unitPrice": unit_price, "basis": basis,
+                                      "total": total, "p": p_offer, "beats": beats, "confirmed": True})
         await ctx.on_offer(self._offers_from(ctx, call, None))
 
     def _write_transcript(self, ctx: DistributorContext, transcript: list[str]) -> str | None:
@@ -349,6 +422,8 @@ class LiveDistributor:
     async def _run_call(self, ctx: DistributorContext, to: str, best_total: float,
                         line_costs: dict[str, float], sms_offers: SupplierOffers | None) -> SupplierOffers | None:
         loop = asyncio.get_running_loop()
+        self._line_costs = line_costs
+        self._scoped = len(ctx.items) < len(line_costs)
         call_id: str | None = None
         connected = False
         for _attempt in range(self.cfg.call_redials + 1):
@@ -454,7 +529,33 @@ class LiveDistributor:
         loop = asyncio.get_running_loop()
         t0 = time.monotonic()
 
-        # 1. SMS request, then wait for a reply (J8 on each reply).
+        sms_offers: SupplierOffers | None = None
+        if ctx.settings.distributor_flow == "sms_first":
+            sms_offers = await self._sms_first(ctx, to, loop, t0)
+            if sms_offers is not None and (sms_offers.status == "ok" or sms_offers.error == "declined"):
+                return sms_offers
+
+        # Call when the first plan exists (at the latest T0 + distributor_call_latest_s).
+        # call_first (default): this is the first contact; the text recap follows the call.
+        await wait_for_call_start(ctx, loop.time)
+        plan = ctx.best_plan()
+        if plan is None:
+            await ctx.emit("call_skipped", {"reason": "no plan to anchor the call"})
+            return sms_offers
+        line_costs = {a.item_id: a.line_cost for a in plan.assignments}
+        scope = call_scope(ctx.items, plan, ctx.settings.distributor_call_max_items)
+        if len(scope) < len(ctx.items):
+            # A short call: only these items. The anchor is the web cost of exactly these items.
+            ctx = dataclasses.replace(ctx, items=scope)
+            anchor = round(sum(line_costs.get(i.id, 0.0) for i in scope), 2)
+            await ctx.emit("call_scope", {"itemIds": [i.id for i in scope], "anchor": anchor})
+        else:
+            anchor = plan.total
+        return await self._run_call(ctx, to, anchor, line_costs, sms_offers)
+
+    async def _sms_first(self, ctx: DistributorContext, to: str, loop: asyncio.AbstractEventLoop,
+                         t0: float) -> SupplierOffers | None:
+        # SMS request, then wait for a reply (J8 on each reply).
         await self._send_sms(ctx, to, await self._draft_request(ctx))
         wait_s = ctx.settings.distributor_reply_wait_s * max(ctx.settings.fixture_time_scale, 0)
         deadline = loop.time() + max(0.0, wait_s - (time.monotonic() - t0))
@@ -474,15 +575,11 @@ class LiveDistributor:
                     return offers  # a full SMS quote: no call is needed
             if intent == "decline":
                 await ctx.emit("call_skipped", {"reason": "the distributor declined by SMS"})
+                if sms_offers is None:
+                    return SupplierOffers(supplier_id=ctx.distributor.id, source="sms", status="failed",
+                                          error="declined")
+                sms_offers.error = "declined"
                 return sms_offers
         if not replied:
             await ctx.emit("reply_received", {"channel": "sms", "intent": "no_reply"})
-
-        # 2. Call when the first plan exists (at the latest T0 + distributor_call_latest_s).
-        await wait_for_call_start(ctx, loop.time)
-        plan = ctx.best_plan()
-        if plan is None:
-            await ctx.emit("call_skipped", {"reason": "no plan to anchor the call"})
-            return sms_offers
-        line_costs = {a.item_id: a.line_cost for a in plan.assignments}
-        return await self._run_call(ctx, to, plan.total, line_costs, sms_offers)
+        return sms_offers

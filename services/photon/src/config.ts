@@ -27,6 +27,9 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(value) && str(name) !== "" ? value : fallback;
 }
 
+export type InboundMode = "stream" | "poll" | "webhook" | "off";
+const INBOUND_MODES: readonly InboundMode[] = ["stream", "poll", "webhook", "off"];
+
 export interface Config {
   port: number;
   backendUrl: string;
@@ -35,10 +38,13 @@ export interface Config {
   /** Phones that this service may text or call. Everything else gets 403. */
   allowedPhones: Set<string>;
   photon: {
-    projectId: string;
-    projectSecret: string;
-    webhookSecret: string; // Spectrum webhook signing secret (only for webhook mode)
-    inbound: "stream" | "webhook" | "off";
+    projectId: string; // beta project ID, pho_prj_...
+    apiKey: string; // beta project API key, pho_sk_...
+    phoneNumber: string; // our SMS number (E.164); texts are sent from it
+    baseUrl: string;
+    webhookSecret: string; // webhook destination signing secret, whsec_... (only for webhook mode)
+    inbound: InboundMode;
+    pollMs: number;
   };
   elevenlabs: {
     apiKey: string;
@@ -64,7 +70,7 @@ export function readConfig(): Config {
   const allowed = [str("DEMO_DISTRIBUTOR_PHONE"), str("OWNER_PHONE"), ...str("PHOTON_ALLOWED_PHONES").split(",")]
     .map((p) => normalizePhone(p))
     .filter(Boolean);
-  const inbound = str("PHOTON_INBOUND_MODE", "stream");
+  const inbound = str("PHOTON_INBOUND_MODE", "stream") as InboundMode;
   return {
     port: num("PHOTON_SERVICE_PORT", 8787),
     backendUrl: str("BACKEND_URL", "http://localhost:8000").replace(/\/$/, ""),
@@ -72,11 +78,14 @@ export function readConfig(): Config {
     serviceToken: str("PHOTON_SERVICE_TOKEN"),
     allowedPhones: new Set(allowed),
     photon: {
-      projectId: str("PHOTON_PROJECT_ID", str("SPECTRUM_PROJECT_ID")),
-      // The docs name this value the project *secret*. PHOTON_API_KEY is accepted as an alias.
-      projectSecret: str("PHOTON_PROJECT_SECRET", str("PHOTON_API_KEY", str("SPECTRUM_PROJECT_SECRET"))),
-      webhookSecret: str("PHOTON_WEBHOOK_SECRET", str("SPECTRUM_WEBHOOK_SECRET")),
-      inbound: inbound === "webhook" || inbound === "off" ? inbound : "stream",
+      projectId: str("PHOTON_PROJECT_ID"),
+      // The beta credential is a project API key. PHOTON_PROJECT_SECRET is accepted as a fallback alias.
+      apiKey: str("PHOTON_API_KEY", str("PHOTON_PROJECT_SECRET")),
+      phoneNumber: normalizePhone(str("PHOTON_PHONE_NUMBER")),
+      baseUrl: str("PHOTON_API_BASE_URL", "https://api.photon.codes").replace(/\/$/, ""),
+      webhookSecret: str("PHOTON_WEBHOOK_SECRET"),
+      inbound: INBOUND_MODES.includes(inbound) ? inbound : "stream",
+      pollMs: num("PHOTON_POLL_MS", 3000),
     },
     elevenlabs: {
       apiKey: str("ELEVENLABS_API_KEY"),
@@ -99,8 +108,10 @@ export function describeConfig(c: Config): Record<string, string | number> {
     port: c.port,
     backendUrl: c.backendUrl,
     allowedPhones: c.allowedPhones.size,
-    photonProject: set(c.photon.projectId && c.photon.projectSecret),
+    photonProject: set(c.photon.projectId && c.photon.apiKey),
+    photonNumber: c.photon.phoneNumber ? `***${c.photon.phoneNumber.slice(-4)}` : "not set",
     photonInbound: c.photon.inbound,
+    photonWebhookSecret: set(c.photon.webhookSecret),
     elevenlabs: set(c.elevenlabs.apiKey && c.elevenlabs.agentId && c.elevenlabs.agentPhoneNumberId),
     elevenlabsWebhookSecret: set(c.elevenlabs.webhookSecret),
     serviceToken: set(c.serviceToken),

@@ -41,6 +41,28 @@ class DistributorChannel(Protocol):
         ...
 
 
+def call_scope(items: list[ShoppingItem], plan: Plan, max_items: int) -> list[ShoppingItem]:
+    """The items the call covers: the N with the highest line cost in the plan (most money at stake)."""
+    if max_items <= 0 or max_items >= len(items):
+        return list(items)
+    cost = {a.item_id: a.line_cost for a in plan.assignments}
+    ranked = sorted(items, key=lambda i: cost.get(i.id, 0.0), reverse=True)
+    keep = {i.id for i in ranked[:max_items]}
+    return [i for i in items if i.id in keep]  # keep the shopping-list order
+
+
+def allocate_total(total: float, weights: dict[str, float]) -> dict[str, float]:
+    """Split a quoted total across items in proportion to their web line costs (code, not a model).
+    The last item takes the rounding remainder, so the parts add up to the total exactly."""
+    ids = list(weights)
+    base = sum(weights.values()) or float(len(ids))
+    parts: dict[str, float] = {}
+    for item_id in ids[:-1]:
+        parts[item_id] = round(total * (weights[item_id] or 1.0) / base, 2)
+    parts[ids[-1]] = round(total - sum(parts.values()), 2)
+    return parts
+
+
 async def wait_for_call_start(ctx: DistributorContext, loop_time: Callable[[], float]) -> None:
     """Call when the first plan exists, at the latest T0 + distributor_call_latest_s."""
     if ctx.first_plan_ready.is_set():

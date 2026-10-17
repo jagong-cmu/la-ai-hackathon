@@ -36,7 +36,7 @@ The owner approves a plan that the spending rules already passed. The backend mi
 | Step 5 Preview | (1) Search specs, (2) browser-agent LLM (H3 gate), (3) SMS/email drafts, (4) escalation in `decide()`, (5) the results summary. |
 | **Jev** | The judgments J1–J10 (§6). Jev never does arithmetic, writes text or reads images. |
 | CREAO | Supplier discovery (8–10 candidates with contacts). Jev filters them. The result is cached by category + ZIP. *(M3)* |
-| **Distributor conversation** | One thread: 1. SMS request. 2. If there is no reply, a voice call. 3. An SMS summary of the call. *(M2)* |
+| **Distributor conversation** | **Call first** (default, `DISTRIBUTOR_FLOW=call_first`): the agent calls the distributor as soon as the first plan exists, then texts a recap. The older SMS-first path (`sms_first`) stays available. *(M2, changed Oct 17)* |
 | Voice | Photon SMS number + Voice profile → SIP → ElevenLabs. A teammate plays the distributor. **This is the wow moment.** |
 | Off-web quotes | Status `quoted`. Per-item prices if the distributor gives them. Otherwise a `bundleTotal` plan. *(C5)* A quoted plan can win only when the owner turns on "Accept quoted offer". |
 | **Spending rules** | Checked **before approval**. Each plan shows a badge. The cards are minted at approval. *(C8)* |
