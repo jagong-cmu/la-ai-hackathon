@@ -3,7 +3,8 @@
 Free-shipping thresholds and minimum orders make a greedy choice wrong, so we list
 every assignment (suppliers^items; 4^8 = 65,536 is fast). Past MAX_ASSIGNMENTS a PuLP MILP
 (app/stages/solver.py) picks the candidate assignments instead; both paths price plans with
-the same code below. Cart prices come from, in order:
+the same code below. Plans rank by total + risk_penalty (the J5 doubt penalty from normalize.py);
+the penalty is never part of a price. Cart prices come from, in order:
   1. a verified cart with the exact same contents (cart_key),
   2. a quoted offer (phone/SMS) for that supplier,
   3. an estimate: shipping from the supplier's free-shipping threshold or its verified
@@ -92,6 +93,11 @@ def base_shipping(pricing: SupplierPricing) -> float:
     ):
         return pricing.reference_shipping
     return DEFAULT_SHIPPING
+
+
+def ranking_total(plan: Plan) -> float:
+    """The number plans rank by: the real total plus the J5 doubt penalty."""
+    return round(plan.total + plan.risk_penalty, 2)
 
 
 def price_cart(
@@ -201,6 +207,8 @@ def _build_plan(
         uncovered_items=uncovered,
         total=round(sum(c.total for c in plan_carts), 2),
         status=_plan_status(plan_carts),
+        risk_penalty=round(sum(normalized.best[(item.id, sid)].risk_penalty
+                               for item, sid in zip(covered, combo, strict=True)), 2),
     )
 
 
@@ -240,7 +248,7 @@ def optimize(
             )
 
     # plan_id breaks ties, so the order does not depend on which path listed the plans.
-    ordered = sorted(plans.values(), key=lambda p: (len(p.uncovered_items), p.total, p.plan_id))
+    ordered = sorted(plans.values(), key=lambda p: (len(p.uncovered_items), ranking_total(p), p.plan_id))
     # Web-only splits and splits that include a phone/SMS quote are kept in separate quotas,
     # so cheap quoted mixes never push the best verifiable web plans off the list.
     keep: list[Plan] = []

@@ -16,16 +16,25 @@ Model, for each covered item i and allowed supplier s:
     sub[s] >= free_shipping_threshold[s] z[s],  z[s] <= y[s]
 minimize sum_s sub[s] (1 + tax_rate[s]) + shipping[s] (y[s] - z[s])   (estimated suppliers)
                     + sub[s] + quoted_delivery_fee[s] y[s]            (quoted suppliers)
+         + sum_i,s risk_penalty[i,s] x[i,s]                           (J5 doubts, ranking only)
 
-The objective is the estimate price_cart() would give with no verified cart. A verified cart can
+The objective is the estimate price_cart() would give with no verified cart, plus the same J5
+doubt penalty that optimize.py ranks by. The penalty is not in sub[s], so it never counts toward
+a minimum order or a free-shipping threshold. A verified cart can
 cost a little more or less than its estimate, so we ask for more candidates than optimize.py
 keeps (POOL_FACTOR) and let the exact prices decide the order. The top-k list comes from solving
 again with a "no-good" cut that removes each assignment already found.
+
+The backend is HiGHS (highspy, native wheels for arm64 and x86-64). PuLP's bundled CBC binary is
+x86-64 only on macOS, so it is the second choice. All the solves in one call share TOTAL_BUDGET_S,
+because optimize() runs again after every lane event.
 """
 
 from __future__ import annotations
 
+import functools
 import logging
+import time
 import warnings
 from collections.abc import Sequence
 
@@ -38,7 +47,8 @@ from app.stages.optimize import SupplierPricing, base_shipping
 log = logging.getLogger(__name__)
 
 POOL_FACTOR = 3
-TIME_LIMIT_S = 2.0
+TIME_LIMIT_S = 2.0  # one solve
+TOTAL_BUDGET_S = 5.0  # all the solves in one candidate_assignments() call
 
 Combo = tuple[str, ...]
 
@@ -52,12 +62,16 @@ def candidate_assignments(
     web_splits: int,
     quoted_splits: int,
     time_limit_s: float = TIME_LIMIT_S,
+    total_budget_s: float = TOTAL_BUDGET_S,
 ) -> list[Combo]:
     """Assignments (one supplier id per covered item, in order) worth pricing exactly.
 
     Returns every single-supplier assignment, the cheapest web-only assignments, and the
     cheapest assignments that use at least one quoted supplier, matching optimize.py's quotas.
+    Raises RuntimeError when no MILP backend can run; optimize.py then trims instead.
     """
+    backend = _backend()
+    deadline = time.monotonic() + total_budget_s
     combos: list[Combo] = []
     seen: set[Combo] = set()
 
@@ -77,7 +91,8 @@ def candidate_assignments(
             continue
         with warnings.catch_warnings():  # PuLP 3.x warns about its 4.0 API; we pin <4
             warnings.simplefilter("ignore", DeprecationWarning)
-            found = _top_k(covered, choices, normalized, pricing, quoted, mode, k * POOL_FACTOR, time_limit_s)
+            found = _top_k(covered, choices, normalized, pricing, quoted, mode, k * POOL_FACTOR,
+                           backend, time_limit_s, deadline)
         for combo in found:
             add(combo)
     return combos
@@ -91,7 +106,9 @@ def _top_k(
     quoted: set[str],
     mode: str,
     k: int,
+    backend: str,
     time_limit_s: float,
+    deadline: float,
 ) -> list[Combo]:
     prob = pulp.LpProblem(f"restock_{mode}", pulp.LpMinimize)
     suppliers = sorted(set().union(*map(set, choices)))
@@ -106,7 +123,7 @@ def _top_k(
     for s in suppliers:  # y[s] = 1 only when s gets an item, so "uses a quote" means a real cart
         prob += y[s] <= pulp.lpSum(x[(n, s)] for n, c in enumerate(choices) if s in c)
 
-    cost = []
+    cost = [normalized.best[(covered[n].id, s)].risk_penalty * x[(n, s)] for n, s in pairs]
     for j, s in enumerate(suppliers):
         p = pricing[s]
         sub = pulp.lpSum(_line_cost(normalized, covered[n].id, s) * x[(n, s)]
@@ -134,10 +151,13 @@ def _top_k(
     else:
         prob += pulp.lpSum(y[s] for s in quoted if s in y) >= 1
 
-    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
     found: list[Combo] = []
     for _ in range(k):
-        prob.solve(solver)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            log.warning("milp %s: time budget spent after %d candidates", mode, len(found))
+            break
+        prob.solve(_make_solver(backend, min(time_limit_s, remaining)))
         if prob.sol_status not in (pulp.LpSolutionOptimal, pulp.LpSolutionIntegerFeasible):
             break
         combo = tuple(
@@ -148,6 +168,33 @@ def _top_k(
         prob += pulp.lpSum(x[(n, s)] for n, s in enumerate(combo)) <= len(combo) - 1
     log.debug("milp %s: %d candidates", mode, len(found))
     return found
+
+
+@functools.cache
+def _backend() -> str:
+    """The first MILP backend that solves a tiny problem on this machine. available() is not
+    enough: CBC reports its bundled binary even when the CPU cannot run it."""
+    for name in ("HiGHS", "PULP_CBC_CMD"):
+        try:
+            with warnings.catch_warnings():  # PuLP 3.x warns about its 4.0 API; we pin <4
+                warnings.simplefilter("ignore", DeprecationWarning)
+                probe = pulp.LpProblem("probe", pulp.LpMinimize)
+                v = pulp.LpVariable("v", cat="Binary")
+                probe += v
+                probe += v >= 1
+                probe.solve(_make_solver(name, TIME_LIMIT_S))
+        except Exception as exc:  # missing package, or a binary for another CPU
+            log.info("milp backend %s cannot run: %s", name, exc)
+            continue
+        if probe.sol_status == pulp.LpSolutionOptimal:
+            return name
+    raise RuntimeError("no MILP solver can run (install highspy)")
+
+
+def _make_solver(name: str, time_limit_s: float) -> pulp.LpSolver:
+    if name == "HiGHS":
+        return pulp.HiGHS(msg=False, timeLimit=time_limit_s)
+    return pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s)
 
 
 def _line_cost(normalized: NormalizeResult, item_id: str, supplier_id: str) -> float:

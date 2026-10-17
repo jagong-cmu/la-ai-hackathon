@@ -30,6 +30,7 @@ class Thresholds(BaseModel):
     must_have_act: float = 0.8
     in_stock_min: float = 0.5
     overbuy_ratio: float = 0.25
+    risk_penalty: float = 0.05  # ranking only: each J5 doubt flag adds this share of the line cost
     payment_stop: float = 0.2  # J6: P(payment step) at or above this stops the lane
     act_band: float = 0.8  # decide(): confidence at or above this acts without escalation
     confirm_band: float = 0.5  # decide(): between confirm and act, escalate to Step 5 Preview

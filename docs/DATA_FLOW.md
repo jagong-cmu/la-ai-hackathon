@@ -179,8 +179,12 @@ Code formulas:
 
 Flags: `low_match` (match in the confirm band), `overbuy` (> 25%), `pack_unknown`, `must_have_unsure:<attr>`.
 
+`riskPenalty` (ranking only, never part of a price): `lineCost × Thresholds.risk_penalty (0.05) × the number of J5 doubt flags` (`low_match`, `must_have_unsure:*`). For each (item, supplier), the option with the lowest `lineCost + riskPenalty` wins.
+
 ### 3.2 `CandidatePlans`
-- **Enumeration:** every assignment of each item to one eligible supplier (≤ 4⁸ combinations). Plus each single-supplier plan, plus `quoted_bundle` if it exists.
+- **Enumeration:** every assignment of each item to one eligible supplier, up to 200,000 assignments (`MAX_ASSIGNMENTS`). Plus each single-supplier plan, plus `quoted_bundle` if it exists.
+- **Above 200,000 assignments:** a MILP (`app/stages/solver.py`, PuLP + HiGHS) chooses the candidate assignments, and the same code prices each one. The solver never sets a price. If no MILP backend runs, the optimizer keeps the 3 cheapest suppliers for each item.
+- **Ranking:** by the number of uncovered items, then `total + riskPenalty`, then `planId`. `riskPenalty` is the sum of the line penalties (§3.1). When a cheaper usable plan ranks lower because of it, the results include the warning `ranked_for_confidence`.
 - **Shipping:** use the **verified** cart values when that supplier has a verified cart. Otherwise use the free-shipping threshold rule, or $8.00 with `shippingIsEstimate: true`.
 - Remove a plan when a cart is under its supplier's minimum order value.
 
@@ -193,6 +197,7 @@ Flags: `low_match` (match in the confirm band), `overbuy` (> 25%), `pack_unknown
   "estimatedTotal": 412.40,
   "verifiedTotal": null,
   "status": "estimated | verified | quoted",
+  "riskPenalty": 0.00,
   "rulesCheck": { "pass": true, "failed": [] },
   "rank": 1
 }

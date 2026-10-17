@@ -158,3 +158,33 @@ def test_deadline_gives_partial_results_then_an_update(settings):
         types = [line[7:] for line in client.get(f"/jobs/{job_id}/events?follow=false").text.splitlines()
                  if line.startswith("event: ")]
         assert "deadline_hit" in types and "results_updated" in types
+
+
+def test_full_flow_with_the_milp_path(client, monkeypatch):
+    """The same job twice: full enumeration, then the MILP for every re-plan. Same recommendation."""
+    import app.stages.optimize as optimize_mod
+    import app.stages.solver as solver
+
+    draft = client.get("/shopping-list/draft").json()
+    job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-job-enum"}).json()["jobId"]
+    enum_results = wait_for(client, job_id, {"results_ready"})["results"]
+
+    calls = []
+    real = solver.candidate_assignments
+    monkeypatch.setattr(solver, "candidate_assignments", lambda *a, **kw: calls.append(1) or real(*a, **kw))
+    monkeypatch.setattr(optimize_mod, "MAX_ASSIGNMENTS", 0)
+    job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-job-milp"}).json()["jobId"]
+    view = wait_for(client, job_id, {"results_ready"})
+    results = view["results"]
+    assert calls  # every re-plan went through the MILP
+
+    def best(r: dict) -> dict:
+        return next(p for p in r["plans"] if p["planId"] == r["recommendedPlanId"])
+
+    assert (best(results)["label"], best(results)["total"]) == (best(enum_results)["label"],
+                                                                 best(enum_results)["total"])
+    assert all("riskPenalty" in p for p in results["plans"])
+
+    r = client.post(f"/jobs/{job_id}/approve", json={"action": "approve", "planId": results["recommendedPlanId"]})
+    assert r.status_code == 200
+    assert wait_for(client, job_id, {"at_payment", "partial_handoff"})["state"] == "at_payment"

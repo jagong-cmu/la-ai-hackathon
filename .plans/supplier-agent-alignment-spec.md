@@ -154,7 +154,7 @@ Neither the browser nor the agent prompt ever holds card data.
 | J1 | Bill-line triage | Choice `category`; Noul "online-buyable commodity" | Insights | Show as "uncategorized" |
 | J3 | Supplier filter | Nouls: sells category · prices without login · is a supplier · ships to businesses | Lane selection | Drop the candidate |
 | J4 | Search-result rerank | One Score for each result (different / related / same) | Lane | Open the top 3, not the top 1 |
-| J5 | Listing judge | Score match; a Noul for each `mustHave`; Choice `packCount` (regex candidates + "not stated"); Noul in stock | Offers, warnings | Below the act band → escalate to Step 5; still unsure → flag `low_match` |
+| J5 | Listing judge | Score match; a Noul for each `mustHave`; Choice `packCount` (regex candidates + "not stated"); Noul in stock | Offers, warnings, ranking | Below the act band → escalate to Step 5; still unsure → flag `low_match`. Each doubt flag adds a ranking penalty of 5% of the line cost (`risk_penalty`), never a price |
 | J6 | Page state (**safety**) | Choice of 9 page types | Payment guard, fallback | **Fail closed: stop** |
 | J7 | Cart totals | 4 Choices over the regex money candidates (+ "none") | Verified totals | A failed code sum check → `totalsCheck: mismatch` → not verified |
 | J8 | Reply intent + price | Choice intent; Choice for each item price | Distributor thread | Escalate to Step 5 |

@@ -101,6 +101,9 @@ export interface paths {
         /**
          * Planner Check
          * @description Daily check (a CREAO scheduled run calls this). autostart=true starts a sourcing job.
+         *
+         *     The tunnel makes this route public, so it needs `Authorization: Bearer <RESTOCK_TOKEN>`.
+         *     Without a token configured, it is open only in fixture mode.
          */
         post: operations["planner_check_planner_check_post"];
         delete?: never;
@@ -888,6 +891,11 @@ export interface components {
              * @enum {string}
              */
             status: "verified" | "estimated" | "quoted";
+            /**
+             * Riskpenalty
+             * @default 0
+             */
+            riskPenalty: number;
             rulesCheck?: components["schemas"]["RulesCheck"] | null;
             /**
              * Rank
@@ -1605,7 +1613,9 @@ export interface operations {
             query?: {
                 autostart?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string;
+            };
             path?: never;
             cookie?: never;
         };

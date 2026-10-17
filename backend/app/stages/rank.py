@@ -12,7 +12,8 @@ from app.contracts import (
     ResultWarning,
     ShoppingItem,
 )
-from app.stages.normalize import NormalizeResult
+from app.stages.normalize import NormalizeResult, is_doubt
+from app.stages.optimize import ranking_total
 from app.stages.rules import SpendingRules, check_plan
 
 FLAG_TEXT = {
@@ -22,13 +23,17 @@ FLAG_TEXT = {
 }
 
 
+def _usable(plan: Plan, accept_quoted: bool) -> bool:
+    if plan.uncovered_items:
+        return False
+    if plan.rules_check is not None and not plan.rules_check.passed:
+        return False
+    return plan.status == "verified" or (plan.status == "quoted" and accept_quoted)
+
+
 def recommend(plans: list[Plan], accept_quoted: bool) -> tuple[Plan | None, str | None]:
-    for plan in sorted(plans, key=lambda p: p.total):
-        if plan.uncovered_items:
-            continue
-        if plan.rules_check is not None and not plan.rules_check.passed:
-            continue
-        if plan.status == "verified" or (plan.status == "quoted" and accept_quoted):
+    for plan in sorted(plans, key=ranking_total):
+        if _usable(plan, accept_quoted):
             return plan, None
     if not plans:
         return None, "No supplier returned a usable offer for these items."
@@ -87,6 +92,16 @@ def build_results(
             if cart.shipping_is_estimate:
                 warnings.append(ResultWarning(code="shipping_estimate", supplier_id=cart.supplier_id,
                                               text=f"{names.get(cart.supplier_id, cart.supplier_id)}: shipping is an estimate."))
+        cheapest = min((p for p in plans if _usable(p, accept_quoted)), key=lambda p: p.total)
+        if cheapest.total < best.total:
+            doubts = sum(1 for a in cheapest.assignments
+                         if any(map(is_doubt, getattr(normalized.best.get((a.item_id, a.supplier_id)),
+                                                      "flags", []))))
+            warnings.append(ResultWarning(
+                code="ranked_for_confidence",
+                text=(f"{cheapest.label} costs ${best.total - cheapest.total:.2f} less, but the match "
+                      f"is uncertain for {doubts} of its items, so it ranks lower."),
+            ))
     for sid, t in (terms or {}).items():
         for key, label in (("conditional_price", "the price has conditions"),
                            ("availability_risk", "availability is uncertain")):
