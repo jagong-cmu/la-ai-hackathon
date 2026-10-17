@@ -1,7 +1,9 @@
 """Optimizer: every assignment of items to suppliers, priced per supplier cart.
 
 Free-shipping thresholds and minimum orders make a greedy choice wrong, so we list
-every assignment (suppliers^items; 4^8 = 65,536 is fast). Cart prices come from, in order:
+every assignment (suppliers^items; 4^8 = 65,536 is fast). Past MAX_ASSIGNMENTS a PuLP MILP
+(app/stages/solver.py) picks the candidate assignments instead; both paths price plans with
+the same code below. Cart prices come from, in order:
   1. a verified cart with the exact same contents (cart_key),
   2. a quoted offer (phone/SMS) for that supplier,
   3. an estimate: shipping from the supplier's free-shipping threshold or its verified
@@ -11,7 +13,11 @@ every assignment (suppliers^items; 4^8 = 65,536 is fast). Cart prices come from,
 from __future__ import annotations
 
 import itertools
+import logging
+import math
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Literal
 
 from app.contracts import (
     Assignment,
@@ -25,6 +31,10 @@ from app.contracts import (
 )
 from app.db import stable_hash
 from app.stages.normalize import NormalizeResult
+
+log = logging.getLogger(__name__)
+
+SolverMode = Literal["auto", "enumerate", "milp"]
 
 DEFAULT_SHIPPING = 8.00
 MAX_ASSIGNMENTS = 200_000
@@ -75,6 +85,15 @@ def supplier_pricing(
     return pricing
 
 
+def base_shipping(pricing: SupplierPricing) -> float:
+    """Estimated shipping for a cart below the free-shipping threshold (or with none)."""
+    if pricing.reference_shipping is not None and (
+        pricing.free_shipping_threshold is None or pricing.reference_shipping > 0
+    ):
+        return pricing.reference_shipping
+    return DEFAULT_SHIPPING
+
+
 def price_cart(
     supplier_id: str, lines: list[CartLine], pricing: SupplierPricing, carts: dict[str, VerifiedCart]
 ) -> PlanCart | None:
@@ -93,12 +112,8 @@ def price_cart(
                         shipping=pricing.quoted_delivery_fee, tax=0.0, total=total, status="quoted")
     if pricing.free_shipping_threshold is not None and subtotal >= pricing.free_shipping_threshold:
         shipping = 0.0
-    elif pricing.reference_shipping is not None and (
-        pricing.free_shipping_threshold is None or pricing.reference_shipping > 0
-    ):
-        shipping = pricing.reference_shipping
     else:
-        shipping = DEFAULT_SHIPPING
+        shipping = base_shipping(pricing)
     tax = round(subtotal * (pricing.tax_rate or 0.0), 2)
     return PlanCart(cart_key=key, supplier_id=supplier_id, lines=lines, subtotal=subtotal,
                     shipping=shipping, tax=tax, total=round(subtotal + shipping + tax, 2),
@@ -120,64 +135,95 @@ def _label(kind: str, suppliers: list[str], names: dict[str, str]) -> str:
     return "Split: " + " + ".join(names.get(s, s) for s in suppliers)
 
 
+def _assignments(
+    covered: list[ShoppingItem],
+    choices: list[list[str]],
+    normalized: NormalizeResult,
+    pricing: dict[str, SupplierPricing],
+    solver: SolverMode,
+) -> Iterable[tuple[str, ...]]:
+    """The assignments to price: all of them, or the MILP's candidates when there are too many."""
+    total_combos = math.prod(max(1, len(c)) for c in choices)
+    if solver == "enumerate" or (solver == "auto" and total_combos <= MAX_ASSIGNMENTS):
+        return itertools.product(*choices)
+    try:
+        from app.stages.solver import candidate_assignments
+
+        return candidate_assignments(covered, choices, normalized, pricing,
+                                     web_splits=KEEP_SPLIT_PLANS, quoted_splits=KEEP_QUOTED_SPLIT_PLANS)
+    except Exception as exc:  # PuLP missing or CBC failed: the run must still end with plans
+        if solver == "milp":
+            raise
+        log.warning("milp solver failed (%s); trimming to the 3 cheapest suppliers per item", exc)
+    trimmed = [
+        sorted(c, key=lambda s, i=item: normalized.best[(i.id, s)].line_cost)[:3]
+        for c, item in zip(choices, covered, strict=True)
+    ]
+    return itertools.product(*trimmed)
+
+
+def _build_plan(
+    covered: list[ShoppingItem],
+    combo: tuple[str, ...],
+    normalized: NormalizeResult,
+    pricing: dict[str, SupplierPricing],
+    carts: dict[str, VerifiedCart],
+    names: dict[str, str],
+    uncovered: list[str],
+) -> Plan | None:
+    """Price one assignment exactly. None when a cart misses its supplier's minimum order."""
+    by_supplier: dict[str, list[CartLine]] = {}
+    assignments: list[Assignment] = []
+    for item, sid in zip(covered, combo, strict=True):
+        opt = normalized.best[(item.id, sid)]
+        by_supplier.setdefault(sid, []).append(
+            CartLine(item_id=item.id, sku=opt.sku, pack_quantity=opt.packs_needed,
+                     unit_price=opt.pack_price)
+        )
+        assignments.append(Assignment(item_id=item.id, supplier_id=sid, sku=opt.sku,
+                                      pack_quantity=opt.packs_needed, line_cost=opt.line_cost,
+                                      source=opt.source))
+    plan_carts: list[PlanCart] = []
+    for sid, lines in sorted(by_supplier.items()):
+        priced = price_cart(sid, sorted(lines, key=lambda line: line.item_id), pricing[sid], carts)
+        if priced is None:
+            return None
+        plan_carts.append(priced)
+    suppliers = [c.supplier_id for c in plan_carts]
+    kind = "single_supplier" if len(suppliers) == 1 else "split"
+    plan_id = "plan_" + stable_hash(sorted(c.cart_key for c in plan_carts))[:10]
+    return Plan(
+        plan_id=plan_id,
+        kind=kind,
+        label=_label(kind, suppliers, names),
+        assignments=assignments,
+        carts=plan_carts,
+        uncovered_items=uncovered,
+        total=round(sum(c.total for c in plan_carts), 2),
+        status=_plan_status(plan_carts),
+    )
+
+
 def optimize(
     items: list[ShoppingItem],
     normalized: NormalizeResult,
     offers: dict[str, SupplierOffers],
     carts: dict[str, VerifiedCart],
     names: dict[str, str],
+    solver: SolverMode = "auto",
 ) -> OptimizeResult:
+    """Rank the plans. `solver`: "auto" enumerates up to MAX_ASSIGNMENTS and uses the MILP past
+    that; "enumerate" and "milp" force one path (tests compare the two)."""
     pricing = supplier_pricing(offers, carts)
     covered = [item for item in items if normalized.suppliers_for(item.id)]
     uncovered = [item.id for item in items if not normalized.suppliers_for(item.id)]
     choices = [sorted(normalized.suppliers_for(item.id)) for item in covered]
 
-    total_combos = 1
-    for c in choices:
-        total_combos *= max(1, len(c))
-    if total_combos > MAX_ASSIGNMENTS:
-        # Safety valve only; it does not trigger at hackathon sizes.
-        choices = [
-            sorted(c, key=lambda s, i=item: normalized.best[(i.id, s)].line_cost)[:3]
-            for c, item in zip(choices, covered, strict=True)
-        ]
-
     plans: dict[str, Plan] = {}
-    for combo in itertools.product(*choices) if covered else []:
-        by_supplier: dict[str, list[CartLine]] = {}
-        assignments: list[Assignment] = []
-        for item, sid in zip(covered, combo, strict=True):
-            opt = normalized.best[(item.id, sid)]
-            by_supplier.setdefault(sid, []).append(
-                CartLine(item_id=item.id, sku=opt.sku, pack_quantity=opt.packs_needed,
-                         unit_price=opt.pack_price)
-            )
-            assignments.append(Assignment(item_id=item.id, supplier_id=sid, sku=opt.sku,
-                                          pack_quantity=opt.packs_needed, line_cost=opt.line_cost,
-                                          source=opt.source))
-        plan_carts: list[PlanCart] = []
-        valid = True
-        for sid, lines in sorted(by_supplier.items()):
-            priced = price_cart(sid, sorted(lines, key=lambda line: line.item_id), pricing[sid], carts)
-            if priced is None:
-                valid = False
-                break
-            plan_carts.append(priced)
-        if not valid:
-            continue
-        suppliers = [c.supplier_id for c in plan_carts]
-        kind = "single_supplier" if len(suppliers) == 1 else "split"
-        plan_id = "plan_" + stable_hash(sorted(c.cart_key for c in plan_carts))[:10]
-        plans[plan_id] = Plan(
-            plan_id=plan_id,
-            kind=kind,
-            label=_label(kind, suppliers, names),
-            assignments=assignments,
-            carts=plan_carts,
-            uncovered_items=uncovered,
-            total=round(sum(c.total for c in plan_carts), 2),
-            status=_plan_status(plan_carts),
-        )
+    for combo in _assignments(covered, choices, normalized, pricing, solver) if covered else []:
+        plan = _build_plan(covered, combo, normalized, pricing, carts, names, uncovered)
+        if plan is not None:
+            plans[plan.plan_id] = plan
 
     for sid, offer in offers.items():
         if offer.bundle_total is not None:
@@ -193,7 +239,8 @@ def optimize(
                 total=total, status="quoted",
             )
 
-    ordered = sorted(plans.values(), key=lambda p: (len(p.uncovered_items), p.total))
+    # plan_id breaks ties, so the order does not depend on which path listed the plans.
+    ordered = sorted(plans.values(), key=lambda p: (len(p.uncovered_items), p.total, p.plan_id))
     # Web-only splits and splits that include a phone/SMS quote are kept in separate quotas,
     # so cheap quoted mixes never push the best verifiable web plans off the list.
     keep: list[Plan] = []
