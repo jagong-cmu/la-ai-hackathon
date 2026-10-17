@@ -7,11 +7,12 @@ so the "they beat the web price" moment is consistent with whatever the lanes fo
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 
 from app.config import FIXTURES_DIR
 from app.contracts import Evidence, Product, SupplierOffers
-from app.distributor.base import DistributorContext, wait_for_call_start
+from app.distributor.base import DistributorContext, call_scope, wait_for_call_start
 from app.judgments import j9_call_line, j10_terms
 
 
@@ -48,10 +49,15 @@ class FixtureDistributor:
         if plan is None:
             await ctx.emit("call_skipped", {"reason": "no plan to anchor the call"})
             return None
-        lines = {a.item_id: a for a in plan.assignments}
+        scope = call_scope(ctx.items, plan, ctx.settings.distributor_call_max_items)
+        if len(scope) < len(ctx.items):
+            ctx = dataclasses.replace(ctx, items=scope)  # a short call: only the costliest items
+        scope_ids = {i.id for i in scope}
+        lines = {a.item_id: a for a in plan.assignments if a.item_id in scope_ids}
         factor = s["offerFactor"]
         offer_total = round(sum(a.line_cost for a in lines.values()) * factor, 2)
-        best_total = plan.total
+        best_total = plan.total if len(scope_ids) == len(plan.assignments) else round(
+            sum(a.line_cost for a in lines.values()), 2)
 
         await ctx.emit("call_started", {"to": ctx.distributor.name, "disclosure": "AI disclosed"})
         await ctx.sleep(s["callConnectSeconds"])

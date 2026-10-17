@@ -436,6 +436,9 @@ class Orchestrator:
             rt.normalized = normalize(rt.request.items, list(rt.offers.values()), self.settings.thresholds)
             await self.bus.emit(rt.job_id, "quote_received", {"source": offers.source}, "distributor")
             await self._replan(rt, f"quote:{offers.supplier_id}")
+            # A partial-list quote creates plans that mix it with web carts: price those carts now.
+            if rt.subset_requests:
+                await self._subset_phase(rt)
 
         rt.dist_ctx = DistributorContext(
             job_id=rt.job_id, distributor=dist, items=rt.request.items, settings=self.settings,

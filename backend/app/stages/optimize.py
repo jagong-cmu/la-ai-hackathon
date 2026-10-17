@@ -217,9 +217,13 @@ def optimize(
     seen: set[str] = set()
     web_split_plans = [p for p in keep if p.kind == "split"
                        and not any(pricing[c.supplier_id].quoted for c in p.carts)]
-    for plan in web_split_plans[:2]:
+    # The cheapest plan that mixes a phone/SMS quote with web carts also needs its web carts
+    # verified (the call may quote only some items), or it stays "estimated" for ever.
+    quoted_mixes = [p for p in keep if p.kind == "split"
+                    and any(pricing[c.supplier_id].quoted for c in p.carts)]
+    for plan in web_split_plans[:2] + quoted_mixes[:1]:
         for cart in plan.carts:
-            if cart.status == "estimated" and cart.cart_key not in seen:
+            if cart.status == "estimated" and not pricing[cart.supplier_id].quoted and cart.cart_key not in seen:
                 seen.add(cart.cart_key)
                 subset_requests.append((cart.supplier_id, cart.lines))
     return OptimizeResult(plans=keep, subset_requests=subset_requests)
