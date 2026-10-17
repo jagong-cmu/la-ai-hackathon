@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Supplier Agent System Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column for prose, full-width figure panels for the diagrams. Bright utility look; status colors carry meaning. */
+:root {
+  --bg: #f7f8fa; --surface: #ffffff; --fg: #11151b; --fg-2: #3a4350; --muted: #5e6875; --line: #d9dee5; --lane: #eef1f5;
+  --accent: #1d4ed8;
+  --owner: #1d4ed8; --owner-bg: #e3ebff;
+  --agent: #7c3aed; --agent-bg: #f0e8ff;
+  --llm: #0f766e;   --llm-bg: #dcf5f1;
+  --ok: #15803d; --warn: #b45309; --bad: #b91c1c; --bad-bg: #fde4e4;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1216; --surface: #171b21; --fg: #eef1f5; --fg-2: #c3cad4; --muted: #8f99a6; --line: #2b323c; --lane: #141920;
+  --accent: #7aa2ff; --owner: #7aa2ff; --owner-bg: #1a2648; --agent: #b794ff; --agent-bg: #2a1f45; --llm: #4fd1c0; --llm-bg: #12302c;
+  --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --bad-bg: #3a1717; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1216; --surface: #171b21; --fg: #eef1f5; --fg-2: #c3cad4; --muted: #8f99a6; --line: #2b323c; --lane: #141920;
+  --accent: #7aa2ff; --owner: #7aa2ff; --owner-bg: #1a2648; --agent: #b794ff; --agent-bg: #2a1f45; --llm: #4fd1c0; --llm-bg: #12302c;
+  --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --bad-bg: #3a1717; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--body); margin: 0; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 72px; display: grid; gap: 48px; }
+header { display: grid; gap: 12px; max-width: 72ch; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 800 clamp(30px, 5vw, 44px)/1.05 var(--display); margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font: 700 24px/1.2 var(--display); margin: 0; text-wrap: balance; }
+h3 { font: 700 16px/1.3 var(--display); margin: 0; }
+p { margin: 0; }
+.lede { font-size: 17px; color: var(--fg-2); }
+.status { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: 500 12px/1 var(--mono); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg-2); }
+.chip.warn { border-color: var(--warn); color: var(--warn); }
+.chip.ok { border-color: var(--ok); color: var(--ok); }
+section { display: grid; gap: 16px; }
+section > .intro { max-width: 72ch; color: var(--fg-2); }
+figure { margin: 0; display: grid; gap: 12px; }
+.canvas { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.canvas svg { display: block; width: 100%; min-width: 880px; height: auto; color: var(--fg-2); }
+figcaption { font-size: 13px; color: var(--muted); max-width: 84ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--fg-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid; display: inline-block; }
+.sw.owner { background: var(--owner-bg); border-color: var(--owner); }
+.sw.code { background: var(--surface); border-color: var(--fg-2); }
+.sw.llm { background: var(--llm-bg); border-color: var(--llm); }
+.sw.agent { background: var(--agent-bg); border-color: var(--agent); }
+.sw.bad { background: var(--bad-bg); border-color: var(--bad); }
+.sw.ext { background: transparent; border-color: var(--muted); border-style: dashed; }
+
+/* SVG styling, kept outside the svg elements */
+.nd { stroke-width: 1.5; }
+.nd.owner { fill: var(--owner-bg); stroke: var(--owner); }
+.nd.code { fill: var(--surface); stroke: var(--fg-2); }
+.nd.llm { fill: var(--llm-bg); stroke: var(--llm); }
+.nd.agent { fill: var(--agent-bg); stroke: var(--agent); }
+.nd.agentx { fill: var(--surface); stroke: var(--agent); stroke-dasharray: 5 3; }
+.nd.bad { fill: var(--bad-bg); stroke: var(--bad); }
+.nd.ext { fill: var(--bg); stroke: var(--muted); stroke-dasharray: 5 3; }
+.nd.screen { fill: var(--surface); stroke: var(--fg-2); }
+.nd.bar { fill: var(--lane); stroke: none; }
+.nd.box { fill: none; stroke: var(--line); stroke-width: 1.5; }
+.nd.idle { fill: var(--lane); stroke: none; }
+.lane { fill: var(--lane); }
+.grid { stroke: var(--line); stroke-width: 1; }
+.deadline { stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.dot { fill: var(--fg-2); }
+.btn { fill: var(--owner); }
+.btn-ghost { fill: none; stroke: var(--muted); stroke-dasharray: 4 3; stroke-width: 1.2; }
+.tl { font: 600 12.5px var(--body); fill: var(--fg); }
+.th { font: 700 13px var(--display); fill: var(--fg); }
+.ts { font: 400 11px var(--body); fill: var(--muted); }
+.tsb { font: 500 11px var(--body); fill: var(--fg); }
+.tn { font: 500 11.5px var(--mono); fill: var(--accent); }
+.lbl { font: 400 10.5px var(--mono); fill: var(--muted); }
+.lblbad { font: 500 10.5px var(--mono); fill: var(--bad); }
+.hdr { font: 500 11px var(--mono); fill: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.tbtn { font: 600 11px var(--body); fill: var(--bg); }
+.tghost { font: 500 10.5px var(--body); fill: var(--muted); }
+.ar { fill: none; stroke: var(--fg-2); stroke-width: 1.4; }
+.ar.dash { stroke-dasharray: 4 3; }
+.ar.bad { stroke: var(--bad); }
+.run { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 3; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.n { font: 500 13px var(--mono); color: var(--accent); white-space: nowrap; }
+td.bad { color: var(--bad); font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; color: var(--fg-2); }
+.gate { font: 500 12px var(--mono); color: var(--warn); }
+.gate.ok { color: var(--ok); }
+.gate.bad { color: var(--bad); }
+code { font: 13px var(--mono); background: var(--lane); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body class="auto">
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">LA Hacks 2026</div>
+  <h1>Supplier Agent System Map</h1>
+  <p class="lede">The product finds the cheapest way for a small business to restock its supplies. It reads past bills, searches real supplier sites in parallel, texts and calls the current distributor, and brings the owner to a ready checkout. Code makes sure that no agent can submit a payment.</p>
+  <div class="status">
+    <span class="chip warn">Designed, not built</span>
+    <span class="chip ok">v2: review fixes folded in</span>
+    <span class="chip">Name: chosen at H0</span>
+    <span class="chip">Demo business: Hearthloaf Bakeries (company-001)</span>
+  </div>
+</header>
+
+<section>
+  <h2>1. User flow, end to end</h2>
+  <p class="intro">The owner sees five screens and acts three times: start the comparison, approve a plan, and later place the order. The backend work under each screen runs while that screen is open.</p>
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 980 350" role="img" aria-label="Five screens from spend insights to checkout handoff. The owner clicks Find cheaper, Compare suppliers and Approve. The working screen moves to results automatically.">
+        <defs><marker id="ahA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+        <rect class="nd screen" x="10" y="20" width="170" height="210" rx="8"/><rect class="nd bar" x="11" y="21" width="168" height="26" rx="7"/>
+        <text class="tn" x="22" y="39">0</text><text class="th" x="38" y="39">Spend insights</text>
+        <text class="ts" x="22" y="72">Supply spend last year</text><text class="ts" x="22" y="90">Top items, past prices</text><text class="ts" x="22" y="108">Bill lines sorted (J1)</text><text class="ts" x="22" y="126">Synthetic bills labelled</text>
+        <rect class="btn" x="22" y="188" width="110" height="26" rx="5"/><text class="tbtn" x="77" y="205" text-anchor="middle">Find cheaper</text>
+
+        <rect class="nd screen" x="208" y="20" width="170" height="210" rx="8"/><rect class="nd bar" x="209" y="21" width="168" height="26" rx="7"/>
+        <text class="tn" x="220" y="39">1</text><text class="th" x="236" y="39">Shopping list</text>
+        <text class="ts" x="220" y="72">Prefilled from bills</text><text class="ts" x="220" y="90">Search spec chips</text><text class="ts" x="220" y="108">Suppliers: found 9, using 3</text><text class="ts" x="220" y="126">ZIP 49007 (Kalamazoo)</text>
+        <rect class="btn" x="220" y="188" width="140" height="26" rx="5"/><text class="tbtn" x="290" y="205" text-anchor="middle">Compare suppliers</text>
+
+        <rect class="nd screen" x="406" y="20" width="170" height="210" rx="8"/><rect class="nd bar" x="407" y="21" width="168" height="26" rx="7"/>
+        <text class="tn" x="418" y="39">2</text><text class="th" x="434" y="39">Working</text>
+        <text class="ts" x="418" y="72">One tile per supplier lane</text><text class="ts" x="418" y="90">Distributor: SMS → call</text><text class="ts" x="418" y="108">Best plan so far (live)</text><text class="ts" x="418" y="126">A failed lane stays red</text>
+        <rect class="btn-ghost" x="418" y="188" width="146" height="26" rx="5"/><text class="tghost" x="491" y="205" text-anchor="middle">auto: results ready</text>
+
+        <rect class="nd screen" x="604" y="20" width="170" height="210" rx="8"/><rect class="nd bar" x="605" y="21" width="168" height="26" rx="7"/>
+        <text class="tn" x="616" y="39">3</text><text class="th" x="632" y="39">Results</text>
+        <text class="ts" x="616" y="72">Plan + savings vs paid</text><text class="ts" x="616" y="90">Carts + totals check</text><text class="ts" x="616" y="108">Quoted offer + transcript</text><text class="ts" x="616" y="126">Rules badge on each plan</text>
+        <text class="ts" x="616" y="160">☐ Accept quoted offer</text>
+        <rect class="btn" x="616" y="188" width="80" height="26" rx="5"/><text class="tbtn" x="656" y="205" text-anchor="middle">Approve</text>
+        <rect class="btn-ghost" x="704" y="188" width="58" height="26" rx="5"/><text class="tghost" x="733" y="205" text-anchor="middle">Reject</text>
+
+        <rect class="nd screen" x="802" y="20" width="170" height="210" rx="8"/><rect class="nd bar" x="803" y="21" width="168" height="26" rx="7"/>
+        <text class="tn" x="814" y="39">4</text><text class="th" x="830" y="39">Checkout</text>
+        <text class="ts" x="814" y="72">Live view at payment</text><text class="ts" x="814" y="90">Screenshot if it expired</text><text class="ts" x="814" y="108">Simulated card per supplier</text>
+        <rect class="btn-ghost" x="814" y="188" width="146" height="26" rx="5"/><text class="tghost" x="887" y="205" text-anchor="middle">Place order (placeholder)</text>
+
+        <path class="ar" d="M132 201 H208" marker-end="url(#ahA)"/>
+        <path class="ar" d="M360 201 H406" marker-end="url(#ahA)"/>
+        <path class="ar dash" d="M564 201 H604" marker-end="url(#ahA)"/>
+        <path class="ar" d="M696 201 V240 H887 V230" marker-end="url(#ahA)"/>
+
+        <text class="hdr" x="10" y="268">Backend work that runs</text>
+        <path class="run" d="M95 230 V282"/><path class="run" d="M293 230 V282"/><path class="run" d="M491 230 V282"/><path class="run" d="M689 248 V282"/><path class="run" d="M920 230 V282"/>
+        <rect class="nd code" x="10" y="282" width="170" height="56" rx="6"/><text class="ts" x="22" y="303">books → J1 triage</text><text class="ts" x="22" y="321">CREAO → J3 (cached)</text>
+        <rect class="nd code" x="208" y="282" width="170" height="56" rx="6"/><text class="ts" x="220" y="303">Step 5 Preview specs</text><text class="ts" x="220" y="321">job deadline starts (T0)</text>
+        <rect class="nd code" x="406" y="282" width="170" height="56" rx="6"/><text class="ts" x="418" y="303">lanes: J4 J5 J7 + J6 guard</text><text class="ts" x="418" y="321">SMS → call: J8 J9 · re-plan</text>
+        <rect class="nd code" x="604" y="282" width="170" height="56" rx="6"/><text class="ts" x="616" y="303">rank + rules (code)</text><text class="ts" x="616" y="321">Step 5 summary</text>
+        <rect class="nd code" x="802" y="282" width="170" height="56" rx="6"/><text class="ts" x="814" y="303">cards → set cart → checkout</text><text class="ts" x="814" y="321">J6 + DOM check → STOP</text>
+      </svg>
+    </div>
+    <figcaption>Solid blue buttons are owner actions. Dashed controls are automatic or placeholders. CREAO discovery starts when screen 0 loads, and its result is cached by item category and ZIP code.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>2. Agent orchestration on a timeline</h2>
+  <p class="intro">Each supplier gets its own lane with one browser session. The lanes run in parallel and report independently, so the optimizer improves the plan with each report. The distributor call starts as soon as a plan exists, without waiting for the other lanes. At the deadline, the results use whatever has finished.</p>
+  <div class="legend">
+    <span><i class="sw agent"></i>Browser or phone agent work</span>
+    <span><i class="sw llm"></i>LLM step (Step 5 Preview / Jev)</span>
+    <span><i class="sw code"></i>Code</span>
+    <span><i class="sw bad"></i>Failure or hard stop</span>
+    <span><i class="sw owner"></i>Owner action</span>
+  </div>
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 980 470" role="img" aria-label="Timeline from T0 to a 150 second deadline. Lanes A and B search, build carts and price subsets. Lane C fails on a bot check while the job continues. Lane D is a slower LLM agent. The distributor gets an SMS and then a call at about 50 seconds. After approval, lanes A and B go to checkout and stop at payment.">
+        <!-- regions and grid -->
+        <text class="hdr" x="205" y="30" text-anchor="middle">before T0</text>
+        <text class="hdr" x="875" y="30" text-anchor="middle">after approve</text>
+        <line class="grid" x1="260" y1="44" x2="260" y2="440"/><text class="lbl" x="260" y="40" text-anchor="middle">T0</text>
+        <line class="grid" x1="360" y1="44" x2="360" y2="440"/><text class="lbl" x="360" y="40" text-anchor="middle">30 s</text>
+        <line class="grid" x1="460" y1="44" x2="460" y2="440"/><text class="lbl" x="460" y="40" text-anchor="middle">60 s</text>
+        <line class="grid" x1="560" y1="44" x2="560" y2="440"/><text class="lbl" x="560" y="40" text-anchor="middle">90 s</text>
+        <line class="grid" x1="660" y1="44" x2="660" y2="440"/><text class="lbl" x="660" y="40" text-anchor="middle">120 s</text>
+        <line class="deadline" x1="760" y1="44" x2="760" y2="440"/><text class="lblbad" x="760" y="40" text-anchor="middle">150 s</text>
+        <line class="grid" x1="775" y1="44" x2="775" y2="440"/>
+
+        <!-- row labels -->
+        <text class="tl" x="10" y="78">Owner</text>
+        <text class="tl" x="10" y="118">Setup</text>
+        <text class="tl" x="10" y="158">Specs</text>
+        <text class="tl" x="10" y="198">Lane A</text><text class="ts" x="62" y="198">adapter</text>
+        <text class="tl" x="10" y="238">Lane B</text><text class="ts" x="62" y="238">adapter</text>
+        <text class="tl" x="10" y="278">Lane C</text><text class="ts" x="62" y="278">adapter</text>
+        <text class="tl" x="10" y="318">Lane D</text><text class="ts" x="62" y="318">LLM agent</text>
+        <text class="tl" x="10" y="358">Distributor</text>
+        <text class="tl" x="10" y="398">Orchestrator</text>
+
+        <!-- owner -->
+        <rect class="btn" x="160" y="64" width="84" height="22" rx="4"/><text class="tbtn" x="202" y="79" text-anchor="middle">Find cheaper</text>
+        <rect class="btn" x="262" y="64" width="70" height="22" rx="4"/><text class="tbtn" x="297" y="79" text-anchor="middle">Compare</text>
+        <rect class="btn" x="782" y="64" width="70" height="22" rx="4"/><text class="tbtn" x="817" y="79" text-anchor="middle">Approve</text>
+
+        <!-- setup -->
+        <rect class="nd llm" x="160" y="104" width="40" height="22" rx="4"/><text class="lbl" x="180" y="119" text-anchor="middle">J1</text>
+        <rect class="nd agent" x="204" y="104" width="46" height="22" rx="4"/><text class="lbl" x="227" y="119" text-anchor="middle">CREAO</text>
+
+        <!-- specs -->
+        <rect class="nd llm" x="260" y="144" width="20" height="22" rx="3"/><text class="ts" x="288" y="159">Step 5 specs, 3–6 s, parallel</text>
+
+        <!-- lane A -->
+        <rect class="nd agent" x="280" y="184" width="63" height="22" rx="3"/><text class="lbl" x="311" y="199" text-anchor="middle">search</text>
+        <rect class="nd agent" x="343" y="184" width="67" height="22" rx="3"/><text class="lbl" x="376" y="199" text-anchor="middle">cart</text>
+        <rect class="nd agent" x="460" y="184" width="50" height="22" rx="3"/><text class="lbl" x="485" y="199" text-anchor="middle">subset</text>
+        <rect class="nd idle" x="510" y="188" width="250" height="14" rx="3"/><text class="lbl" x="520" y="199">idle, session kept alive</text>
+        <rect class="nd agent" x="790" y="184" width="140" height="22" rx="3"/><text class="lbl" x="860" y="199" text-anchor="middle">set cart → checkout</text>
+        <rect class="nd bad" x="932" y="184" width="40" height="22" rx="3"/><text class="lblbad" x="952" y="199" text-anchor="middle">STOP</text>
+
+        <!-- lane B -->
+        <rect class="nd agent" x="280" y="224" width="97" height="22" rx="3"/><text class="lbl" x="328" y="239" text-anchor="middle">search</text>
+        <rect class="nd agent" x="377" y="224" width="83" height="22" rx="3"/><text class="lbl" x="418" y="239" text-anchor="middle">cart</text>
+        <rect class="nd agent" x="460" y="224" width="67" height="22" rx="3"/><text class="lbl" x="493" y="239" text-anchor="middle">subset</text>
+        <rect class="nd idle" x="527" y="228" width="233" height="14" rx="3"/>
+        <rect class="nd agent" x="790" y="224" width="140" height="22" rx="3"/><text class="lbl" x="860" y="239" text-anchor="middle">set cart → checkout</text>
+        <rect class="nd bad" x="932" y="224" width="40" height="22" rx="3"/><text class="lblbad" x="952" y="239" text-anchor="middle">STOP</text>
+
+        <!-- lane C -->
+        <rect class="nd agent" x="280" y="264" width="130" height="22" rx="3"/><text class="lbl" x="345" y="279" text-anchor="middle">search</text>
+        <rect class="nd bad" x="410" y="264" width="66" height="22" rx="3"/><text class="lblbad" x="443" y="279" text-anchor="middle">bot check</text>
+        <text class="ts" x="484" y="279">lane failed, the job continues</text>
+
+        <!-- lane D -->
+        <rect class="nd agentx" x="280" y="304" width="447" height="22" rx="3"/><text class="lbl" x="503" y="319" text-anchor="middle">unknown site: Step 5 Preview drives the agent (slower)</text>
+
+        <!-- distributor -->
+        <rect class="nd agent" x="280" y="344" width="16" height="22" rx="3"/>
+        <line class="run" x1="296" y1="355" x2="427" y2="355"/><text class="lbl" x="304" y="340">SMS · no reply in 20 s</text>
+        <rect class="nd agent" x="427" y="344" width="266" height="22" rx="3"/><text class="lbl" x="560" y="359" text-anchor="middle">call · J9 on each supplier line</text>
+        <rect class="nd agent" x="699" y="344" width="28" height="22" rx="3"/><text class="lbl" x="713" y="359" text-anchor="middle">SMS</text>
+
+        <!-- orchestrator -->
+        <circle class="dot" cx="410" cy="395" r="4"/><circle class="dot" cx="460" cy="395" r="4"/><circle class="dot" cx="510" cy="395" r="4"/><circle class="dot" cx="527" cy="395" r="4"/><circle class="dot" cx="627" cy="395" r="4"/>
+        <text class="lbl" x="410" y="420" text-anchor="middle">first plan</text>
+        <text class="lbl" x="627" y="420" text-anchor="middle">call offer → re-plan</text>
+        <rect class="nd code" x="728" y="384" width="44" height="22" rx="3"/><text class="lbl" x="750" y="399" text-anchor="middle">rank</text>
+        <rect class="nd code" x="782" y="384" width="70" height="22" rx="3"/><text class="lbl" x="817" y="399" text-anchor="middle">rules→cards</text>
+
+        <!-- screen band -->
+        <text class="hdr" x="205" y="462" text-anchor="middle">screens 0–1</text>
+        <text class="hdr" x="510" y="462" text-anchor="middle">screen 2 · working</text>
+        <text class="hdr" x="768" y="462" text-anchor="middle">3</text>
+        <text class="hdr" x="875" y="462" text-anchor="middle">screen 4</text>
+      </svg>
+    </div>
+    <figcaption>The times are design targets for the fast path, not measurements. The team times them at H10. Each dot is an event that makes the optimizer run again. The subset step prices smaller carts for the top 2 split plans in the same session. Lane D shows that the LLM agent can handle an unknown site without making the plan wait for it.</figcaption>
+  </figure>
+
+  <h3>Inside one supplier lane</h3>
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 980 280" role="img" aria-label="Inside one lane: search, rank results with J4, judge the listing with J5, add to cart, read totals with J7, check the sum in code. A guard runs after every navigation and stops the session at the payment step.">
+        <defs><marker id="ahD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+        <text class="hdr" x="10" y="22">Search and cart (before approval)</text>
+        <rect class="nd agent" x="10" y="36" width="120" height="50" rx="6"/><text class="tl" x="22" y="56">Search URL</text><text class="ts" x="22" y="74">adapter or agent</text>
+        <rect class="nd llm" x="150" y="36" width="120" height="50" rx="6"/><text class="tl" x="162" y="56">Result list</text><text class="ts" x="162" y="74">DOM → J4 rerank</text>
+        <rect class="nd llm" x="290" y="36" width="120" height="50" rx="6"/><text class="tl" x="302" y="56">Product page</text><text class="ts" x="302" y="74">regex → J5 judge</text>
+        <rect class="nd agent" x="430" y="36" width="120" height="50" rx="6"/><text class="tl" x="442" y="56">Add to cart</text><text class="ts" x="442" y="74">all matched items</text>
+        <rect class="nd llm" x="570" y="36" width="120" height="50" rx="6"/><text class="tl" x="582" y="56">Cart page</text><text class="ts" x="582" y="74">regex $ → J7</text>
+        <rect class="nd code" x="710" y="36" width="120" height="50" rx="6"/><text class="tl" x="722" y="56">Sum check</text><text class="ts" x="722" y="74">±$0.01 → verified</text>
+        <rect class="nd code" x="850" y="36" width="120" height="50" rx="6"/><text class="tl" x="862" y="56">cart_ready</text><text class="ts" x="862" y="74">event → optimizer</text>
+        <path class="ar" d="M130 61 H150" marker-end="url(#ahD)"/><path class="ar" d="M270 61 H290" marker-end="url(#ahD)"/><path class="ar" d="M410 61 H430" marker-end="url(#ahD)"/><path class="ar" d="M550 61 H570" marker-end="url(#ahD)"/><path class="ar" d="M690 61 H710" marker-end="url(#ahD)"/><path class="ar" d="M830 61 H850" marker-end="url(#ahD)"/>
+
+        <path class="run" d="M70 86 V122"/><path class="run" d="M210 86 V122"/><path class="run" d="M350 86 V122"/><path class="run" d="M490 86 V122"/><path class="run" d="M630 86 V122"/>
+        <rect class="nd bad" x="10" y="122" width="960" height="38" rx="6"/>
+        <text class="tsb" x="22" y="145">Payment guard, after every navigation and before every click or type: DOM card-field check + J6 page state. P(payment) ≥ 0.2 → stop. J6 unavailable → stop.</text>
+
+        <path class="run" d="M210 160 V196"/><path class="run" d="M490 160 V196"/><path class="run" d="M630 160 V196"/>
+        <text class="hdr" x="10" y="190">Checkout (after approval)</text>
+        <rect class="nd agent" x="10" y="206" width="120" height="50" rx="6"/><text class="tl" x="22" y="226">Set cart</text><text class="ts" x="22" y="244">to the plan subset</text>
+        <rect class="nd agent" x="150" y="206" width="120" height="50" rx="6"/><text class="tl" x="162" y="226">Checkout</text><text class="ts" x="162" y="244">guest path</text>
+        <rect class="nd llm" x="290" y="206" width="120" height="50" rx="6"/><text class="tl" x="302" y="226">Shipping step</text><text class="ts" x="302" y="244">J6 confirms</text>
+        <rect class="nd agent" x="430" y="206" width="120" height="50" rx="6"/><text class="tl" x="442" y="226">Fill address</text><text class="ts" x="442" y="244">team-controlled</text>
+        <rect class="nd llm" x="570" y="206" width="120" height="50" rx="6"/><text class="tl" x="582" y="226">Payment step</text><text class="ts" x="582" y="244">J6 + DOM detect</text>
+        <rect class="nd bad" x="710" y="206" width="120" height="50" rx="6"/><text class="tl" x="722" y="226">STOP</text><text class="ts" x="722" y="244">no card data here</text>
+        <rect class="nd owner" x="850" y="206" width="120" height="50" rx="6"/><text class="tl" x="862" y="226">Live view</text><text class="ts" x="862" y="244">screen 4</text>
+        <path class="ar" d="M130 231 H150" marker-end="url(#ahD)"/><path class="ar" d="M270 231 H290" marker-end="url(#ahD)"/><path class="ar" d="M410 231 H430" marker-end="url(#ahD)"/><path class="ar" d="M550 231 H570" marker-end="url(#ahD)"/><path class="ar bad" d="M690 231 H710" marker-end="url(#ahD)"/><path class="ar" d="M830 231 H850" marker-end="url(#ahD)"/>
+      </svg>
+    </div>
+    <figcaption>Code finds the candidates (result titles, pack counts such as "Box of 100", dollar amounts). Jev chooses among them. Code does all the arithmetic. The same session does both rows, so the cart that was checked is the cart at checkout.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>3. Technical architecture</h2>
+  <p class="intro">One Python backend holds all the state, the plain-code stages, the Jev client and the payment rules. The supplier lanes and the phone service are workers that report events back. Only the webhook routes are open to the internet, through a tunnel.</p>
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 980 640" role="img" aria-label="Next.js dashboard talks to a FastAPI backend over REST and SSE. The orchestrator dispatches to supplier lanes, the CREAO client and the Photon service. The Jev client calls Jev and OpenRouter. Photon and ElevenLabs send webhooks through a tunnel.">
+        <defs><marker id="ahC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+        <text class="hdr" x="100" y="26" text-anchor="middle">Client</text>
+        <text class="hdr" x="375" y="26" text-anchor="middle">Backend · FastAPI, Python</text>
+        <text class="hdr" x="660" y="26" text-anchor="middle">Workers</text>
+        <text class="hdr" x="885" y="26" text-anchor="middle">Outside services</text>
+
+        <rect class="nd owner" x="10" y="56" width="180" height="200" rx="8"/>
+        <text class="th" x="24" y="80">Next.js dashboard</text>
+        <text class="ts" x="24" y="104">5 screens, designed in Paper</text>
+        <text class="ts" x="24" y="122">lane tiles: live view or</text>
+        <text class="ts" x="24" y="138">screenshot stream</text>
+        <text class="ts" x="24" y="156">call panel</text>
+        <text class="ts" x="24" y="174">SSE + Last-Event-ID</text>
+        <text class="ts" x="24" y="192">admin drawer: modes,</text>
+        <text class="ts" x="24" y="208">preflight results</text>
+        <text class="ts" x="24" y="226">Sentry Session Replay</text>
+
+        <rect class="nd box" x="230" y="44" width="290" height="584" rx="10"/>
+        <rect class="nd code" x="250" y="64" width="250" height="40" rx="6"/><text class="tl" x="262" y="81">Jobs API</text><text class="ts" x="262" y="97">POST /jobs (idempotent) · approve</text>
+        <rect class="nd code" x="250" y="114" width="250" height="40" rx="6"/><text class="tl" x="262" y="131">Event server</text><text class="ts" x="262" y="147">SSE · resend from the event log</text>
+        <rect class="nd code" x="250" y="164" width="250" height="40" rx="6"/><text class="tl" x="262" y="181">Orchestrator</text><text class="ts" x="262" y="197">job + lane state machines, deadline</text>
+        <rect class="nd code" x="250" y="214" width="250" height="40" rx="6"/><text class="tl" x="262" y="231">Plain-code stages</text><text class="ts" x="262" y="247">normalize · optimize · rank · rules</text>
+        <rect class="nd code" x="250" y="264" width="250" height="40" rx="6"/><text class="tl" x="262" y="281">Cards</text><text class="ts" x="262" y="297">simulated, one per supplier</text>
+        <rect class="nd code" x="250" y="314" width="250" height="40" rx="6"/><text class="tl" x="262" y="331">Webhook routes</text><text class="ts" x="262" y="347">shared secret · dedupe by event id</text>
+        <rect class="nd code" x="250" y="364" width="250" height="40" rx="6"/><text class="tl" x="262" y="381">Preflight + run modes</text><text class="ts" x="262" y="397">live · cached · replay per dependency</text>
+        <rect class="nd llm" x="250" y="414" width="250" height="40" rx="6"/><text class="tl" x="262" y="431">Jev client + decide()</text><text class="ts" x="262" y="447">cache · 6 at a time · Jev → Step 5</text>
+        <rect class="nd code" x="250" y="464" width="250" height="40" rx="6"/><text class="tl" x="262" y="481">Data loader + evidence</text><text class="ts" x="262" y="497">bills, injected bills · /evidence</text>
+        <rect class="nd code" x="250" y="514" width="250" height="40" rx="6"/><text class="tl" x="262" y="531">SQLite (WAL)</text><text class="ts" x="262" y="547">jobs · lanes · events · decisions · cache</text>
+        <rect class="nd code" x="250" y="564" width="250" height="40" rx="6"/><text class="tl" x="262" y="581">Sentry SDK</text><text class="ts" x="262" y="597">tracing + AI agent monitoring</text>
+
+        <path class="ar" d="M190 84 H250" marker-end="url(#ahC)"/><text class="lbl" x="220" y="78" text-anchor="middle">REST</text>
+        <path class="ar" d="M250 134 H190" marker-end="url(#ahC)"/><text class="lbl" x="220" y="128" text-anchor="middle">SSE</text>
+
+        <rect class="nd agent" x="560" y="64" width="200" height="70" rx="6"/><text class="tl" x="572" y="84">Supplier lanes ×4</text><text class="ts" x="572" y="101">browser_use Agent + adapters</text><text class="ts" x="572" y="117">Jev tools · payment guard</text>
+        <rect class="nd agent" x="560" y="150" width="200" height="48" rx="6"/><text class="tl" x="572" y="170">CREAO client</text><text class="ts" x="572" y="187">start run, poll, cache</text>
+        <rect class="nd agent" x="560" y="214" width="200" height="48" rx="6"/><text class="tl" x="572" y="234">Photon service (Node)</text><text class="ts" x="572" y="251">SMS · email · voice</text>
+        <rect class="nd code" x="560" y="278" width="200" height="48" rx="6"/><text class="tl" x="572" y="298">Auto-replier</text><text class="ts" x="572" y="315">scripted supplier replies</text>
+
+        <path class="ar" d="M500 184 H540 M540 99 V238"/>
+        <path class="ar" d="M540 99 H560" marker-end="url(#ahC)"/>
+        <path class="ar" d="M540 174 H560" marker-end="url(#ahC)"/>
+        <path class="ar" d="M540 238 H560" marker-end="url(#ahC)"/>
+        <text class="lbl" x="546" y="56">dispatch</text>
+        <path class="ar" d="M660 278 V262" marker-end="url(#ahC)"/>
+
+        <rect class="nd ext" x="800" y="64" width="170" height="40" rx="6"/><text class="tl" x="812" y="81">Cloud browser</text><text class="ts" x="812" y="97">local Chromium in dev</text>
+        <rect class="nd ext" x="800" y="114" width="170" height="34" rx="6"/><text class="tl" x="812" y="136">Supplier sites ×3 + 1</text>
+        <rect class="nd ext" x="800" y="156" width="170" height="40" rx="6"/><text class="tl" x="812" y="173">agent.creao.ai</text><text class="ts" x="812" y="189">API Trigger, polled</text>
+        <rect class="nd ext" x="800" y="214" width="170" height="40" rx="6"/><text class="tl" x="812" y="231">Photon SMS number</text><text class="ts" x="812" y="247">Voice profile</text>
+        <rect class="nd ext" x="800" y="272" width="170" height="40" rx="6"/><text class="tl" x="812" y="289">ElevenLabs</text><text class="ts" x="812" y="305">voice agent</text>
+        <rect class="nd ext" x="800" y="326" width="170" height="40" rx="6"/><text class="tl" x="812" y="343">cloudflared tunnel</text><text class="ts" x="812" y="359">webhook routes only</text>
+        <rect class="nd ext" x="800" y="414" width="170" height="40" rx="6"/><text class="tl" x="812" y="431">OpenRouter</text><text class="ts" x="812" y="447">step-5-preview</text>
+        <rect class="nd ext" x="800" y="466" width="170" height="40" rx="6"/><text class="tl" x="812" y="483">Jev (TypeSafe)</text><text class="ts" x="812" y="499">jev-latest</text>
+        <rect class="nd ext" x="800" y="564" width="170" height="40" rx="6"/><text class="tl" x="812" y="581">Sentry</text><text class="ts" x="812" y="597">Replay · Tracing · AI</text>
+
+        <path class="ar" d="M760 84 H800" marker-end="url(#ahC)"/>
+        <path class="ar" d="M885 104 V114" marker-end="url(#ahC)"/>
+        <path class="ar" d="M760 176 H800" marker-end="url(#ahC)"/>
+        <path class="ar" d="M760 238 H800" marker-end="url(#ahC)"/>
+        <path class="ar" d="M885 254 V272" marker-end="url(#ahC)"/><text class="lbl" x="893" y="267">SIP</text>
+        <path class="ar" d="M885 312 V326" marker-end="url(#ahC)"/>
+        <path class="ar" d="M800 346 H500" marker-end="url(#ahC)"/><text class="lbl" x="650" y="340" text-anchor="middle">inbound SMS, call events</text>
+        <path class="ar" d="M500 434 H800" marker-end="url(#ahC)"/><text class="lbl" x="650" y="428" text-anchor="middle">LLM + Jev calls</text>
+        <path class="ar" d="M780 434 V486 H800" marker-end="url(#ahC)"/>
+        <path class="ar dash" d="M500 584 H800" marker-end="url(#ahC)"/><text class="lbl" x="650" y="578" text-anchor="middle">traces</text>
+      </svg>
+    </div>
+    <figcaption>The lanes' Jev tools call the backend's Jev client, so every decision is cached, rate-limited and logged in one place. When Step 5 Preview passes the H3 gate, the lanes' LLM agent also calls OpenRouter. The QuickBooks dataset is local files that the data loader reads.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>4. Restock planner and feedback loop</h2>
+  <p class="intro">The planner decides when to order and how much. The sourcing pipeline decides where. Code makes every number. Jev only names the cause of a forecast miss (J11) and reads owner messages (J12), and code applies a fixed rule for each answer.</p>
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 980 356" role="img" aria-label="Real invoices become weekly sales, then a damped-trend forecast, then supply use through assumed ratios, then an order rule. A daily planner check starts a sourcing job. Each week code compares actual sales with the forecast. On a miss, code lists the facts, J11 names the cause and code applies that cause's update rule, or asks the owner by SMS when unsure. An owner SMS goes through J12 to a typed adjustment.">
+        <defs><marker id="ahP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+        <text class="hdr" x="10" y="26">When and how much · code, daily</text>
+        <rect class="nd code" x="10" y="40" width="120" height="56" rx="6"/><text class="tl" x="22" y="62">Real invoices</text><text class="ts" x="22" y="80">1,574, 6 products</text>
+        <rect class="nd code" x="150" y="40" width="120" height="56" rx="6"/><text class="tl" x="162" y="62">Weekly sales</text><text class="ts" x="162" y="80">per product</text>
+        <rect class="nd code" x="290" y="40" width="120" height="56" rx="6"/><text class="tl" x="302" y="62">Forecast</text><text class="ts" x="302" y="80">damped + range</text>
+        <rect class="nd code" x="430" y="40" width="120" height="56" rx="6"/><text class="tl" x="442" y="62">Supply use</text><text class="ts" x="442" y="80">× assumed ratios</text>
+        <rect class="nd code" x="570" y="40" width="120" height="56" rx="6"/><text class="tl" x="582" y="62">Order rule</text><text class="ts" x="582" y="80">order-up-to S, date</text>
+        <rect class="nd code" x="710" y="40" width="120" height="56" rx="6"/><text class="tl" x="722" y="62">/planner/check</text><text class="ts" x="722" y="80">daily, CREAO run</text>
+        <rect class="nd agent" x="850" y="40" width="120" height="56" rx="6"/><text class="tl" x="862" y="62">Sourcing job</text><text class="ts" x="862" y="80">sections 1–3</text>
+        <path class="ar" d="M130 68 H150" marker-end="url(#ahP)"/><path class="ar" d="M270 68 H290" marker-end="url(#ahP)"/><path class="ar" d="M410 68 H430" marker-end="url(#ahP)"/><path class="ar" d="M550 68 H570" marker-end="url(#ahP)"/><path class="ar" d="M690 68 H710" marker-end="url(#ahP)"/><path class="ar" d="M830 68 H850" marker-end="url(#ahP)"/>
+
+        <text class="hdr" x="10" y="190">Every week</text>
+        <path class="ar" d="M190 96 V170" marker-end="url(#ahP)"/>
+        <path class="ar" d="M320 96 V124 H240 V170" marker-end="url(#ahP)"/>
+        <path class="ar" d="M770 170 V140 H380 V96" marker-end="url(#ahP)"/>
+        <text class="lbl" x="575" y="134" text-anchor="middle">update the clean history or the level</text>
+        <rect class="nd code" x="150" y="170" width="120" height="56" rx="6"/><text class="tl" x="162" y="192">Compare</text><text class="ts" x="162" y="210">actual vs forecast</text>
+        <rect class="nd code" x="290" y="170" width="120" height="56" rx="6"/><text class="tl" x="302" y="192">Miss?</text><text class="ts" x="302" y="210">outside the range</text>
+        <rect class="nd code" x="430" y="170" width="120" height="56" rx="6"/><text class="tl" x="442" y="192">Code facts</text><text class="ts" x="442" y="210">customer, launch</text>
+        <rect class="nd llm" x="570" y="170" width="120" height="56" rx="6"/><text class="tl" x="582" y="192">J11 cause</text><text class="ts" x="582" y="210">Choice of 8 causes</text>
+        <rect class="nd code" x="710" y="170" width="120" height="56" rx="6"/><text class="tl" x="722" y="192">Apply update</text><text class="ts" x="722" y="210">rule or adjustment</text>
+        <path class="ar" d="M270 198 H290" marker-end="url(#ahP)"/><path class="ar" d="M410 198 H430" marker-end="url(#ahP)"/><path class="ar" d="M550 198 H570" marker-end="url(#ahP)"/><path class="ar" d="M690 198 H710" marker-end="url(#ahP)"/>
+        <text class="lbl" x="420" y="164" text-anchor="middle">yes</text>
+        <text class="lbl" x="350" y="242" text-anchor="middle">no: no change</text>
+
+        <text class="hdr" x="10" y="262">Owner messages</text>
+        <rect class="nd owner" x="10" y="272" width="120" height="56" rx="6"/><text class="tl" x="22" y="294">Owner SMS</text><text class="ts" x="22" y="312">"+300 buns Sat"</text>
+        <rect class="nd llm" x="150" y="272" width="120" height="56" rx="6"/><text class="tl" x="162" y="294">J12</text><text class="ts" x="162" y="312">item, kind, qty, date</text>
+        <rect class="nd code" x="290" y="272" width="110" height="56" rx="6"/><text class="tl" x="302" y="294">Adjustment</text><text class="ts" x="302" y="312">typed, confirmed</text>
+        <path class="ar" d="M130 300 H150" marker-end="url(#ahP)"/><path class="ar" d="M270 300 H290" marker-end="url(#ahP)"/>
+        <path class="ar" d="M345 328 V344 H790 V226" marker-end="url(#ahP)"/>
+        <path class="ar dash" d="M630 226 V272" marker-end="url(#ahP)"/><text class="lbl" x="638" y="252">unsure</text>
+        <rect class="nd owner" x="570" y="272" width="120" height="56" rx="6"/><text class="tl" x="582" y="294">Ask the owner</text><text class="ts" x="582" y="312">one SMS question</text>
+        <path class="ar" d="M690 300 H770 V226" marker-end="url(#ahP)"/><text class="lbl" x="800" y="292">answer, saved</text><text class="lbl" x="800" y="306">as a label</text>
+      </svg>
+    </div>
+    <figcaption>Jev never sees raw numbers. Code turns each miss into a word bucket such as "far below range" and resolves all dates. Until the owner answers, the forecast does not change. The data covers one year only, so the forecast learns no seasonality. The supply-use ratios are owner-set and labelled "assumed".</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>5. Jev decision points</h2>
+  <p class="intro">Jev answers narrow questions with calibrated probabilities. Code finds the candidates, Jev chooses among them, and code acts on the answer. Jev never does arithmetic, writes text or reads images.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>ID</th><th>Decision</th><th>Question type</th><th>Code uses it for</th><th>When unsure</th></tr></thead>
+      <tbody>
+        <tr><td class="n">J1</td><td>Bill-line triage</td><td>Choice category · Noul online-buyable</td><td>Insights, prefilled list</td><td>"Uncategorized"</td></tr>
+        <tr><td class="n">J3</td><td>Supplier filter</td><td>4 Nouls</td><td>Which suppliers get a lane</td><td>Drop the candidate</td></tr>
+        <tr><td class="n">J4</td><td>Search-result rerank</td><td>One Score per result</td><td>Which listings to open</td><td>Open the top 3</td></tr>
+        <tr><td class="n">J5</td><td>Listing judge</td><td>Score match · Noul per must-have · Choice pack count · Noul in stock</td><td>Eligible offers, warnings</td><td>Step 5 Preview, then <code>low_match</code></td></tr>
+        <tr><td class="n">J6</td><td>Page state (safety)</td><td>Choice of 9 page types</td><td>Payment stop, fallbacks</td><td class="bad">Stop the lane</td></tr>
+        <tr><td class="n">J7</td><td>Cart totals</td><td>4 Choices over $ candidates</td><td>Verified totals (with the sum check)</td><td>Not verified</td></tr>
+        <tr><td class="n">J8</td><td>Reply intent + price</td><td>Choice intent · Choice per price</td><td>Distributor thread</td><td>Step 5 Preview</td></tr>
+        <tr><td class="n">J9</td><td>Live call line</td><td>Noul new offer · Choice item · Noul beats price</td><td>Live re-plan</td><td>"Heard, not confirmed"</td></tr>
+        <tr><td class="n">J10</td><td>Quote risk terms</td><td>3 Nouls</td><td>Warnings, reliability</td><td>Show the warning</td></tr>
+        <tr><td class="n">J11</td><td>Forecast-miss cause</td><td>Choice of 8 causes (one-time event, lasting shift up or down, customer lost or gained, supply shortage, substitution, noise)</td><td>The update rule for that cause</td><td>Ask the owner by SMS; no change until then</td></tr>
+        <tr><td class="n">J12</td><td>Owner message → adjustment</td><td>Choice item · Choice kind · Choice quantity and date among regex candidates</td><td>A typed <code>ForecastAdjustment</code></td><td>Confirm by SMS before applying</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="intro">About 150 Jev calls per run, about $0.01. <code>decide()</code> asks Jev first. A safety question never escalates and takes the safe branch. Other unsure answers go to Step 5 Preview. Every pair of answers is logged for the Intuit evaluation.</p>
+</section>
+
+<section>
+  <h2>6. Reliability</h2>
+  <p class="intro">The system fails closed on safety and degrades on everything else. A failure removes one supplier, one channel or one decision. The job still ends with labelled results.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Dependency</th><th>Timeout</th><th>When it fails</th></tr></thead>
+      <tbody>
+        <tr><td>Jev, J6 safety</td><td>3 s</td><td class="bad">Stop the lane</td></tr>
+        <tr><td>Jev, other</td><td>5 s</td><td>Step 5 Preview, then "unsure" warning</td></tr>
+        <tr><td>Step 5 Preview</td><td>30 s</td><td>Template spec and summary · fallback browser model</td></tr>
+        <tr><td>CREAO</td><td>5 min, poll 10 s</td><td>Cached result, then the pre-approved site list</td></tr>
+        <tr><td>Browser lane</td><td>45 s search · 45 s cart · 20 s subset</td><td>Adapter → LLM agent → lane failed, job continues</td></tr>
+        <tr><td>Cloud browser start</td><td>20 s</td><td>Local browser with a screenshot stream</td></tr>
+        <tr><td>Call connect</td><td>20 s</td><td>One redial, then an SMS-only quote</td></tr>
+        <tr><td>SSE stream</td><td>n/a</td><td>Reconnect with Last-Event-ID; the server resends from the log</td></tr>
+        <tr><td>Whole run stalls 20 s+ (demo)</td><td>n/a</td><td>Replay switch, said out loud</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="grid2">
+    <div class="card"><span class="gate">Before the demo</span><h3>Preflight</h3><ul><li>Keys and tunnel answer.</li><li>Jev and OpenRouter pings, with latency.</li><li>A cloud browser starts and gives a live view URL.</li><li>Canary search on each site: no login wall, no bot check.</li><li>Photon test SMS. CREAO cache age.</li><li>A red check sets that dependency to cached mode.</li></ul></div>
+    <div class="card"><span class="gate">Same input, same output</span><h3>Run modes</h3><ul><li><code>live</code>, <code>cached</code> or <code>replay</code> for each dependency.</li><li>Step 5 runs at temperature 0. Step 5 and Jev answers are cached by input hash.</li><li>Fixture mode needs no keys. CI and the H6 checkpoint use it.</li></ul></div>
+    <div class="card"><span class="gate">H16</span><h3>Failure drills</h3><ul><li>Kill a lane. Jev down. OpenRouter down. CREAO slow.</li><li>Call not answered. SSE dropped. Session expired.</li><li>Each must end as the table says.</li></ul></div>
+    <div class="card"><span class="gate bad">Never</span><h3>Guardrails</h3><ul><li>No payment is ever submitted. Code enforces the stop.</li><li>No card data in a browser or a prompt.</li><li>The voice agent says that it is an AI and calls only teammates.</li><li>Synthetic data and replays are labelled.</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <h2>Gates</h2>
+  <div class="grid2">
+    <div class="card"><span class="gate">H0</span><h3>Sites, name, tunnel</h3><ul><li>Site preflight, keep 3.</li><li>Tunnel up for the webhooks.</li><li>Ask Visa about business purchasing.</li></ul></div>
+    <div class="card"><span class="gate">H3</span><h3>Step 5 Preview drives a browser</h3><ul><li>A guest cart on one real site, through the open-source agent.</li><li>Confirm the live view URL from the cloud browser.</li></ul></div>
+    <div class="card"><span class="gate">H4</span><h3>Jev access</h3><ul><li>Key, rate limits, p50 latency.</li><li>No key: <code>decide()</code> uses Step 5 Preview only.</li></ul></div>
+    <div class="card"><span class="gate">H14</span><h3>Full real run under 150 s</h3><ul><li>Decide the cut order.</li><li>The Visa card is the backend's first cut.</li></ul></div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "distributor": {"id": "vend-syn-larkmoor", "name": "Larkmoor Foodservice Supply (fictional)", "phone": "+10000000001", "email": "quotes@larkmoor.example"},
+  "smsReply": null,
+  "callConnectSeconds": 4,
+  "offerFactor": 0.97,
+  "quotedDeliveryFee": 0.0,
+  "quotedLeadTimeDays": 2,
+  "turns": [
+    {"speaker": "agent", "text": "Hi, this is an AI assistant calling on behalf of Hearthloaf Bakeries about a supplies order. Is now a good time?", "after": 2},
+    {"speaker": "supplier", "text": "Sure, go ahead.", "after": 3},
+    {"speaker": "agent", "text": "We need {items}. The best price we have found online is {best_total} delivered. Can you beat that?", "after": 4},
+    {"speaker": "supplier", "text": "Let me look. For the same list I can do {offer_total}, delivered free on Thursday.", "after": 6, "offer": true},
+    {"speaker": "agent", "text": "Thank you. I will share that with the owner. I can't confirm an order on this call. Could you text the itemized quote to this number?", "after": 4},
+    {"speaker": "supplier", "text": "Sure, I'll text it over.", "after": 3}
+  ],
+  "quoteText": "Larkmoor quote for Hearthloaf: gloves, bakery boxes, parchment liners, bread bags. Total {offer_total}, free delivery Thursday."
+}

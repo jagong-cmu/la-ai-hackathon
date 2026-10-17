@@ -1,0 +1,35 @@
+{
+  "supplier": {"id": "bravo", "name": "Bravo Restaurant Supply (fixture)", "url": "https://bravo.example", "adapter": "fixture", "origin": "fixture"},
+  "mode": "adapter",
+  "behavior": {"searchSeconds": 24, "cartSeconds": 16, "subsetSeconds": 7, "checkoutSeconds": 9, "blockAt": null},
+  "minimumOrderValue": 50,
+  "freeShippingThreshold": 150,
+  "flatShipping": 9.99,
+  "taxRate": 0.06,
+  "listings": [
+    {
+      "itemId": "syn-gloves", "sku": "B-NG-100M", "packPrice": 12.25,
+      "title": "Disposable Nitrile Gloves Medium 100/Box",
+      "text": "100/box. Powder free. Blue. In stock.",
+      "jev": {"matchProbs": {"0": 0.01, "1": 0.06, "2": 0.93}, "mustHave": [0.99, 0.95], "inStock": 0.95, "pack": "100/box"}
+    },
+    {
+      "itemId": "syn-bakery-boxes", "sku": "B-BB1010-250", "packPrice": 172.50,
+      "title": "10\" x 10\" x 5\" White Window Bakery Box - 250/Case",
+      "text": "250/case. Lock-corner white bakery box with window. In stock.",
+      "jev": {"matchProbs": {"0": 0.01, "1": 0.05, "2": 0.94}, "mustHave": [0.96, 0.95], "inStock": 0.96, "pack": "250/case"}
+    },
+    {
+      "itemId": "syn-parchment", "sku": "B-PL-HS500", "packPrice": 24.75,
+      "title": "Half Size Parchment Paper Sheet Pan Liner - Pack of 500",
+      "text": "Pack of 500. Quilon coated. In stock.",
+      "jev": {"matchProbs": {"0": 0.02, "1": 0.07, "2": 0.91}, "mustHave": [0.95, 0.72], "inStock": 0.93, "pack": "Pack of 500"}
+    },
+    {
+      "itemId": "syn-bread-bags", "sku": "B-BAG-841800", "packPrice": 54.00,
+      "title": "Bread Bag 8 x 4 x 18 Clear - Case of 1000",
+      "text": "Case of 1000. Low density poly. In stock.",
+      "jev": {"matchProbs": {"0": 0.01, "1": 0.05, "2": 0.94}, "mustHave": [0.97, 0.95], "inStock": 0.95, "pack": "Case of 1000"}
+    }
+  ]
+}

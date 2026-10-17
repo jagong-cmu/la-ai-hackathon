@@ -1,0 +1,23 @@
+{
+  "supplier": {"id": "delta", "name": "Delta Kitchen Depot (fixture, unknown site)", "url": "https://delta.example", "adapter": null, "origin": "fixture"},
+  "mode": "llm_agent",
+  "behavior": {"searchSeconds": 125, "cartSeconds": 40, "subsetSeconds": 15, "checkoutSeconds": 20, "blockAt": null},
+  "minimumOrderValue": 0,
+  "freeShippingThreshold": 500,
+  "flatShipping": 19.99,
+  "taxRate": 0.06,
+  "listings": [
+    {
+      "itemId": "syn-gloves", "sku": "D-GLV-CS1000", "packPrice": 109.00,
+      "title": "Nitrile Gloves Medium Powder Free, Case (10 boxes of 100)",
+      "text": "Case contains 10 boxes of 100 gloves (1,000 gloves). 10/100. In stock.",
+      "jev": {"matchProbs": {"0": 0.01, "1": 0.09, "2": 0.90}, "mustHave": [0.97, 0.93], "inStock": 0.9, "pack": "1,000 gloves"}
+    },
+    {
+      "itemId": "syn-parchment", "sku": "D-PARCH-HS", "packPrice": 39.50,
+      "title": "Parchment Liner, Full Sheet, 16 x 24 - 1000 ct",
+      "text": "1000 ct. Full sheet size.",
+      "jev": {"matchProbs": {"0": 0.30, "1": 0.62, "2": 0.08}, "mustHave": [0.9, 0.05], "inStock": 0.9, "pack": "1000 ct"}
+    }
+  ]
+}
