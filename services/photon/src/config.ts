@@ -52,6 +52,7 @@ export interface Config {
     agentPhoneNumberId: string;
     baseUrl: string;
     webhookSecret: string; // post-call webhook HMAC secret
+    toolSecret: string; // X-Tool-Secret header that the live-transcript webhook tool sends
     ringingTimeoutS: number;
     pollMs: number;
     callMaxS: number;
@@ -93,6 +94,7 @@ export function readConfig(): Config {
       agentPhoneNumberId: str("ELEVENLABS_AGENT_PHONE_NUMBER_ID"),
       baseUrl: str("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io").replace(/\/$/, ""),
       webhookSecret: str("ELEVENLABS_WEBHOOK_SECRET"),
+      toolSecret: str("ELEVENLABS_TOOL_SECRET"),
       ringingTimeoutS: num("CALL_RINGING_TIMEOUT_S", 20),
       pollMs: num("ELEVENLABS_POLL_MS", 1500),
       callMaxS: num("CALL_MAX_S", 300),
@@ -114,6 +116,7 @@ export function describeConfig(c: Config): Record<string, string | number> {
     photonWebhookSecret: set(c.photon.webhookSecret),
     elevenlabs: set(c.elevenlabs.apiKey && c.elevenlabs.agentId && c.elevenlabs.agentPhoneNumberId),
     elevenlabsWebhookSecret: set(c.elevenlabs.webhookSecret),
+    elevenlabsToolSecret: set(c.elevenlabs.toolSecret),
     serviceToken: set(c.serviceToken),
   };
 }

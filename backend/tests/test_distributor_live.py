@@ -194,6 +194,34 @@ async def test_post_call_transcript_is_used_when_no_live_lines(settings: Setting
     assert len(lines) == 2  # the live line is not repeated from the post-call transcript
 
 
+async def test_live_tool_lines_are_shown_and_prices_come_from_the_exact_transcript(
+        settings: Settings, j9_decider: Decider) -> None:
+    script = [
+        {"type": "call_started"},
+        {"type": "transcript_line", "seq": 0, "speaker": "agent", "text": "Hi, this is an AI assistant.", "live": True},
+        # The agent's own note of the reply: a paraphrase with a wrong amount. It is never priced.
+        {"type": "transcript_line", "seq": 1, "speaker": "supplier", "text": "Gloves about $250.", "live": True},
+        {"type": "transcript_line", "seq": 2, "speaker": "supplier", "text": "  ", "live": True},
+        {"type": "call_ended", "outcome": "completed", "transcript": [
+            {"seq": 0, "role": "agent", "message": "Hi, this is an AI assistant."},
+            {"seq": 1, "role": "user", "message": "Gloves I can do at $240."},
+        ]},
+    ]
+    fake = FakePhoton(script)
+    events: list[tuple[str, dict]] = []
+    offers: list[SupplierOffers] = []
+    ctx = _ctx(settings, j9_decider, events, offers)
+    fake.ctx = ctx
+    result = await asyncio.wait_for(
+        LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler)).run(ctx), timeout=5)
+
+    lines = [(d["speaker"], d["text"], d.get("live")) for t, d in events if t == "transcript_line"]
+    assert lines == [("agent", "Hi, this is an AI assistant.", True), ("supplier", "Gloves about $250.", True)]
+    offer_events = [d for t, d in events if t == "call_offer"]
+    assert [d["price"] for d in offer_events] == [240.0]  # from the exact post-call line only
+    assert result is not None and [(p.item_id, p.pack_price) for p in result.products] == [("gloves", 240.0)]
+
+
 async def test_call_never_connects_degrades_to_sms_only(settings: Settings, j9_decider: Decider) -> None:
     fake = FakePhoton(script=[])  # the call is placed, but no call_started ever arrives
     events: list[tuple[str, dict]] = []

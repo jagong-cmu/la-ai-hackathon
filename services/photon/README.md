@@ -25,9 +25,33 @@ backend /webhooks/{photon|elevenlabs} ◀── sms_in, call_started, transcript
 | `sms_in` | `jobId, text, messageId` | `sms:<messageId>` |
 | `call_started` | `jobId, callId` | `<callId>:started` |
 | `transcript_line` | `jobId, callId, seq, speaker (agent or supplier), text` | `<callId>:t<seq>` |
+| `transcript_line` (live) | the same fields, plus `live: true` | `<callId>:live<n>` |
 | `call_ended` | `jobId, callId, outcome (completed, failed or no_answer), transcript: [{seq, speaker, text}], final: true` | `<callId>:ended` |
 
 The event IDs are stable. The poller and the post-call webhook can both report the end of a call, and the backend keeps only one (it removes duplicates by `eventId`). Inbound texts have no job ID. The service sends a text to the job that last texted that phone.
+
+## Live transcript (the `log_live_turn` tool)
+
+ElevenLabs fills the conversation transcript only after the call ends. The real-time monitor WebSocket is Enterprise-only: the API refuses `monitoring_enabled` with `403 monitoring_enterprise_only`. So the agent has a webhook tool, `log_live_turn`. Each time the person stops speaking, the agent calls the tool with what the person said (`supplier_said`) and the reply that it will say now (`agent_reply`). The tool runs in `immediate` mode, and the service answers it at once (it forwards the lines in the background). Do not use `async` mode: its "background task completed" result starts a second LLM turn, and the agent says each line twice.
+
+- The tool sends `POST {PHOTON_PUBLIC_URL}/elevenlabs/live-line` with the header `X-Tool-Secret: <ELEVENLABS_TOOL_SECRET>`.
+- The service forwards each line as a live `transcript_line`. After the first live line, the poller stops sending its own lines.
+- When the call connects, the service sends the agent's first message (read from the agent config while the phone rings) as the first live line.
+- ElevenLabs can call the tool twice for one turn. The service drops a turn that repeats the previous turn.
+- Measured on a real call (Oct 17) with the older design that sent the agent's *previous* line: supplier lines came about 2 s after speech, and agent lines about 13 s after speech. The current design sends each agent line as the agent starts to speak. The setup script also sets `thinking_budget` to 0, so that the tool call is written faster.
+- The backend shows live lines only. It reads prices (J9) from the exact post-call transcript and does not show those lines a second time.
+- The agent writes the lines itself, so a live line can differ a little from the exact words. The exact transcript is saved as evidence after the call.
+
+**Set it up** (run it again each time the tunnel URL changes):
+1. Start a tunnel to this service: `cloudflared tunnel --url "http://[::1]:8787"`. Use `[::1]`, because the service listens on IPv6, and a different app can hold `127.0.0.1:8787`.
+2. Run `python3 services/photon/scripts/setup_live_transcript.py https://<tunnel-host>` from the repo root. The script makes `ELEVENLABS_TOOL_SECRET`, saves `PHOTON_PUBLIC_URL`, creates or updates the tool, and adds the tool and a "# Live log" prompt section to the agent.
+3. Restart this service, so that it reads `ELEVENLABS_TOOL_SECRET`.
+
+**Watch a call:** `live-transcript/index.html` is a one-page viewer for a job's call. Serve it on port 3000 (the backend allows CORS from `http://localhost:3000` only) and open it with the job id:
+```bash
+python3 -m http.server 3000 --bind :: --directory services/photon/live-transcript
+open "http://localhost:3000/?job=<jobId>"
+```
 
 ## Guardrails (the code enforces them)
 
@@ -65,6 +89,8 @@ The service reads the repo-root `.env`, then `services/photon/.env`. The backend
 | `ELEVENLABS_AGENT_ID` | service | calls |
 | `ELEVENLABS_AGENT_PHONE_NUMBER_ID` | service | calls (the SIP-trunk number imported in ElevenLabs) |
 | `ELEVENLABS_WEBHOOK_SECRET` | service | only for the post-call webhook (optional) |
+| `ELEVENLABS_TOOL_SECRET` | service, setup script | the live transcript tool (`/elevenlabs/live-line`). The setup script makes it. |
+| `PHOTON_PUBLIC_URL` | setup script | the public tunnel URL of this service, for the live transcript tool |
 | `DEMO_DISTRIBUTOR_PHONE` | both | the only number that the distributor lane texts or calls |
 | `OWNER_PHONE` | service | allowlist |
 | `PHOTON_ALLOWED_PHONES` | service | optional extra team numbers, separated by commas |

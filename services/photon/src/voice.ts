@@ -46,6 +46,12 @@ export interface VoiceApi {
   readonly mode: "elevenlabs" | "dry-run";
   startCall(to: string, variables: Record<string, string | number>): Promise<{ conversationId: string }>;
   getConversation(conversationId: string): Promise<Conversation>;
+  /** The agent's first message with the dynamic variables filled in, for the live transcript. */
+  firstMessage?(variables: Record<string, string | number>): Promise<string | null>;
+}
+
+export function fillVariables(template: string, variables: Record<string, string | number>): string {
+  return template.replace(/\{\{\s*([\w]+)\s*\}\}/g, (m, name: string) => (name in variables ? String(variables[name]) : m));
 }
 
 export function dynamicVariables(jobId: string, ctx: OpeningContext): Record<string, string | number> {
@@ -95,6 +101,24 @@ export class ElevenLabsVoice implements VoiceApi {
       throw new Error(`outbound call not started: ${data.message ?? "no conversation_id"}`);
     }
     return { conversationId: data.conversation_id };
+  }
+
+  private greeting: { text: string; at: number } | null = null;
+
+  /** Read from the agent config (cached for 60 s); null when it cannot be read. */
+  async firstMessage(variables: Record<string, string | number>): Promise<string | null> {
+    try {
+      if (!this.greeting || Date.now() - this.greeting.at > 60_000) {
+        const agent = (await this.call(`/v1/convai/agents/${encodeURIComponent(this.config.elevenlabs.agentId)}`)) as {
+          conversation_config?: { agent?: { first_message?: string } };
+        };
+        this.greeting = { text: agent.conversation_config?.agent?.first_message ?? "", at: Date.now() };
+      }
+      return this.greeting.text ? fillVariables(this.greeting.text, variables) : null;
+    } catch (err) {
+      console.warn(`[call] first message not read: ${(err as Error).message.slice(0, 120)}`);
+      return null;
+    }
   }
 
   async getConversation(conversationId: string): Promise<Conversation> {
@@ -147,14 +171,30 @@ export class CallTracker {
   private sentLines = new Set<number>();
   private started = false;
   private done = false;
+  private liveSeq = 0;
+  private lastTurn = "";
 
   constructor(
     private voice: VoiceApi,
     private forward: Forwarder,
     readonly jobId: string,
     readonly conversationId: string,
-    private opts: { pollMs: number; callMaxS: number },
+    private opts: { pollMs: number; callMaxS: number; greeting?: string | null },
   ) {}
+
+  /** call_started, then the agent's first message as the first live line (it plays on answer). */
+  private async markStarted(): Promise<void> {
+    if (this.started) return;
+    this.started = true;
+    await this.forward("elevenlabs", this.event("call_started", "started"));
+    const greeting = this.opts.greeting?.trim();
+    if (greeting) await this.sendLive("agent", greeting);
+  }
+
+  private async sendLive(speaker: "agent" | "supplier", text: string): Promise<void> {
+    const seq = this.liveSeq++;
+    await this.forward("elevenlabs", this.event("transcript_line", `live${seq}`, { seq, speaker, text, live: true }));
+  }
 
   get finished(): boolean {
     return this.done;
@@ -168,10 +208,10 @@ export class CallTracker {
     if (this.done) return;
     const turns = transcriptForBackend(conv.transcript);
     if (!this.started && (conv.status === "in-progress" || turns.length > 0 || conv.status === "done")) {
-      this.started = true;
-      await this.forward("elevenlabs", this.event("call_started", "started"));
+      await this.markStarted();
     }
-    if (conv.status === "in-progress") {
+    // Once the agent's live-log tool has sent lines, the polled lines would repeat them.
+    if (conv.status === "in-progress" && this.liveSeq === 0) {
       for (const t of turns) {
         if (this.sentLines.has(t.seq)) continue;
         this.sentLines.add(t.seq);
@@ -179,6 +219,30 @@ export class CallTracker {
       }
     }
     if (conv.status === "done" || conv.status === "failed") await this.end(conv.status, turns);
+  }
+
+  /**
+   * One turn from the agent's `log_live_turn` webhook tool, sent as the agent starts its reply:
+   * what the supplier just said, then what the agent is about to say. Lines are forwarded with
+   * `live: true` (display only; the backend reads prices from the exact post-call transcript).
+   * Event ids are `<id>:live<n>`. ElevenLabs can call the tool twice for one turn, so a turn
+   * that repeats the previous one is dropped.
+   */
+  async liveTurn(supplierSaid: string, agentReply: string): Promise<number> {
+    if (this.done) return 0;
+    const supplier = supplierSaid.trim();
+    const agent = agentReply.trim();
+    const key = `${supplier}\u0000${agent}`.toLowerCase().replace(/\s+/g, " ");
+    if (key === this.lastTurn) return 0;
+    this.lastTurn = key; // set before any await: the two duplicate calls arrive together
+    await this.markStarted();
+    let sent = 0;
+    for (const [speaker, text] of [["supplier", supplier], ["agent", agent]] as const) {
+      if (!text) continue;
+      await this.sendLive(speaker, text);
+      sent += 1;
+    }
+    return sent;
   }
 
   async end(status: string, turns: ReturnType<typeof transcriptForBackend>): Promise<void> {

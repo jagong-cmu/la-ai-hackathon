@@ -55,7 +55,15 @@ The items and quantities are: {{items_list}}.
 - Keep each turn short: one or two sentences. Speak numbers clearly, for example "three hundred ninety-five dollars".
 - Say all money amounts in dollars and cents. Do not do arithmetic on their prices aloud; just repeat what they said.
 - Keep the whole call under four minutes.
+
+# Live log
+- Each time the person finishes speaking, call the tool `log_live_turn` one time. When it returns, say exactly the reply that you logged, one time. Do not call the tool again until the person speaks again.
+  - `supplier_said`: what the person just said, copied word for word. Do not shorten, correct or summarize it.
+  - `agent_reply`: the exact words that you will say now.
+- Never mention the tool or the log aloud.
 ```
+
+The setup script adds the "# Live log" section to the live prompt one time. If you paste the prompt by hand, include it.
 
 ## Agent settings
 
@@ -65,7 +73,9 @@ The items and quantities are: {{items_list}}.
 | LLM | Pick one built-in LLM (for example a fast GPT or Gemini model), or **Custom LLM** | Custom LLM: see below |
 | Max conversation duration | 240 s | the backend stops at 300 s |
 | Turn timeout / silence end | 20 s | |
-| Tools | `end_call` (system tool) | lets the agent hang up after the recap |
+| Tools | `end_call` (system tool), `log_live_turn` (webhook tool) | `end_call` lets the agent hang up after the recap. `log_live_turn` feeds the live transcript; `scripts/setup_live_transcript.py` creates it (see the service README) |
+| Voice speed | 1.2 (the maximum; the range is 0.7 to 1.2) | set Oct 17 |
+| Thinking budget | 0 | set by `scripts/setup_live_transcript.py`; thinking only slows each turn |
 | Audio saving / recording | Off if your plan allows | the prompt says "not recorded" |
 | Post-call webhook | `https://<photon-tunnel>/elevenlabs/post-call`, transcript event on | optional: the service also polls the transcript |
 

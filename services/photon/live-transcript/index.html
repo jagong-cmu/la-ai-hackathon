@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Call</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f5f6f8; --surface: #ffffff; --fg: #12161b; --muted: #5d6673; --line: #dde1e7;
+  --agent: #1c5fd0; --agent-bg: #e8f0fd; --supplier: #12161b; --supplier-bg: #ffffff;
+  --live: #0b8a5c; --warn: #b7791f; --bad: #c62a35;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif; --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0f1216; --surface: #171b21; --fg: #e9edf2; --muted: #98a2ae; --line: #2a313a;
+  --agent: #7fb0ff; --agent-bg: #172742; --supplier: #e9edf2; --supplier-bg: #1d222a;
+  --live: #3ccf93; --warn: #e3b341; --bad: #ff6b74; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 16px; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 48px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 18px; }
+h1 { font-size: 22px; margin: 0; font-weight: 600; }
+.pill { font-family: var(--f-mono); font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1.5px solid currentColor; }
+.pill.waiting { color: var(--muted); } .pill.ringing { color: var(--warn); }
+.pill.oncall { color: var(--live); } .pill.ended { color: var(--muted); } .pill.error { color: var(--bad); }
+.pill.oncall::before { content: "● "; animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .pill.oncall::before { animation: none; } }
+.meta { color: var(--muted); font-family: var(--f-mono); font-size: 12px; margin-left: auto; }
+form { display: flex; gap: 8px; margin-bottom: 16px; }
+input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg); }
+button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 0; background: var(--agent); color: #fff; cursor: pointer; }
+#log { display: flex; flex-direction: column; gap: 10px; min-height: 200px; }
+.empty { color: var(--muted); text-align: center; padding: 48px 0; border: 1px dashed var(--line); border-radius: 10px; }
+.turn { max-width: 82%; padding: 10px 14px; border-radius: 12px; line-height: 1.45; animation: in .25s ease-out; }
+@keyframes in { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .turn { animation: none; } }
+.turn .who { display: flex; gap: 8px; align-items: baseline; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+.turn .who time { font-family: var(--f-mono); font-weight: 400; color: var(--muted); }
+.agent { align-self: flex-start; background: var(--agent-bg); }
+.agent .who { color: var(--agent); }
+.supplier { align-self: flex-end; background: var(--supplier-bg); border: 1px solid var(--line); }
+.tag { font-family: var(--f-mono); font-size: 10.5px; font-weight: 500; color: var(--live); }
+.note { align-self: center; font-family: var(--f-mono); font-size: 12px; color: var(--muted); padding: 4px 0; }
+.note.offer { color: var(--live); font-weight: 500; }
+.note.warn { color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Distributor call</h1>
+    <span id="status" class="pill waiting">waiting for call</span>
+    <span id="meta" class="meta"></span>
+  </header>
+  <form id="pick"><input id="job" placeholder="Job id, for example job_ab12cd34ef" aria-label="Job id"><button type="submit">Watch</button></form>
+  <div id="log"><div class="empty" id="empty">The transcript appears here when the call starts.</div></div>
+</div>
+<script>
+const API = "http://localhost:8000";
+const log = document.getElementById("log"), statusEl = document.getElementById("status"), meta = document.getElementById("meta");
+let es = null;
+
+function setStatus(cls, text) { statusEl.className = "pill " + cls; statusEl.textContent = text; }
+function clock(ts) { try { return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch { return ""; } }
+function add(el) {
+  document.getElementById("empty")?.remove();
+  const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+  log.appendChild(el);
+  if (atBottom) el.scrollIntoView({ block: "end", behavior: "smooth" });
+}
+function note(text, cls = "") { const d = document.createElement("div"); d.className = "note " + cls; d.textContent = text; add(d); }
+function money(v) { return typeof v === "number" ? "$" + v.toFixed(2) : String(v); }
+
+function watch(jobId) {
+  if (es) es.close();
+  log.innerHTML = '<div class="empty" id="empty">The transcript appears here when the call starts.</div>';
+  setStatus("waiting", "waiting for call");
+  meta.textContent = jobId;
+  history.replaceState(null, "", "?job=" + encodeURIComponent(jobId));
+  es = new EventSource(`${API}/jobs/${encodeURIComponent(jobId)}/events`);
+  const on = (type, fn) => es.addEventListener(type, (m) => { try { fn(JSON.parse(m.data)); } catch (e) { console.error(e); } });
+
+  on("call_scope", (e) => note(`Call covers ${e.data.itemIds.length} item(s) · opening price ${money(e.data.anchor)}`));
+  on("call_started", (e) => { setStatus("oncall", "on call"); note(`Call connected · ${clock(e.ts)}`); });
+  on("transcript_line", (e) => {
+    const d = e.data, div = document.createElement("div");
+    div.className = "turn " + (d.speaker === "supplier" ? "supplier" : "agent");
+    const who = document.createElement("div"); who.className = "who";
+    who.innerHTML = `<span>${d.speaker === "supplier" ? "Supplier" : "AI agent"}</span><time>${clock(e.ts)}</time>` + (d.live ? '<span class="tag">LIVE</span>' : "");
+    const text = document.createElement("div"); text.textContent = d.text;
+    div.append(who, text); add(div);
+  });
+  on("call_offer", (e) => {
+    const d = e.data;
+    note(d.confirmed === false ? `Heard ${money(d.price)} (not confirmed: ${d.reason})` : `Offer: ${money(d.price)}${d.itemId ? " for " + d.itemId : " for the list"}${d.beats ? " · beats the web price" : ""}`, d.confirmed === false ? "warn" : "offer");
+  });
+  on("call_ended", (e) => { setStatus("ended", "call ended"); note(`Call ended · ${e.data.outcome} · ${clock(e.ts)}`); });
+  on("call_skipped", (e) => { setStatus("error", "no call"); note(`Call skipped: ${e.data.reason}`, "warn"); });
+  on("dependency_degraded", (e) => { if (e.data.dep === "phone") note(`Phone: ${e.data.reason}`, "warn"); });
+  on("message_sent", (e) => note(`Text sent: “${(e.data.text || "").slice(0, 120)}…”`));
+  on("results_ready", (e) => note(`Results ready · best total ${money(e.data.total)}`));
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED) setStatus("error", "disconnected"); };
+}
+
+document.getElementById("pick").addEventListener("submit", (ev) => {
+  ev.preventDefault(); const v = document.getElementById("job").value.trim(); if (v) watch(v);
+});
+const q = new URLSearchParams(location.search).get("job");
+if (q) { document.getElementById("job").value = q; watch(q); }
+</script>
+</body>
+</html>

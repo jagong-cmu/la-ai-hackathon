@@ -14,7 +14,7 @@ import {
   signPhotonWebhook,
   verifyPhotonWebhook,
 } from "./sms.js";
-import { type Conversation, verifyElevenLabsSignature, type VoiceApi } from "./voice.js";
+import { type Conversation, fillVariables, verifyElevenLabsSignature, type VoiceApi } from "./voice.js";
 
 const TEAM = "+15551234567";
 
@@ -31,7 +31,7 @@ function config(): Config {
     },
     elevenlabs: {
       apiKey: "", agentId: "", agentPhoneNumberId: "", baseUrl: "http://el.test", webhookSecret: "el-secret",
-      ringingTimeoutS: 20, pollMs: 5, callMaxS: 2,
+      toolSecret: "tool-secret", ringingTimeoutS: 20, pollMs: 5, callMaxS: 2,
     },
     httpTimeoutMs: 1000,
   };
@@ -104,6 +104,52 @@ test("a call forwards call_started, live transcript lines and one call_ended", a
   assert.equal(ended.outcome, "completed");
   assert.equal((ended.transcript as unknown[]).length, 2);
   assert.equal(events[2]![1].speaker, "supplier");
+});
+
+class GreetingVoice extends ScriptedVoice {
+  async firstMessage(variables: Record<string, string | number>) {
+    return fillVariables("Hi, this is an AI assistant for {{business_name}}.", variables);
+  }
+}
+
+test("the live-line tool forwards each turn at once and replaces the polled lines", async () => {
+  // The call stays in progress until the end, so the poller would send t0/t1 if no live lines came.
+  const talk = [{ role: "agent", message: "Hi." }, { role: "user", message: "Hello." }];
+  const frames: Conversation[] = [
+    { status: "initiated", transcript: [], dynamicVariables: {} },
+    { status: "initiated", transcript: [], dynamicVariables: {} },
+    { status: "in-progress", transcript: talk, dynamicVariables: {} },
+  ];
+  const voice = new GreetingVoice(frames);
+  const { app, events } = setup(voice);
+  await post(app, "/calls", { jobId: "j1", to: TEAM, openingContext: { bestTotal: 410, items: [] } });
+  const live = (body: unknown, secret = "tool-secret") =>
+    app.request("/elevenlabs/live-line", {
+      method: "POST", headers: { "content-type": "application/json", "X-Tool-Secret": secret }, body: JSON.stringify(body),
+    });
+
+  assert.equal((await live({ conversation_id: "conv_1", agent_reply: "Hi." }, "wrong")).status, 401);
+  const turn = { conversation_id: "conv_1", supplier_said: "Sure, what's up?", agent_reply: "Price for 500 boxes?" };
+  // ElevenLabs sometimes calls the tool twice for one turn, at the same moment.
+  const [first, again] = await Promise.all([live(turn), live(turn)]);
+  assert.deepEqual([await first.json(), await again.json()], [{ ok: true }, { ok: true }]);
+  await live({ conversation_id: "conv_1", supplier_said: " ", agent_reply: "Are you there?" });
+  assert.equal((await live({ conversation_id: "conv_other", agent_reply: "x" })).status, 200);
+
+  await new Promise((r) => setTimeout(r, 40)); // let the poller reach the in-progress frames
+  assert.deepEqual(events.map(([, e]) => `${e.type}:${e.eventId}`), [
+    "call_started:conv_1:started", "transcript_line:conv_1:live0", "transcript_line:conv_1:live1",
+    "transcript_line:conv_1:live2", "transcript_line:conv_1:live3",
+  ]);
+  assert.deepEqual(
+    events.slice(1).map(([, e]) => [e.speaker, e.text, e.live]),
+    [
+      ["agent", "Hi, this is an AI assistant for Hearthloaf Bakeries.", true],
+      ["supplier", "Sure, what's up?", true],
+      ["agent", "Price for 500 boxes?", true],
+      ["agent", "Are you there?", true],
+    ],
+  );
 });
 
 test("calls to a non-team number are refused", async () => {

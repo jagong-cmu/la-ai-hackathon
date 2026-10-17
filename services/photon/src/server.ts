@@ -5,11 +5,12 @@
  *   GET  /health
  *   POST /photon/webhook            (Photon beta webhook destination; signature-verified)
  *   POST /elevenlabs/post-call      (ElevenLabs post-call webhook; HMAC-verified)
+ *   POST /elevenlabs/live-line      (the agent's `log_live_turn` webhook tool; X-Tool-Secret)
  *
  * Guardrail: /sms and /calls accept only numbers in the allowlist (DEMO_DISTRIBUTOR_PHONE,
  * OWNER_PHONE, PHOTON_ALLOWED_PHONES). Any other number gets 403 and nothing is sent.
  */
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import type { Forwarder } from "./backend.js";
 import { type Config, normalizePhone } from "./config.js";
@@ -98,11 +99,15 @@ export function createApp(deps: Deps, state: ServiceState = { jobByPhone: new Ma
     }
     if (!allowed(to)) return c.json({ error: "number not in the team allowlist" }, 403);
     try {
-      const { conversationId } = await voice.startCall(to, dynamicVariables(body.jobId, ctx));
+      const variables = dynamicVariables(body.jobId, ctx);
+      // Read the greeting while the phone rings, so the live transcript can show it on answer.
+      const greeting = voice.firstMessage ? voice.firstMessage(variables) : Promise.resolve(null);
+      const { conversationId } = await voice.startCall(to, variables);
       state.jobByPhone.set(to, body.jobId);
       const tracker = new CallTracker(voice, forward, body.jobId, conversationId, {
         pollMs: config.elevenlabs.pollMs,
         callMaxS: config.elevenlabs.callMaxS,
+        greeting: await greeting,
       });
       state.calls.set(conversationId, tracker);
       void tracker.run();
@@ -150,6 +155,35 @@ export function createApp(deps: Deps, state: ServiceState = { jobByPhone: new Ma
       // TODO(confirm): the docs do not list this payload's data fields; the id fields above are assumed.
       if (tracker) await tracker.end("failed", []);
     }
+    return c.json({ ok: true });
+  });
+
+  // Live transcript: ElevenLabs fills the conversation transcript only after the call (the
+  // monitor WebSocket is Enterprise-only), so the agent calls this tool on each of its turns.
+  app.post("/elevenlabs/live-line", async (c) => {
+    const secret = config.elevenlabs.toolSecret;
+    if (!secret) return c.json({ error: "ELEVENLABS_TOOL_SECRET is not set" }, 404);
+    const given = Buffer.from(c.req.header("X-Tool-Secret") ?? "");
+    const want = Buffer.from(secret);
+    if (given.length !== want.length || !timingSafeEqual(given, want)) return c.json({ error: "unauthorized" }, 401);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      conversation_id?: string;
+      supplier_said?: string;
+      agent_reply?: string;
+    };
+    const tracker = state.calls.get(body.conversation_id ?? "");
+    if (!tracker) {
+      console.warn("[call] live line for a conversation this service did not start; ignored");
+      return c.json({ ok: true });
+    }
+    // The tool runs in `immediate` mode: the agent waits for this reply before it speaks, so answer
+    // at once and forward the lines in the background. (`async` mode made the agent say each line
+    // twice: its "task completed" result started a second LLM turn.) The duplicate check in
+    // liveTurn runs before its first await, so it still applies.
+    tracker.liveTurn(String(body.supplier_said ?? ""), String(body.agent_reply ?? "")).catch((err) => {
+      console.warn(`[call] live line not forwarded: ${(err as Error).message}`);
+    });
+    // The agent reads this reply, so keep it short.
     return c.json({ ok: true });
   });
 
