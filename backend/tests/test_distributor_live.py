@@ -348,3 +348,69 @@ async def test_per_unit_price_becomes_a_line_total(settings: Settings, j9_decide
     assert offer["price"] == 200.0  # 0.10 x 2,000 gloves, computed in code
     assert offer["beats"] is True  # $200 beats the $260 web line for gloves
     assert result is not None and [(p.item_id, p.pack_price) for p in result.products] == [("gloves", 200.0)]
+
+
+def test_call_scope_and_total_split() -> None:
+    from app.distributor.base import allocate_total, call_scope
+    plan = _plan()  # gloves $260, boxes $150
+    assert [i.id for i in call_scope(ITEMS, plan, 1)] == ["gloves"]
+    assert [i.id for i in call_scope(ITEMS, plan, 2)] == ["gloves", "boxes"]
+    assert [i.id for i in call_scope(ITEMS, plan, 0)] == ["gloves", "boxes"]
+    parts = allocate_total(395.0, {"gloves": 260.0, "boxes": 150.0})
+    assert parts == {"gloves": 250.49, "boxes": 144.51} and round(sum(parts.values()), 2) == 395.0
+
+
+async def test_short_call_splits_a_total_over_its_items(settings: Settings, j9_decider: Decider) -> None:
+    """With 1 item in scope, '$240 for everything' becomes that item's price, not a whole-list bundle."""
+    scoped = settings.model_copy(update={"distributor_call_max_items": 1})
+    script = [
+        {"type": "call_started"},
+        {"type": "transcript_line", "seq": 1, "speaker": "user", "text": "I can do $240 for everything."},
+        {"type": "call_ended", "outcome": "completed"},
+    ]
+    fake = FakePhoton(script)
+    events: list[tuple[str, dict]] = []
+    ctx = _ctx(scoped, j9_decider, events, [])
+    fake.ctx = ctx
+    result = await asyncio.wait_for(
+        LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler)).run(ctx), timeout=5)
+    scope = next(d for t, d in events if t == "call_scope")
+    assert scope == {"itemIds": ["gloves"], "anchor": 260.0}
+    call_body = next(b for p, b in fake.requests if p == "/calls")
+    assert [i["id"] for i in call_body["openingContext"]["items"]] == ["gloves"]
+    assert call_body["openingContext"]["bestTotal"] == 260.0
+    assert result is not None and result.bundle_total is None
+    assert [(p.item_id, p.pack_price) for p in result.products] == [("gloves", 240.0)]
+
+
+async def test_real_call_j9_answers_confirm_both_item_prices(settings: Settings, j9_decider: Decider) -> None:
+    """Jev answers from the relay-test call: new_offer 0.89 and 0.54, offer_for 1.0. Both prices are
+    offers for a known item, so both are confirmed (before, |2p-1| < 0.8 made them 'unsure')."""
+    real = {"box": ("item_boxes", 0.89), "glove": ("item_gloves", 0.54)}
+
+    def j9(state: dict, questions: dict) -> dict:
+        line = state["supplierLine"].lower()
+        target, p = next((v for k, v in real.items() if k in line), ("whole_list", 0.02))
+        return {
+            "new_offer": {"type": "noul", "noul": p},
+            "offer_for": choice_answer(list(questions["offer_for"]["criteria"]), target, 1.0),
+            "beats": {"type": "noul", "noul": 0.05},
+        }
+
+    j9_decider.jev.stub.rules["J9"] = j9
+    script = [
+        {"type": "call_started"},
+        {"type": "transcript_line", "seq": 1, "speaker": "user", "text": "Um, that will be around a $1.50 per box."},
+        {"type": "transcript_line", "seq": 2, "speaker": "user", "text": "25 cents a glove."},
+        {"type": "call_ended", "outcome": "completed"},
+    ]
+    fake = FakePhoton(script)
+    events: list[tuple[str, dict]] = []
+    ctx = _ctx(settings, j9_decider, events, [])
+    fake.ctx = ctx
+    result = await asyncio.wait_for(
+        LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler)).run(ctx), timeout=5)
+    offers = [d for t, d in events if t == "call_offer"]
+    assert [o["confirmed"] for o in offers] == [True, True]
+    assert result is not None
+    assert sorted((p.item_id, p.pack_price) for p in result.products) == [("boxes", 750.0), ("gloves", 500.0)]

@@ -259,7 +259,10 @@ async def j9_call_line(
         "offer_for": choice("What does the price in `supplierLine` apply to?", targets),
         "beats": noul("Does the supplier agree to beat or match the price they were given?"),
     }
-    return await d.decide("J9", state, questions, primary=["new_offer"], job_id=job_id)
+    # Code already found the amount in the line; Jev's job is to say what it applies to. The band is
+    # set by `offer_for`; `new_offer` is a filter (offer_min_p in the channel), not a band gate.
+    # Real call: "$1.50 per box" had new_offer 0.89 (|2p-1| = 0.78 < act 0.8) but offer_for 1.0.
+    return await d.decide("J9", state, questions, primary=["offer_for"], job_id=job_id)
 
 
 # ---------------------------------------------------------------- J10 quote risk terms
