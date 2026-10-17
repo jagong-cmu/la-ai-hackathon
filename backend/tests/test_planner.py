@@ -7,8 +7,8 @@ from pydantic import SecretStr
 from app.data.loader import load_books
 from app.main import create_app
 from app.planner.adjust import date_phrases, quantity_phrases, resolve_date
-from app.planner.loop import MissContext, apply_cause, replay
-from app.planner.model import fit
+from app.planner.loop import LaunchError, MissContext, apply_cause, launch_errors, replay
+from app.planner.model import LAUNCH_WEEKS, conformal_quantile, fit, launch_range
 from app.planner.policy import advise
 from app.planner.sales import load_fixture
 from app.planner.service import Planner
@@ -44,6 +44,29 @@ def test_policy_orders_up_to_level_in_packs():
                as_of=date(2026, 10, 5))
     assert a.recommended_qty % 250 == 0 and a.recommended_qty >= a.order_up_to - 100
     assert a.status == "order_now" and a.run_out_date == date(2026, 10, 8)
+
+
+def test_conformal_quantile_and_launch_range():
+    scores = [0.1 * i for i in range(1, 11)]  # 0.1 .. 1.0
+    assert conformal_quantile(scores) == 1.0  # ceil(11 * 0.9) = 10: the largest of 10
+    assert conformal_quantile(scores + [0.05] * 9) == 0.9  # ceil(20 * 0.9) = 18
+    assert launch_range(100.0, 80.0, 120.0, [0.5]) == (80.0, 120.0)  # too few scores: unchanged
+    assert launch_range(100.0, 80.0, 120.0, [0.5] * 5) == (50.0, 150.0)
+    assert launch_range(100.0, 10.0, 300.0, [0.5] * 5) == (10.0, 300.0)  # never narrower
+
+
+async def test_launch_ranges_use_only_earlier_weeks_of_other_products():
+    sales = load_fixture()
+    item = "item-00003"
+    plain = await replay(sales, item, "plain")
+    # Errors from weeks after every forecast, or from the same product, must change nothing.
+    unseen = [LaunchError(sales.weeks + 1, "item-00001", 9.0)] * 5 + [LaunchError(0, item, 9.0)] * 5
+    assert (await replay(sales, item, "plain", calibration=unseen)).forecasts == plain.forecasts
+    calibrated = await replay(sales, item, "plain", calibration=await launch_errors(sales))
+    widths = [(hi - lo, h2 - l2) for (_, _, _, lo, hi), (_, _, _, l2, h2) in zip(plain.forecasts, calibrated.forecasts, strict=True)]
+    assert all(new >= old for old, new in widths[:LAUNCH_WEEKS])
+    assert any(new > old for old, new in widths[:LAUNCH_WEEKS])
+    assert widths[LAUNCH_WEEKS:] == [(w, w) for w, _ in widths[LAUNCH_WEEKS:]]
 
 
 def _ctx(item_id: str, week: int, mean: float = 0.0, lost=None) -> MissContext:
@@ -104,6 +127,8 @@ async def test_backtest_reports_three_variants_and_is_honest_about_stubs(planner
     report = await planner.backtest()
     assert [v.variant for v in report.variants] == ["plain", "fixed_rule", "jev"]
     assert report.jev_source == "stub"  # fixture rules, not Jev
+    plain = report.variants[0]
+    assert plain.coverage is not None and plain.coverage >= 0.88  # 0.84 before the launch ranges
     assert all(v.wape is not None and 0 < v.wape < 1 for v in report.variants)
 
 
@@ -169,3 +194,27 @@ async def test_jev_cache_keeps_option_order(settings, db, modes):
     a = await client.ask("t", {"s": 1}, {"q": choice("?", {"a": None, "b": None})}, timeout=2)
     b = await client.ask("t", {"s": 1}, {"q": choice("?", {"b": None, "a": None})}, timeout=2)
     assert len(calls) == 2 and a.answers["q"]["choice"] == "a" and b.answers["q"]["choice"] == "b"
+
+
+def test_planner_check_reuses_the_job_on_the_same_day(settings):
+    with TestClient(create_app(settings)) as client:
+        first = client.post("/planner/check?autostart=true").json()
+        second = client.post("/planner/check?autostart=true").json()
+        assert first["jobId"] and second["jobId"] == first["jobId"]
+
+
+def test_a_job_that_no_process_runs_does_not_block_its_key(settings):
+    from app.contracts import JobState, JobView, ShoppingRequest
+
+    with TestClient(create_app(settings)) as client:
+        s = client.app.state.s
+        request = ShoppingRequest.model_validate(client.get("/shopping-list/draft").json())
+        # A job that an earlier server process saved and stopped in the middle of.
+        s.db.save_job(JobView(job_id="job_dead00000", state=JobState.gathering, request=request),
+                      idempotency_key="key-after-restart")
+        body = request.model_dump(mode="json", by_alias=True)
+        created = client.post("/jobs", json=body, headers={"Idempotency-Key": "key-after-restart"}).json()
+        assert created["jobId"] != "job_dead00000"
+        assert client.get("/jobs/job_dead00000").json()["state"] == "failed"
+        again = client.post("/jobs", json=body, headers={"Idempotency-Key": "key-after-restart"}).json()
+        assert again["jobId"] == created["jobId"]
