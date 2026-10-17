@@ -19,7 +19,7 @@ In the dashboard, add a placeholder value for each variable, so that test calls 
 ## First message
 
 ```
-Hi, this is an AI assistant calling for {{business_name}} about a supplies quote. This call is not recorded. Is now a good time for a two-minute question about prices?
+Hi, this is an AI assistant calling for Hearthloaf Bakeries about a supplies quote. This call is not recorded. Is now a good time for a two-minute question about prices?
 ```
 
 ## System prompt
@@ -36,12 +36,14 @@ You are an AI voice assistant that calls a food-service supply distributor for {
 The items and quantities are: {{items_list}}.
 
 # What to collect, in this order
-1. Ask for the price of each item, one item at a time, for the quantity on the list. Say the quantity and the item. Wait for the answer before you ask about the next item. If they give a price per case or per pack, ask how many units are in the case or pack.
+1. Ask for the price of each item, one item at a time, for the quantity on the list. Say the quantity and the item. Wait for the answer before you ask about the next item.
+   - If they do not say whether the price is per unit or for the whole quantity, ask: "Is that per [unit] or for all [quantity]?"
+   - If they give a price per case or per pack, ask how many units are in the case or pack.
 2. Ask for the delivery fee.
 3. Ask for the lead time (how many days until delivery).
 4. After you have the prices, say the best total once: "The best total we have found for this list is {{best_total}}, delivered. Can you beat that?" Say it one time only. This is the only negotiation. Do not push again after their answer.
 5. Repeat the final numbers back in one short sentence: each item price (or the total), the delivery fee and the lead time.
-6. Ask them to text an itemized quote to the number that texted them. Then thank them and end the call.
+6. Ask them to text an itemized quote to this number, the number you are calling from. Then thank them and end the call.
 
 # Hard rules
 - Never agree to buy, never confirm an order, never say "we'll take it" or "go ahead". If they ask to place the order, say: "I can't confirm an order on this call. The owner decides and will contact you."
@@ -85,7 +87,7 @@ curl -s https://api.elevenlabs.io/v1/convai/agents/create \
   "name": "Hearthloaf supply quote caller",
   "conversation_config": {
     "agent": {
-      "first_message": "Hi, this is an AI assistant calling for {{business_name}} about a supplies quote. This call is not recorded. Is now a good time for a two-minute question about prices?",
+      "first_message": "Hi, this is an AI assistant calling for Hearthloaf Bakeries about a supplies quote. This call is not recorded. Is now a good time for a two-minute question about prices?",
       "language": "en",
       "prompt": { "prompt": "<paste the system prompt above>", "llm": "gemini-2.0-flash" }
     }
@@ -95,3 +97,31 @@ JSON
 ```
 
 The response is `{"agent_id": "..."}`. Put it in `ELEVENLABS_AGENT_ID`. Use a built-in model ID that the dashboard lists for your account. The value `gemini-2.0-flash` is only an example.
+
+## Created agent (Oct 17, 2026, through the ElevenLabs MCP server)
+
+| Setting | Value |
+|---|---|
+| Agent ID | `agent_0101m55tm410fk0aw5m80w47ascn` (in `.env` as `ELEVENLABS_AGENT_ID`) |
+| Name, tags | Hearthloaf supply quote caller · `LA Hacks 2026`, `supplier-agent` |
+| Voice | Eric – Smooth, Trustworthy (premade, `cjVigY5qzO86Huf0OWal`). Library voices must be added to the workspace before an agent can use them. |
+| LLM | `gemini-2.5-flash`, temperature 0.2, ElevenLabs default backup LLM, time zone America/Detroit |
+| First message, system prompt | Exactly as in this file |
+| Dynamic variable placeholders | business_name, items_list, item_count, best_total ($716.34), job_id (job_test) |
+| Tools | `end_call` (system) |
+| Privacy | `record_voice: false` |
+| Limits | 2 concurrent calls, 50 a day, no bursting · trust context: low |
+| Not set yet | Max call duration (240 s): set it in the dashboard under the agent's advanced settings. The phone number: import the Photon SIP trunk first. |
+
+### Change log
+- Oct 17: the first message now names Hearthloaf Bakeries directly. A real call that carries no
+  dynamic variables (an incoming call to the Photon number) failed after 1 second with
+  "Missing required dynamic variables in first message: {'business_name'}". Dashboard placeholders
+  apply only to dashboard tests. Outgoing calls from our service send all five variables.
+- Incoming calls still have no `items_list` or `best_total`. The demo workflow is outgoing only
+  (the agent calls the distributor), so this is acceptable.
+- Oct 17, first real outbound test call (`conv_3901m55wbgm7fy2bpfncz42kybnh`, 154 s, about $0.21):
+  the agent followed every rule. Two fixes followed: the prompt now asks for "this number"
+  (in call-first mode no text comes before the call), and it asks whether a price is per unit.
+  The backend now reads "50 cents a glove" and "$1.60 per box" as unit prices and multiplies
+  them by the quantity in code.

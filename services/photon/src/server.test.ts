@@ -5,7 +5,15 @@ import type { BackendEvent } from "./backend.js";
 import { makeForwarder } from "./backend.js";
 import type { Config } from "./config.js";
 import { createApp } from "./server.js";
-import { DryRunMessenger } from "./sms.js";
+import {
+  createMessenger,
+  DryRunMessenger,
+  type EventSocket,
+  type Messenger,
+  PhotonMessenger,
+  signPhotonWebhook,
+  verifyPhotonWebhook,
+} from "./sms.js";
 import { type Conversation, verifyElevenLabsSignature, type VoiceApi } from "./voice.js";
 
 const TEAM = "+15551234567";
@@ -17,7 +25,10 @@ function config(): Config {
     webhookSecret: "wh",
     serviceToken: "",
     allowedPhones: new Set([TEAM]),
-    photon: { projectId: "", projectSecret: "", webhookSecret: "", inbound: "off" },
+    photon: {
+      projectId: "", apiKey: "", phoneNumber: "", baseUrl: "http://photon.test", webhookSecret: "",
+      inbound: "off", pollMs: 5,
+    },
     elevenlabs: {
       apiKey: "", agentId: "", agentPhoneNumberId: "", baseUrl: "http://el.test", webhookSecret: "el-secret",
       ringingTimeoutS: 20, pollMs: 5, callMaxS: 2,
@@ -39,13 +50,13 @@ class ScriptedVoice implements VoiceApi {
   }
 }
 
-function setup(voice: VoiceApi) {
+function setup(voice: VoiceApi, messenger: Messenger = new DryRunMessenger(), cfg: Config = config()) {
   const events: [string, BackendEvent][] = [];
   const forward = async (provider: "photon" | "elevenlabs", e: BackendEvent) => {
     events.push([provider, e]);
     return true;
   };
-  const { app, onInboundText } = createApp({ config: config(), messenger: new DryRunMessenger(), voice, forward });
+  const { app, onInboundText } = createApp({ config: cfg, messenger, voice, forward });
   return { app, events, onInboundText };
 }
 
@@ -135,4 +146,209 @@ test("forwarder sends the webhook secret header and retries on 5xx", async () =>
   assert.equal(calls.length, 2);
   assert.equal(calls[0]!.url, "http://backend.test/webhooks/photon");
   assert.equal(calls[0]!.secret, "wh");
+});
+
+// ---------- Photon 2.0 beta SMS (fake HTTP; nothing leaves the process) ----------
+
+const PRJ = "pho_prj_01234567890abcdefghjkmnpqr";
+const OURS = "+15557654321";
+const AGENT = "pho_usr_0aaaaaaaaaaaaaaaaaaaaaaaaa";
+const HUMAN = "pho_usr_0bbbbbbbbbbbbbbbbbbbbbbbbb";
+const SPACE = "pho_spc_0ccccccccccccccccccccccccc";
+const MSG_OUT = "pho_msg_0ddddddddddddddddddddddddd";
+const MSG_IN = "pho_msg_0eeeeeeeeeeeeeeeeeeeeeeeee";
+const NOW = "2026-10-17T00:00:00.000Z";
+const SECRET = `whsec_${Buffer.from("test-signing-secret-32-bytes-long").toString("base64")}`;
+
+function photonConfig(over: Partial<Config["photon"]> = {}): Config {
+  const c = config();
+  c.photon = { ...c.photon, projectId: PRJ, apiKey: "pho_sk_test", phoneNumber: OURS, webhookSecret: SECRET, ...over };
+  return c;
+}
+
+const user = (id: string, handle: string, kind: string) => ({
+  id, projectId: PRJ, platform: "sms", handle, kind, details: {}, metadata: {}, createdAt: NOW, updatedAt: NOW,
+});
+const snapshot = (id: string, handle: string, kind: string) => ({
+  id, projectId: PRJ, platform: "sms", handle, kind, details: {}, metadata: {},
+});
+const spaceSnap = { id: SPACE, projectId: PRJ, platform: "sms", kind: "direct", participantIds: [AGENT, HUMAN], details: {}, metadata: {} };
+
+function receivedMessage(id: string, from: string, text: string) {
+  return {
+    id, projectId: PRJ, platform: "sms", status: "received",
+    space: spaceSnap, sentBy: snapshot(HUMAN, from, "human"), receivedBy: snapshot(AGENT, OURS, "agent"),
+    content: { type: "text", format: "plain", text }, metadata: {}, createdAt: NOW, updatedAt: NOW,
+    timestamps: { receivedAt: NOW },
+  };
+}
+
+interface Seen { method: string; path: string; headers: Headers; body: any }
+
+function fakePhoton() {
+  const requests: Seen[] = [];
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const req = input instanceof Request ? input : new Request(String(input), init);
+    const url = new URL(req.url);
+    const raw = req.method === "GET" ? "" : await req.text();
+    const body = raw ? JSON.parse(raw) : undefined;
+    requests.push({ method: req.method, path: url.pathname + url.search, headers: req.headers, body });
+    if (req.method === "POST" && url.pathname === `/v1/projects/${PRJ}/users`) {
+      return body.handle === OURS ? json(200, user(AGENT, OURS, "agent")) : json(201, user(HUMAN, body.handle, "human"));
+    }
+    if (req.method === "POST" && url.pathname === `/v1/projects/${PRJ}/spaces`) {
+      return json(201, { ...spaceSnap, createdAt: NOW, updatedAt: NOW });
+    }
+    if (req.method === "POST" && url.pathname === `/v1/projects/${PRJ}/messages`) {
+      return json(202, {
+        id: MSG_OUT, projectId: PRJ, platform: "sms", status: "dispatched", space: spaceSnap,
+        sentBy: snapshot(AGENT, OURS, "agent"), content: body.content, metadata: {},
+        createdAt: NOW, updatedAt: NOW, timestamps: { dispatchedAt: NOW },
+      });
+    }
+    if (req.method === "GET" && url.pathname === `/v1/projects/${PRJ}/messages`) {
+      return json(200, { items: [receivedMessage(MSG_IN, TEAM, "Gloves $250")] });
+    }
+    return json(404, { type: "about:blank", code: "NOT_FOUND", title: "Not Found", status: 404 });
+  }) as typeof fetch;
+  return { requests, fetchImpl };
+}
+
+test("dry-run when the Photon key, project or number is missing", async () => {
+  assert.equal((await createMessenger(config())).mode, "dry-run");
+  assert.equal((await createMessenger(photonConfig({ apiKey: "" }))).mode, "dry-run");
+  assert.equal((await createMessenger(photonConfig({ phoneNumber: "" }))).mode, "dry-run");
+  const { app } = setup(new ScriptedVoice([]));
+  const resp = await post(app, "/sms", { jobId: "j1", to: TEAM, text: "hi" });
+  assert.deepEqual(await resp.json(), { messageId: "dry_1", mode: "dry-run" });
+});
+
+test("sending maps to the beta users -> spaces -> messages requests", async () => {
+  const { requests, fetchImpl } = fakePhoton();
+  const messenger = await createMessenger(photonConfig(), { fetch: fetchImpl, retry: false });
+  assert.equal(messenger.mode, "photon");
+  const { app } = setup(new ScriptedVoice([]), messenger, photonConfig());
+  const resp = await post(app, "/sms", { jobId: "j1", to: TEAM, text: "Quote for 2000 gloves?" });
+  assert.equal(resp.status, 200);
+  assert.deepEqual(await resp.json(), { messageId: MSG_OUT, mode: "photon" });
+
+  const users = requests.filter((r) => r.path.endsWith("/users"));
+  assert.deepEqual(users.map((r) => r.body).sort((a, b) => a.handle.localeCompare(b.handle)), [
+    { platform: "sms", handle: TEAM }, { platform: "sms", handle: OURS },
+  ].sort((a, b) => a.handle.localeCompare(b.handle)));
+  const space = requests.find((r) => r.path.endsWith("/spaces"))!;
+  assert.deepEqual(space.body, { platform: "sms", participantIds: [AGENT, HUMAN] });
+  assert.ok(space.headers.get("idempotency-key"));
+  const send = requests.find((r) => r.path === `/v1/projects/${PRJ}/messages`)!;
+  assert.equal(send.method, "POST");
+  assert.deepEqual(send.body, { spaceId: SPACE, senderId: AGENT, content: { type: "text", format: "plain", text: "Quote for 2000 gloves?" } });
+  assert.match(send.headers.get("idempotency-key") ?? "", /^sms-out:/);
+  assert.equal(send.headers.get("authorization"), "Bearer pho_sk_test");
+
+  // A second text to the same phone reuses the cached user and space.
+  await post(app, "/sms", { jobId: "j1", to: TEAM, text: "Any update?" });
+  assert.equal(requests.filter((r) => r.path.endsWith("/spaces")).length, 1);
+  assert.equal(requests.filter((r) => r.path === `/v1/projects/${PRJ}/messages`).length, 2);
+});
+
+test("a non-team phone is refused before any Photon request", async () => {
+  const { requests, fetchImpl } = fakePhoton();
+  const messenger = await createMessenger(photonConfig(), { fetch: fetchImpl, retry: false });
+  const { app } = setup(new ScriptedVoice([]), messenger, photonConfig());
+  assert.equal((await post(app, "/sms", { jobId: "j1", to: "+18005550100", text: "hi" })).status, 403);
+  assert.equal(requests.length, 0);
+});
+
+function signedWebhook(body: string, secret = SECRET, ts = Math.floor(Date.now() / 1000)) {
+  const id = "msg_test_1";
+  return {
+    method: "POST",
+    body,
+    headers: {
+      "content-type": "application/json",
+      "webhook-id": id,
+      "webhook-timestamp": String(ts),
+      "webhook-signature": signPhotonWebhook(secret, id, String(ts), body),
+    },
+  };
+}
+
+const inboundEvent = (id = MSG_IN) =>
+  JSON.stringify({
+    id: "pho_evt_0fffffffffffffffffffffffff", type: "message.received", apiVersion: "2026-07-01",
+    source: "sms.photon", timestamp: NOW, data: { projectId: PRJ, object: receivedMessage(id, TEAM, "Gloves $250") },
+  });
+
+test("an inbound webhook with a valid signature produces one sms_in", async () => {
+  const { fetchImpl } = fakePhoton();
+  const messenger = await createMessenger(photonConfig(), { fetch: fetchImpl, retry: false });
+  const { app, events } = setup(new ScriptedVoice([]), messenger, photonConfig());
+  await post(app, "/sms", { jobId: "j42", to: TEAM, text: "hi" });
+  const body = inboundEvent();
+  assert.equal((await app.request("/photon/webhook", signedWebhook(body))).status, 200);
+  // A retry of the same delivery is not forwarded again.
+  assert.equal((await app.request("/photon/webhook", signedWebhook(body))).status, 200);
+  assert.deepEqual(events, [
+    ["photon", { eventId: `sms:${MSG_IN}`, jobId: "j42", type: "sms_in", text: "Gloves $250", messageId: MSG_IN }],
+  ]);
+});
+
+test("an inbound webhook with a bad or stale signature is rejected", async () => {
+  const messenger = await createMessenger(photonConfig(), { fetch: fakePhoton().fetchImpl, retry: false });
+  const { app, events } = setup(new ScriptedVoice([]), messenger, photonConfig());
+  const body = inboundEvent();
+  const wrongKey = `whsec_${Buffer.from("another-secret").toString("base64")}`;
+  assert.equal((await app.request("/photon/webhook", signedWebhook(body, wrongKey))).status, 401);
+  const tampered = signedWebhook(body);
+  tampered.body = body.replace("Gloves $250", "Gloves $1");
+  assert.equal((await app.request("/photon/webhook", tampered)).status, 401);
+  assert.equal((await app.request("/photon/webhook", { method: "POST", body })).status, 401);
+  const stale = Math.floor(Date.now() / 1000) - 3600;
+  assert.equal((await app.request("/photon/webhook", signedWebhook(body, SECRET, stale))).status, 401);
+  assert.equal(verifyPhotonWebhook(body, { id: "x", timestamp: "1", signature: "v1,AAAA" }, ""), false);
+  assert.equal(events.length, 0);
+});
+
+test("poll mode lists received SMS and forwards each message one time", async () => {
+  const { requests, fetchImpl } = fakePhoton();
+  const cfg = photonConfig({ inbound: "poll" });
+  const messenger = new PhotonMessenger(cfg, { fetch: fetchImpl, retry: false });
+  const { events, onInboundText, app } = setup(new ScriptedVoice([]), messenger, cfg);
+  await post(app, "/sms", { jobId: "j5", to: TEAM, text: "hi" });
+  const stop = await messenger.listen(onInboundText);
+  for (let i = 0; i < 100 && requests.filter((r) => r.method === "GET").length < 3; i++) await new Promise((r) => setTimeout(r, 5));
+  await stop();
+  const list = requests.find((r) => r.method === "GET")!;
+  assert.match(list.path, /direction=received/);
+  assert.match(list.path, /platform=sms/);
+  assert.deepEqual(events.map(([, e]) => e.eventId), [`sms:${MSG_IN}`]);
+});
+
+test("stream mode subscribes over Socket.IO and forwards message.received", async () => {
+  const handlers = new Map<string, (...args: any[]) => void>();
+  let options: Record<string, unknown> = {};
+  let subscribed: unknown;
+  const socket: EventSocket = {
+    on: (event, listener) => handlers.set(event, listener),
+    timeout: () => ({ emit: (_event, payload, ack) => { subscribed = payload; ack(null, { ok: true }); } }),
+    connect: () => handlers.get("connect")!(),
+    disconnect: () => undefined,
+  };
+  const cfg = photonConfig({ inbound: "stream" });
+  const messenger = new PhotonMessenger(cfg, {
+    fetch: fakePhoton().fetchImpl, retry: false,
+    socketFactory: (_url, opts) => { options = opts; return socket; },
+  });
+  const { events, onInboundText, app } = setup(new ScriptedVoice([]), messenger, cfg);
+  await post(app, "/sms", { jobId: "j6", to: TEAM, text: "hi" });
+  const stop = await messenger.listen(onInboundText);
+  assert.equal(options.path, `/v1/projects/${PRJ}/events/ws`);
+  assert.deepEqual(options.extraHeaders, { Authorization: "Bearer pho_sk_test" });
+  assert.deepEqual(subscribed, { startSeq: 0 });
+  handlers.get("delivery")!(JSON.parse(inboundEvent()), { seq: 7, replyExpected: false });
+  handlers.get("delivery")!(JSON.parse(inboundEvent()), { seq: 8, replyExpected: false }); // redelivery
+  await stop();
+  assert.deepEqual(events.map(([, e]) => `${e.type}:${e.eventId}:${e.jobId}`), [`sms_in:sms:${MSG_IN}:j6`]);
 });

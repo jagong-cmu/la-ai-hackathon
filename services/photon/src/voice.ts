@@ -63,13 +63,17 @@ export class ElevenLabsVoice implements VoiceApi {
   readonly mode = "elevenlabs" as const;
   constructor(private config: Config, private fetchImpl: typeof fetch = fetch) {}
 
-  private async call(path: string, init: RequestInit = {}): Promise<unknown> {
+  private async call(path: string, init: RequestInit = {}, timeoutMs = this.config.httpTimeoutMs): Promise<unknown> {
     const resp = await this.fetchImpl(`${this.config.elevenlabs.baseUrl}${path}`, {
       ...init,
       headers: { "content-type": "application/json", "xi-api-key": this.config.elevenlabs.apiKey },
-      signal: AbortSignal.timeout(this.config.httpTimeoutMs),
+      signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!resp.ok) throw new Error(`elevenlabs ${path}: HTTP ${resp.status}`);
+    if (!resp.ok) {
+      // The error body has no secrets; it names the failed field or the SIP reason.
+      const detail = (await resp.text().catch(() => "")).slice(0, 300);
+      throw new Error(`elevenlabs ${path}: HTTP ${resp.status} ${detail}`);
+    }
     return resp.json();
   }
 
@@ -84,7 +88,9 @@ export class ElevenLabsVoice implements VoiceApi {
         conversation_initiation_client_data: { dynamic_variables: variables },
         telephony_call_config: { ringing_timeout_secs: e.ringingTimeoutS },
       }),
-    })) as { success?: boolean; message?: string; conversation_id?: string | null };
+      // The outbound-call request returns only after the SIP call is set up, which can include
+      // the whole ringing time. A 10 s limit aborted the first real test call.
+    }, (e.ringingTimeoutS + 25) * 1000)) as { success?: boolean; message?: string; conversation_id?: string | null };
     if (!data.success || !data.conversation_id) {
       throw new Error(`outbound call not started: ${data.message ?? "no conversation_id"}`);
     }

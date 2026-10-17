@@ -1,9 +1,9 @@
 # Photon service (voice and messaging bridge)
 
-A small Node + TypeScript service (Hono, `spectrum-ts`, `pnpm`). It owns the Photon line (texts) and starts the voice calls. A call goes from ElevenLabs Agents through the Photon SIP trunk. The backend's live distributor channel (`backend/app/distributor/live.py`) calls this service, and the service sends every inbound event back to the backend.
+A small Node + TypeScript service (Hono, `@photon-ai/api` 0.5.0, `pnpm`, Node 24 or later). It uses the **Photon 2.0 beta** API. It owns the Photon SMS number (texts) and starts the voice calls. A call goes from ElevenLabs Agents through the Photon SIP trunk. The backend's live distributor channel (`backend/app/distributor/live.py`) calls this service, and the service sends every inbound event back to the backend.
 
 ```
-backend LiveDistributor ──POST /sms, /calls──▶ photon service ──spectrum-ts──▶ Photon line ──▶ team phone
+backend LiveDistributor ──POST /sms, /calls──▶ photon service ──Photon beta API──▶ Photon SMS number ──▶ team phone
                                                         └──ElevenLabs outbound-call API──▶ ElevenLabs agent ──SIP (Photon trunk)──▶ team phone
 backend /webhooks/{photon|elevenlabs} ◀── sms_in, call_started, transcript_line, call_ended ──┘
 ```
@@ -32,7 +32,7 @@ The event IDs are stable. The poller and the post-call webhook can both report t
 ## Guardrails (the code enforces them)
 
 - `/sms` and `/calls` accept only `DEMO_DISTRIBUTOR_PHONE`, `OWNER_PHONE` and `PHOTON_ALLOWED_PHONES`. Any other number gets 403, and the service sends nothing. The backend also texts and calls only `DEMO_DISTRIBUTOR_PHONE`.
-- If a key is missing, that part runs in dry-run mode. Texts are logged with the last 4 digits only. Calls are reported as `no_answer`. With no keys, nothing leaves the machine.
+- If a key is missing, that part runs in dry-run mode. Texts need `PHOTON_API_KEY` (or `PHOTON_PROJECT_SECRET`), `PHOTON_PROJECT_ID` and `PHOTON_PHONE_NUMBER`. Texts are logged with the last 4 digits only. Calls are reported as `no_answer`. With no keys, nothing leaves the machine.
 - The logs never print secrets or full phone numbers.
 - In its first sentence, the voice agent says that it is an AI. It never agrees to buy. It never asks for payment details, and it does not record. See `elevenlabs/agent.md`.
 
@@ -53,10 +53,14 @@ The service reads the repo-root `.env`, then `services/photon/.env`. The backend
 
 | Name | Used by | Required for |
 |---|---|---|
-| `PHOTON_PROJECT_ID` | service | texts (Spectrum project ID) |
-| `PHOTON_PROJECT_SECRET` | service | texts (Spectrum project secret). `PHOTON_API_KEY` is accepted as an alias. |
-| `PHOTON_WEBHOOK_SECRET` | service | only for `PHOTON_INBOUND_MODE=webhook` |
-| `PHOTON_INBOUND_MODE` | service | `stream` (default: no public URL is necessary), `webhook`, or `off` |
+| `PHOTON_API_KEY` | service | texts. The beta project API key (`pho_sk_...`). |
+| `PHOTON_PROJECT_SECRET` | service | fallback alias for `PHOTON_API_KEY`. The service uses it only when `PHOTON_API_KEY` is empty. |
+| `PHOTON_PROJECT_ID` | service | texts. The beta project ID (`pho_prj_...`). |
+| `PHOTON_PHONE_NUMBER` | service | texts. The project's SMS number in E.164 (`+1...`). The service sends from this number. |
+| `PHOTON_INBOUND_MODE` | service | `stream` (default), `poll`, `webhook`, or `off`. Only `webhook` needs a public URL. |
+| `PHOTON_WEBHOOK_SECRET` | service | only for `webhook` mode. The destination signing secret (`whsec_...`). |
+| `PHOTON_POLL_MS` | service | optional. The poll interval for `poll` mode (default 3000). |
+| `PHOTON_API_BASE_URL` | service | optional. Default `https://api.photon.codes`. |
 | `ELEVENLABS_API_KEY` | service | calls |
 | `ELEVENLABS_AGENT_ID` | service | calls |
 | `ELEVENLABS_AGENT_PHONE_NUMBER_ID` | service | calls (the SIP-trunk number imported in ElevenLabs) |
@@ -72,12 +76,19 @@ The service reads the repo-root `.env`, then `services/photon/.env`. The backend
 
 ## Setup (dashboard steps)
 
-### 1. Photon (https://photon.codes, Spectrum)
-1. Create a project. Copy the **project ID** and the **project secret** into `PHOTON_PROJECT_ID` and `PHOTON_PROJECT_SECRET`.
-2. Get a line. On the Free and Pro plans, the project uses a shared pool of numbers, and shared lines cannot take voice calls. For voice, you need a voice-capable number (a dedicated line, Business plan). A new line becomes active after the next token renewal, or when you restart the service.
-3. Create a **Voice profile** on that number. Under **Outbound calls**, select SHA-256 digest, enable outbound, and save the password. Photon shows the password one time only.
-4. Inbound destination (for calls that come in to the line, optional): `sips:sip.rtc.elevenlabs.io:5061`, TLS.
-5. Inbound texts: the default `stream` mode needs no URL. For webhook mode, set the Spectrum webhook to `https://<photon-tunnel>/photon/webhook`, put the signing secret in `PHOTON_WEBHOOK_SECRET`, and set `PHOTON_INBOUND_MODE=webhook`.
+### 1. Photon 2.0 beta (https://app.beta.photon.codes)
+1. Select the project. Open **Settings** and copy the **Project ID** (`pho_prj_...`) into `PHOTON_PROJECT_ID`.
+2. Open **API keys** and create a key. Give it `project:read` and `project:write`. Copy the key (`pho_sk_...`) into `PHOTON_API_KEY`. The dashboard shows the key one time only.
+3. Put the project's SMS number (E.164, for example `+15551234567`) in `PHOTON_PHONE_NUMBER`.
+4. Make sure that the SMS number can send to the team phones. The API reference says that SMS needs "current Platforms authorization for the sender and every recipient". It also needs campaign (10DLC) eligibility, unless every recipient is in-network. Check the number's campaign status in the dashboard.
+5. Voice: create a **Voice profile** on the same number. Under **Outbound calls**, select SHA-256 digest, enable outbound, and save the password. Photon shows the password one time only.
+6. Inbound destination for calls (optional): `sips:sip.rtc.elevenlabs.io:5061`, TLS.
+7. Inbound texts. Select one mode with `PHOTON_INBOUND_MODE`:
+   - `stream` (default): the service opens a Socket.IO connection to `wss://api.photon.codes`, path `/v1/projects/{projectId}/events/ws`. You do not need a public URL.
+   - `poll`: the service calls `GET /v1/projects/{projectId}/messages?direction=received&platform=sms` every `PHOTON_POLL_MS`. You do not need a public URL.
+   - `webhook`: create a webhook destination with the URL `https://<photon-tunnel>/photon/webhook` and the event `message.received`. Put the signing secret (`whsec_...`) in `PHOTON_WEBHOOK_SECRET`. You need the tunnel (step 3).
+
+The `/photon/webhook` route always checks the signature. In `stream` and `poll` mode, the route is not necessary. The service forwards each inbound message one time only, also when two paths deliver it.
 
 ### 2. ElevenLabs (https://elevenlabs.io/app/agents)
 1. Create the agent from `elevenlabs/agent.md` (first message, system prompt, placeholder values for the dynamic variables). Copy the agent ID into `ELEVENLABS_AGENT_ID`.
@@ -94,7 +105,7 @@ The service reads the repo-root `.env`, then `services/photon/.env`. The backend
 
 ### 3. Tunnel (only for webhooks)
 
-The default setup (Spectrum stream, ElevenLabs polling) needs no public URL. For the optional webhooks, start a quick tunnel to this service:
+The default setup (Photon `stream` mode, ElevenLabs polling) needs no public URL. For the optional webhooks, start a quick tunnel to this service:
 
 ```bash
 cloudflared tunnel --url http://localhost:8787
@@ -105,12 +116,22 @@ If an external provider must reach the backend directly, use `cloudflared tunnel
 
 ## What the docs confirm and what they do not
 
+The Photon rows refer to the beta docs (`photon.codes/docs/beta/...`), the OpenAPI file `https://api.photon.codes/openapi.json`, the AsyncAPI file `https://api.photon.codes/asyncapi.yaml`, and the `@photon-ai/api` 0.5.0 types.
+
 | Topic | Status |
 |---|---|
-| `spectrum-ts` 12.11.0: `Spectrum({projectId, projectSecret, providers:[imessage.config()]})`, `imessage(app).user(phone)`, `im.space.create(user)`, `space.send(text)`, `app.messages` stream, `app.webhook()` with `X-Spectrum-Signature` | Confirmed (docs and the package types; `pnpm typecheck` passes) |
-| The Spectrum provider is **iMessage**. A recipient can have the service `SMS`, but the docs do not describe an automatic SMS fallback. | Not confirmed for non-iMessage phones. Test it with the team phone. |
-| The inbound `message.sender.id` is the sender's E.164 phone | Not confirmed (TODO in `src/sms.ts`) |
-| Photon voice = SIP trunk only. The SDK has no call control ("coming soon"). ElevenLabs places the call. | Confirmed |
+| Auth: `Authorization: Bearer <pho_sk_ key>`, base URL `https://api.photon.codes`, project paths `/v1/projects/{pho_prj_ id}` | Confirmed |
+| `@photon-ai/api` 0.5.0: `new Photon({headers, baseUrl, fetch, timeoutMs, retry})`, `photon.projects.createOrGetUser`, `createOrGetSpace`, `sendMessage`, `listMessages` | Confirmed (package types; `pnpm typecheck` passes) |
+| Send flow: create or get the two SMS Users, create or get the SMS Space (`Idempotency-Key` required), then `POST /messages` with `spaceId`, `senderId` and `content` (`Idempotency-Key` required). The result is `202`: Photon accepted the send, but delivery is not confirmed. | Confirmed (OpenAPI) |
+| Text content `{type: "text", format: "plain", text}` for SMS | Partly confirmed. The docs show `format: "plain"` for iMessage and email. The OpenAPI only requires a non-empty `format`. |
+| SMS needs Platforms authorization for the sender and each recipient, and campaign (10DLC) eligibility unless every recipient is in-network | Confirmed (OpenAPI text). The status of our number is not known. |
+| Inbound by Socket.IO stream (`delivery` events, `subscribe {startSeq}`) | Confirmed (beta WebSocket docs and AsyncAPI). Not tested against the live service. |
+| Inbound by polling `listMessages` | Confirmed (beta iMessage walkthrough and OpenAPI) |
+| Inbound event `message.received` with `data.object` = the Message (`platform: "sms"`, `status: "received"`, `sentBy.handle`, `receivedBy.handle`, `content`) | Confirmed (OpenAPI `SmsMessageReceivedEvent`) |
+| `sentBy.handle` of an inbound SMS is the sender's E.164 phone | Not confirmed. The docs show E.164 handles for iMessage. |
+| Webhook destinations: create with URL, `apiVersion` and events; the signing secret starts with `whsec_` | Confirmed (OpenAPI) |
+| Webhook signature headers and algorithm | **Not confirmed.** The beta docs do not describe them. The service uses the Standard Webhooks scheme: `webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">`, with the key from the base64 part of `whsec_...`, and a 5-minute limit. If real deliveries get 401, use `stream` or `poll` mode. |
+| Photon voice = SIP trunk only. ElevenLabs places the call. | Confirmed (beta voice cookbook) |
 | ElevenLabs `POST /v1/convai/sip-trunk/outbound-call` with `dynamic_variables` and `ringing_timeout_secs` | Confirmed |
 | ElevenLabs `GET /v1/convai/conversations/{id}`: the status and the transcript | Confirmed. It is **not** confirmed that the transcript fills in during the call. If it does not, the transcript arrives with `call_ended`, and the backend replays it. |
 | Real-time monitor WebSocket | Confirmed, but **Enterprise only**. It is not used (TODO). |

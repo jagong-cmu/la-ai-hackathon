@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     lane_cart_budget_s: float = 45
     lane_subset_budget_s: float = 20
     lane_agent_budget_factor: float = 3.0  # LLM-agent lanes (unknown sites) get longer budgets
+    # call_first: call the distributor as soon as the first plan exists, then text a recap.
+    # sms_first: text a quote request, wait distributor_reply_wait_s, then call if no full quote.
+    distributor_flow: Literal["call_first", "sms_first"] = "call_first"
+    # The call covers only the N items with the highest line cost in the best plan (short demo call).
+    # The other items stay with the web suppliers. 0 = every item.
+    distributor_call_max_items: int = 2
     distributor_reply_wait_s: float = 20
     distributor_call_latest_s: float = 60
     fixture_time_scale: float = 1.0  # 0 makes fixture lanes instant (tests)
