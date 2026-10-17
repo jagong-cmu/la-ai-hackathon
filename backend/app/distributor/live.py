@@ -453,14 +453,16 @@ class LiveDistributor:
         transcript: list[str] = []
         call = _CallOffer()
         seen_lines: set[Any] = set()
+        shown_live = False  # the agent's live-log tool already put this call's lines on screen
 
-        async def line(speaker: str, text: str, key: Any) -> None:
+        async def line(speaker: str, text: str, key: Any, show: bool = True) -> None:
             if key in seen_lines or not text.strip():
                 return
             seen_lines.add(key)
             speaker = "supplier" if speaker in ("supplier", "user") else "agent"
             transcript.append(f"{speaker}: {text}")
-            await ctx.emit("transcript_line", {"speaker": speaker, "text": text})
+            if show:
+                await ctx.emit("transcript_line", {"speaker": speaker, "text": text})
             if speaker == "supplier":
                 await self._on_supplier_line(ctx, text, transcript, call, best_total, line_costs)
 
@@ -476,6 +478,14 @@ class LiveDistributor:
             etype = event.get("type")
             if etype == "sms_in":
                 await self._handle_sms_reply(ctx, event)
+            elif etype == "transcript_line" and event.get("live"):
+                # Display only: the agent wrote these words down during the call. Prices come
+                # from the exact post-call transcript below, so J9 never reads a paraphrase.
+                speaker = "supplier" if event.get("speaker") in ("supplier", "user") else "agent"
+                text = str(event.get("text") or "").strip()
+                if text:
+                    shown_live = True
+                    await ctx.emit("transcript_line", {"speaker": speaker, "text": text, "live": True})
             elif etype == "transcript_line":
                 key = event.get("seq") if event.get("seq") is not None else (event.get("speaker"), event.get("text"))
                 await line(str(event.get("speaker") or ""), str(event.get("text") or ""), key)
@@ -484,11 +494,13 @@ class LiveDistributor:
                 if event.get("transcript"):
                     # Spec §10.2: the post-call transcript fills in every line that the live
                     # stream missed (same `seq` key as the live lines, so nothing repeats).
+                    # After live-tool lines, the screen already shows the call: read the
+                    # exact lines for the quote, but do not show them a second time.
                     for i, turn in enumerate(event["transcript"]):
                         if isinstance(turn, dict):
                             await line(str(turn.get("speaker") or turn.get("role") or ""),
                                        str(turn.get("text") or turn.get("message") or ""),
-                                       turn.get("seq", i))
+                                       turn.get("seq", i), show=not shown_live)
                 elif event.get("final") is False:
                     # The live call hung up; the post-call transcript comes in a later call_ended.
                     deadline = min(deadline, loop.time() + self.cfg.post_call_grace_s)
