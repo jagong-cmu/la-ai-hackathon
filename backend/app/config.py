@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     lane_cart_budget_s: float = 45
     lane_subset_budget_s: float = 20
     lane_agent_budget_factor: float = 3.0  # LLM-agent lanes (unknown sites) get longer budgets
+    # An LLM-agent lane searches only this many items, largest past spend first. The H3 gate (2026-10-17)
+    # took 92 s to search 2 items and 93 s to cart them, which does not fit the job deadline.
+    agent_lane_max_items: int = 1
     # call_first: call the distributor as soon as the first plan exists, then text a recap.
     # sms_first: text a quote request, wait distributor_reply_wait_s, then call if no full quote.
     distributor_flow: Literal["call_first", "sms_first"] = "call_first"
@@ -102,6 +105,9 @@ class Settings(BaseSettings):
     step5_model: str = "stepfun/step-5-preview"
     llm_timeout_s: float = 30
     llm_concurrency: int = 4
+    # Step 5 Preview reasons before it answers, and the reasoning counts against max_tokens.
+    # A spec used about 1,150 tokens in a test (2026-10-17), so no call asks for less than this.
+    llm_min_max_tokens: int = 2048
 
     # CREAO
     creao_api_key: SecretStr | None = None

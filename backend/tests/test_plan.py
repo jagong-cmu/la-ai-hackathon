@@ -125,3 +125,23 @@ def test_savings_and_cards():
     cards = mint_cards("job_1", plan, {"a": "https://shop.example"})
     assert cards[0].merchant_lock == "shop.example"
     assert cards[0].limit_usd == 102.0 and cards[0].simulated
+
+
+def test_agent_lane_searches_only_the_largest_spend_items():
+    """An LLM-agent lane is too slow for every item (H3 gate), so it gets the largest past spend first."""
+    from types import SimpleNamespace
+
+    from app.config import Settings
+    from app.contracts import ShoppingItem
+    from app.orchestrator import Orchestrator
+
+    items = [
+        ShoppingItem(id="gloves", name="gloves", quantity=2000, unit="glove", past_unit_price=0.05),  # 100
+        ShoppingItem(id="boxes", name="boxes", quantity=500, unit="box", past_unit_price=0.89),  # 445
+        ShoppingItem(id="bags", name="bags", quantity=100, unit="bag"),  # no price: 0
+    ]
+    orch = SimpleNamespace(settings=Settings(_env_file=None))
+    rt = SimpleNamespace(request=SimpleNamespace(items=items))
+    agent = Orchestrator._lane_items(orch, rt, SimpleNamespace(is_agent=True))
+    assert [i.id for i in agent] == ["boxes"]
+    assert Orchestrator._lane_items(orch, rt, SimpleNamespace(is_agent=False)) == items

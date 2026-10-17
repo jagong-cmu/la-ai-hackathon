@@ -1,13 +1,13 @@
-"""H3 gate: can Step 5 Preview drive the Browser Use agent lane?
+"""H3 gate: can the lane model (BROWSER_LLM_MODEL, else STEP5_MODEL) drive the Browser Use agent lane?
 
 Runs BrowserUseAgentLane on the local test site with a local browser:
 search -> J5 -> cart -> J7 -> checkout -> the guard stops at the payment page.
 
     cd backend
-    uv run python -m app.lanes.live.h3_gate                 # STEP5_MODEL from .env
-    uv run python -m app.lanes.live.h3_gate --model openai/gpt-4.1-mini   # compare a fallback
+    uv run python -m app.lanes.live.h3_gate                 # the lane model from .env
+    uv run python -m app.lanes.live.h3_gate --model step-5-preview   # compare another model
 
-Needs OPENROUTER_API_KEY. Jev runs live if JEV_API_KEY is set, else the stub answers.
+Needs OPENROUTER_API_KEY (the key for OPENROUTER_BASE_URL, StepFun for this team). Jev runs live if JEV_API_KEY is set, else the stub answers.
 Pass: every line says OK. The script exits 1 on a failure. It never touches a real site.
 """
 
@@ -41,7 +41,7 @@ ITEMS = [
 async def run(model: str | None, headless: bool) -> int:
     cfg = LiveLaneSettings(browser_mode="local", browser_headless=headless)
     if model:
-        cfg = cfg.model_copy(update={"step5_model": model})
+        cfg = cfg.model_copy(update={"browser_llm_model": model})
     if cfg.openrouter_api_key is None:
         print("FAIL: OPENROUTER_API_KEY is not set")
         return 1
@@ -64,7 +64,7 @@ async def run(model: str | None, headless: bool) -> int:
         failures += 0 if ok else 1
         print(f"{'OK  ' if ok else 'FAIL'} {what}")
 
-    print(f"H3 gate: model={cfg.step5_model} jev={modes.get('jev')} evidence={tmp}")
+    print(f"H3 gate: model={cfg.browser_llm_model or cfg.step5_model} force_json={cfg.browser_llm_force_json} jev={modes.get('jev')} evidence={tmp}")
     with serve_site() as base:
         supplier = SupplierRef(id="h3-example", name="Demo Supply Co.", url=base)
         ctx = LaneContext(job_id="h3", lane_id="h3-lane", supplier=supplier, settings=settings, decider=decider,
@@ -99,9 +99,10 @@ async def run(model: str | None, headless: bool) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", help="OpenRouter model id (default: STEP5_MODEL)")
+    parser.add_argument("--model", help="model id at OPENROUTER_BASE_URL (default: BROWSER_LLM_MODEL, else STEP5_MODEL)")
     parser.add_argument("--headed", action="store_true", help="show the browser window")
     args = parser.parse_args()
+    sys.stdout.reconfigure(line_buffering=True)  # keep the OK/FAIL lines if a timeout kills the run
     sys.exit(asyncio.run(run(args.model, headless=not args.headed)))
 
 

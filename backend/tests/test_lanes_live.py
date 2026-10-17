@@ -110,6 +110,43 @@ def test_browser_use_tools_register(settings, decider, tmp_path):
     assert not names & set(EXCLUDED_ACTIONS)
 
 
+@pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed")
+async def test_agent_lane_judges_pages_the_agent_skipped(settings, decider, tmp_path):
+    """H3 gate: the agent named a product page but did not call judge_listing. One repair run judges it."""
+    from types import SimpleNamespace
+
+    from app.contracts import Product
+    from app.lanes.live.agent_lane import AgentFound, BrowserUseAgentLane, LaneAgentOutput
+    from app.lanes.live.config import LiveLaneSettings
+    from app.lanes.live.tools import ToolCore
+
+    supplier = SupplierRef(id="s", name="S", url="http://127.0.0.1/")
+    ctx, _ = make_ctx(settings, decider, tmp_path, supplier)
+    lane = BrowserUseAgentLane(supplier, LiveLaneSettings(_env_file=None))
+
+    async def snapshot() -> PageSnapshot:
+        return CART_PAGE
+
+    lane.core = ToolCore(ctx, snapshot)
+    tasks: list[str] = []
+    url = "http://127.0.0.1/product-gloves.html"
+
+    async def fake_run(ctx: Any, task: str, tag: str) -> Any:
+        tasks.append(tag)
+        if tag == "judge":  # the repair run calls judge_listing, which records the product
+            assert url in task
+            lane.core.products["gloves"] = [Product(item_id="gloves", title="Gloves", sku="G1", url=url,
+                                                    pack_price=8.49)]
+        found = [AgentFound(item_id="gloves", product_url=url), AgentFound(item_id="other", product_url=url)]
+        return SimpleNamespace(structured_output=LaneAgentOutput(found=found))
+
+    lane._run = fake_run  # type: ignore[method-assign]
+    items = [ShoppingItem(id="gloves", name="nitrile gloves medium", quantity=300, unit="gloves")]
+    offers = await lane.search(ctx, items)
+    assert tasks == ["search", "judge"]
+    assert offers.status == "ok" and offers.products[0].sku == "G1"
+
+
 def test_live_setup_never_breaks_import():
     from app.lanes import live_setup
 

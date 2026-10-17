@@ -1,6 +1,6 @@
 """LLM-agent lane for unknown supplier sites (spec §5, review C2/C7).
 
-Open-source `browser_use.Agent` + `ChatOpenAI(base_url=OpenRouter, model=Step 5 Preview)`.
+Open-source `browser_use.Agent` + `ChatOpenAI` at an OpenAI-compatible endpoint (StepFun).
 The agent navigates; the backend judges (J4/J5/J6/J7 through the custom tools) and code
 computes every number.
 
@@ -68,7 +68,7 @@ class LaneAgentOutput(BaseModel):
 
 
 def build_llms(cfg: LiveLaneSettings) -> tuple[Any, Any | None]:
-    """Primary LLM (Step 5 Preview through OpenRouter) and an optional fallback model."""
+    """Primary LLM (BROWSER_LLM_MODEL, else STEP5_MODEL) and an optional fallback model."""
     from browser_use import ChatOpenAI
 
     if cfg.openrouter_api_key is None:
@@ -79,10 +79,21 @@ def build_llms(cfg: LiveLaneSettings) -> tuple[Any, Any | None]:
         "default_headers": {"X-Title": "supplier-agent-browser-lane"},
         "timeout": 60.0,
         "max_retries": 2,
+        "dont_force_structured_output": not cfg.browser_llm_force_json,
+        "add_schema_to_system_prompt": not cfg.browser_llm_force_json,
     }
-    primary = ChatOpenAI(model=cfg.step5_model, **common)
+    primary = ChatOpenAI(model=cfg.browser_llm_model or cfg.step5_model, **common)
     fallback = ChatOpenAI(model=cfg.browser_llm_fallback, **common) if cfg.browser_llm_fallback else None
     return primary, fallback
+
+
+def _found(history: Any) -> list[AgentFound]:
+    """The product pages the agent named in its final output, or none if the output does not parse."""
+    try:
+        out = history.structured_output
+    except Exception:
+        return []
+    return list(out.found) if isinstance(out, LaneAgentOutput) else []
 
 
 def _spec(ctx: LaneContext, item: ShoppingItem) -> SearchSpec:
@@ -187,10 +198,21 @@ class BrowserUseAgentLane:
             + "\n1. Use the site's search box. 2. Call rank_results with the visible results. "
             "3. Open the best result, call page_state, then call judge_listing with the title, SKU and price "
             "as shown. 4. If judge_listing says 'not a match', try the next ranked result (at most 3). "
-            "Do not add anything to the cart. When every item is done, call done with the product URLs."
+            "Do not add anything to the cart. Only the judge_listing tool records a product: a page that you "
+            "judge yourself does not count. When every item is done, call done with the product URLs."
         )
-        await self._run(ctx, task, "search")
+        history = await self._run(ctx, task, "search")
         self._raise_if_stopped()
+        # The H3 gate saw the agent open the right pages and skip judge_listing. Offers come only from
+        # the tool records, so ask once more for the pages it named but did not judge.
+        skipped = [f for f in _found(history) if self.core.best_product(f.item_id) is None
+                   and any(item.id == f.item_id for item in items)]
+        if skipped:
+            pages = "\n".join(f"- item_id={f.item_id}: {f.product_url}" for f in skipped)
+            await self._run(ctx, "For each product page below: open it, call page_state, then call judge_listing "
+                                 f"with the title, SKU and price as shown. Do not search.\n{pages}\n"
+                                 "Then call done.", "judge")
+            self._raise_if_stopped()
         products = [p for item in items if (p := self.core.best_product(item.id)) is not None]
         return SupplierOffers(
             supplier_id=self.supplier.id,
