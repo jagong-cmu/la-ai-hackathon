@@ -69,7 +69,7 @@ class Step5Client:
         body = {
             "model": self.settings.step5_model,
             "temperature": 0,
-            "max_tokens": max_tokens,
+            "max_tokens": max(max_tokens, self.settings.llm_min_max_tokens),
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         }
         headers = {
@@ -88,7 +88,11 @@ class Step5Client:
                         await asyncio.sleep(0.5 * 2**attempt)
                         continue
                     resp.raise_for_status()
-                    text = resp.json()["choices"][0]["message"]["content"] or ""
+                    choice = resp.json()["choices"][0]
+                    text = choice["message"]["content"] or ""
+                    if not text.strip():
+                        # Do not cache it: the reasoning used all the tokens (finish_reason "length").
+                        raise LLMError(f"{purpose}: empty reply (finish_reason={choice.get('finish_reason')})")
                     self.db.cache_set(key, text)
                     return text
                 except (TimeoutError, httpx.HTTPError, KeyError, IndexError) as exc:

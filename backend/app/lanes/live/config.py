@@ -31,19 +31,26 @@ class LiveLaneSettings(BaseSettings):
     cloud_proxy_country_code: str | None = "us"
     cloud_timeout_min: int = 15
 
-    # LLM for the Browser Use agent lane (unknown sites): Step 5 Preview through OpenRouter.
+    # LLM for the Browser Use agent lane (unknown sites). Any OpenAI-compatible endpoint: the team
+    # uses StepFun directly (OPENROUTER_BASE_URL=https://api.stepfun.ai/v1) with the same key names.
     openrouter_api_key: SecretStr | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     step5_model: str = "stepfun/step-5-preview"
-    browser_llm_fallback: str | None = None  # an OpenRouter model id, used if Step 5 fails
+    # The H3 gate (2026-10-17) found step-5-preview too slow to drive the lane (about 100 s a step),
+    # so the lane has its own model. Unset: the lane uses step5_model.
+    browser_llm_model: str | None = None
+    browser_llm_fallback: str | None = None  # a model id at the same endpoint, used if the primary fails
+    # Forced JSON (response_format) made step-5-preview pad replies with blank space until the token
+    # limit. False: the schema goes in the system prompt and Browser Use parses the reply text.
+    browser_llm_force_json: bool = True
     browser_use_vision: bool = False  # Step 5 gets DOM text; turn on only for a vision model
     agent_max_steps: int = 40
 
     # Text limits for page snapshots sent to Jev.
     snapshot_text_chars: int = 6000
 
-    @field_validator("browser_use_api_key", "openrouter_api_key", "browser_llm_fallback", "browser_executable",
-                     mode="before")
+    @field_validator("browser_use_api_key", "openrouter_api_key", "browser_llm_model", "browser_llm_fallback",
+                     "browser_executable", mode="before")
     @classmethod
     def _blank_is_unset(cls, value: Any) -> Any:
         return None if isinstance(value, str) and not value.strip() else value

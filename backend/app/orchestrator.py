@@ -28,6 +28,7 @@ from app.contracts import (
     LaneStatus,
     Plan,
     SearchSpec,
+    ShoppingItem,
     ShoppingRequest,
     SupplierOffers,
     VerifiedCart,
@@ -316,6 +317,14 @@ class Orchestrator:
 
         return emit
 
+    def _lane_items(self, rt: JobRuntime, lr: LaneRuntime) -> list[ShoppingItem]:
+        items = rt.request.items
+        if not lr.is_agent or len(items) <= self.settings.agent_lane_max_items:
+            return items
+        # Largest past spend first: the most savings for the agent lane's few searches.
+        ranked = sorted(items, key=lambda i: -(i.past_unit_price or 0.0) * i.quantity)
+        return ranked[: self.settings.agent_lane_max_items]
+
     def _budget(self, lr: LaneRuntime, base: float) -> float:
         return base * (self.settings.lane_agent_budget_factor if lr.is_agent else 1.0)
 
@@ -340,7 +349,7 @@ class Orchestrator:
                     await self._timed(lambda: lane.open(ctx), self._budget(lr, self.settings.lane_search_budget_s))
                 lr.status.session_id, lr.status.live_url = ctx.session_id, ctx.live_url
                 with span("lane.search", f"search {sid}", supplier=sid):
-                    offers = await self._timed(lambda: lane.search(ctx, rt.request.items),
+                    offers = await self._timed(lambda: lane.search(ctx, self._lane_items(rt, lr)),
                                                self._budget(lr, self.settings.lane_search_budget_s))
                 rt.offers[sid] = offers
                 await self.bus.emit(rt.job_id, "offers_ready", {"status": offers.status, "products": len(offers.products)},
