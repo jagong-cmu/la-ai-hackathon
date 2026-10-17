@@ -1,0 +1,2299 @@
+{
+ "generatedAt": "2026-10-16T23:21:28-07:00",
+ "split": "test",
+ "limit": null,
+ "seed": 7,
+ "methods": {
+  "rules": {
+   "status": "ran",
+   "probabilityNote": "The rules return fixed constants (for example 0.9) as probabilities. They are not estimates, so read their calibration as a reference only.",
+   "j12": {
+    "n": 83,
+    "accuracy": {
+     "item": {
+      "n": 83,
+      "accuracy": 0.7590361445783133
+     },
+     "kind": {
+      "n": 83,
+      "accuracy": 0.6024096385542169
+     },
+     "quantity": {
+      "n": 61,
+      "accuracy": 0.8852459016393442
+     },
+     "date": {
+      "n": 61,
+      "accuracy": 0.9180327868852459
+     },
+     "all": {
+      "n": 83,
+      "accuracy": 0.42168674698795183
+     }
+    },
+    "macroF1Kind": 0.6190712817774876,
+    "calibration": {
+     "item": {
+      "n": 83,
+      "brierMulticlass": 0.43736947791164626,
+      "brierTop": 0.20277108433734942,
+      "ece": 0.14096385542168677,
+      "bins": [
+       {
+        "lo": 0.0,
+        "hi": 0.1,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.1,
+        "hi": 0.2,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.2,
+        "hi": 0.3,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.3,
+        "hi": 0.4,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.4,
+        "hi": 0.5,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.5,
+        "hi": 0.6,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.6,
+        "hi": 0.7,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.7,
+        "hi": 0.8,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.8,
+        "hi": 0.9,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.9,
+        "hi": 1.0,
+        "n": 83,
+        "meanConfidence": 0.9,
+        "accuracy": 0.7590361445783133
+       }
+      ]
+     },
+     "kind": {
+      "n": 83,
+      "brierMulticlass": 0.7006554216867483,
+      "brierTop": 0.3165686746987952,
+      "ece": 0.2775903614457832,
+      "bins": [
+       {
+        "lo": 0.0,
+        "hi": 0.1,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.1,
+        "hi": 0.2,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.2,
+        "hi": 0.3,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.3,
+        "hi": 0.4,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.4,
+        "hi": 0.5,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.5,
+        "hi": 0.6,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.6,
+        "hi": 0.7,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.7,
+        "hi": 0.8,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.8,
+        "hi": 0.9,
+        "n": 83,
+        "meanConfidence": 0.8800000000000001,
+        "accuracy": 0.6024096385542169
+       },
+       {
+        "lo": 0.9,
+        "hi": 1.0,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       }
+      ]
+     },
+     "pooled": {
+      "n": 166,
+      "brierMulticlass": 0.5690124497991981,
+      "brierTop": 0.2596698795180723,
+      "ece": 0.20927710843373498,
+      "bins": [
+       {
+        "lo": 0.0,
+        "hi": 0.1,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.1,
+        "hi": 0.2,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.2,
+        "hi": 0.3,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.3,
+        "hi": 0.4,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.4,
+        "hi": 0.5,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.5,
+        "hi": 0.6,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.6,
+        "hi": 0.7,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.7,
+        "hi": 0.8,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.8,
+        "hi": 0.9,
+        "n": 83,
+        "meanConfidence": 0.8800000000000001,
+        "accuracy": 0.6024096385542169
+       },
+       {
+        "lo": 0.9,
+        "hi": 1.0,
+        "n": 83,
+        "meanConfidence": 0.9,
+        "accuracy": 0.7590361445783133
+       }
+      ]
+     }
+    },
+    "calls": {
+     "decisions": 83,
+     "errors": 0,
+     "latencyP50Ms": 0.014666991773992777,
+     "latencyP95Ms": 0.03573810681700708,
+     "costPer1000Usd": 0.0,
+     "costNote": "local code, no API cost"
+    },
+    "byTag": {
+     "abbrev_date": {
+      "n": 1,
+      "allCorrect": 0.0
+     },
+     "ambiguous_next": {
+      "n": 1,
+      "allCorrect": 1.0
+     },
+     "cancel_previous": {
+      "n": 2,
+      "allCorrect": 0.0
+     },
+     "chatter": {
+      "n": 8,
+      "allCorrect": 1.0
+     },
+     "delta_needs_math": {
+      "n": 2,
+      "allCorrect": 0.0
+     },
+     "distractor_word": {
+      "n": 2,
+      "allCorrect": 0.0
+     },
+     "holiday_date": {
+      "n": 1,
+      "allCorrect": 0.0
+     },
+     "negation": {
+      "n": 8,
+      "allCorrect": 0.125
+     },
+     "no_keyword": {
+      "n": 5,
+      "allCorrect": 0.0
+     },
+     "number_is_duration": {
+      "n": 1,
+      "allCorrect": 0.0
+     },
+     "number_not_quantity": {
+      "n": 4,
+      "allCorrect": 0.75
+     },
+     "ordinal_day_only": {
+      "n": 1,
+      "allCorrect": 1.0
+     },
+     "out_of_catalog": {
+      "n": 1,
+      "allCorrect": 1.0
+     },
+     "plain": {
+      "n": 33,
+      "allCorrect": 0.45454545454545453
+     },
+     "resume_date_not_start": {
+      "n": 1,
+      "allCorrect": 0.0
+     },
+     "spelled_number": {
+      "n": 1,
+      "allCorrect": 0.0
+     },
+     "synonym_item": {
+      "n": 10,
+      "allCorrect": 0.2
+     },
+     "two_dates": {
+      "n": 1,
+      "allCorrect": 0.0
+     },
+     "two_numbers": {
+      "n": 3,
+      "allCorrect": 0.0
+     },
+     "typo": {
+      "n": 3,
+      "allCorrect": 0.3333333333333333
+     },
+     "vague_quantity": {
+      "n": 3,
+      "allCorrect": 0.6666666666666666
+     }
+    },
+    "rows": [
+     {
+      "id": "j12-001",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "one_time_extra",
+       "quantity": "300 extra",
+       "date": "Saturday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-002",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "40 more",
+       "date": "on Thursday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-004",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "one_time_extra",
+       "quantity": "120 flats",
+       "date": "tomorrow"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-005",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "30 trays",
+       "date": "Oct 23"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-007",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "one_time_extra",
+       "quantity": "25 vanilla",
+       "date": "10/30"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-008",
+      "pred": {
+       "item": "Artisan Boule Case",
+       "kind": "one_time_extra",
+       "quantity": "60 extra",
+       "date": "next Sunday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-010",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "one_time_extra",
+       "quantity": "12 cake",
+       "date": "the 24th"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-011",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "90 bun",
+       "date": "Friday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-013",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "one_time_extra",
+       "quantity": "18 vanilla",
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": false,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-014",
+      "pred": {
+       "item": "none of these",
+       "kind": "one_time_extra",
+       "quantity": "250 extra",
+       "date": "in 3 days"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-016",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "one_time_extra",
+       "quantity": "70 hot",
+       "date": "Sunday"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-017",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "one_time_extra",
+       "quantity": null,
+       "date": "Friday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-019",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "150 hamburger",
+       "date": "Nov 3rd"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-020",
+      "pred": {
+       "item": "none of these",
+       "kind": "one_time_extra",
+       "quantity": null,
+       "date": "Saturday"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": false,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-022",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "20 croissant",
+       "date": "tmrw"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-023",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "one_time_extra",
+       "quantity": "80 extra",
+       "date": "on Wednesday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-025",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "one_time_extra",
+       "quantity": "500 hamburger",
+       "date": "Friday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-026",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "60 dog",
+       "date": "10/17"
+      },
+      "correct": {
+       "item": false,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-028",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "one_time_extra",
+       "quantity": "15 more",
+       "date": "tomorrow"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-029",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "8 croissant",
+       "date": "Wednesday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-031",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "lasting_increase",
+       "quantity": "40 more",
+       "date": "Monday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-032",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "lasting_increase",
+       "quantity": "20 more",
+       "date": "next week"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-034",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "lasting_increase",
+       "quantity": "30 flats",
+       "date": "Monday"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-035",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "lasting_increase",
+       "quantity": "120 more",
+       "date": "Nov 2"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-037",
+      "pred": {
+       "item": "Artisan Boule Case",
+       "kind": "not_a_forecast_change",
+       "quantity": "40 to",
+       "date": "Monday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": false,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-038",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "50 flats",
+       "date": "10/26"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-040",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "lasting_increase",
+       "quantity": "10 vanilla",
+       "date": "Oct 19"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-041",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "not_a_forecast_change",
+       "quantity": "60 cases",
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-043",
+      "pred": {
+       "item": "Artisan Boule Case",
+       "kind": "lasting_increase",
+       "quantity": null,
+       "date": "Friday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-044",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "80 hamburger",
+       "date": "Monday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-046",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "lasting_increase",
+       "quantity": "5 cake",
+       "date": "Wednesday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-047",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "not_a_forecast_change",
+       "quantity": "30 more",
+       "date": "Oct 12"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-049",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "lasting_decrease",
+       "quantity": "20 fewer",
+       "date": "Monday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-050",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "lasting_decrease",
+       "quantity": "10 trays",
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-052",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "40 flats",
+       "date": "next week"
+      },
+      "correct": {
+       "item": false,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-053",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "lasting_decrease",
+       "quantity": "50 fewer",
+       "date": "Nov 2"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-055",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "30 to",
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": false,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-056",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "lasting_increase",
+       "quantity": "15 trays",
+       "date": "Monday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-058",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "20 a",
+       "date": "Oct 19"
+      },
+      "correct": {
+       "item": false,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-059",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "lasting_decrease",
+       "quantity": null,
+       "date": "maybe 10"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": false,
+       "date": false,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-061",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "lasting_decrease",
+       "quantity": "100 flats",
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-062",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "lasting_increase",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-064",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "not_a_forecast_change",
+       "quantity": "35 cases",
+       "date": "10/26"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-065",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "this week"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-067",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "next week"
+      },
+      "correct": {
+       "item": false,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-068",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "not_a_forecast_change",
+       "quantity": "2 weeks,",
+       "date": "Monday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": false,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-070",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "Oct 19"
+      },
+      "correct": {
+       "item": false,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-071",
+      "pred": {
+       "item": "Artisan Boule Case",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "Monday."
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": false,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-073",
+      "pred": {
+       "item": "none of these",
+       "kind": "pause",
+       "quantity": null,
+       "date": "this Saturday"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-074",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "Oct 19"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": false,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-076",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "Tuesday"
+      },
+      "correct": {
+       "item": false,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-077",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "discontinue",
+       "quantity": null,
+       "date": "next month"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-079",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "discontinue",
+       "quantity": null,
+       "date": "Oct 12"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-080",
+      "pred": {
+       "item": "Artisan Boule Case",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-082",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "next week"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-083",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "11/2"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-085",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": false,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-086",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "discontinue",
+       "quantity": null,
+       "date": "tomorrow"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-088",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "in 2 weeks"
+      },
+      "correct": {
+       "item": false,
+       "kind": false,
+       "quantity": true,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-089",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "tomorrow"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-091",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "5 %",
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-092",
+      "pred": {
+       "item": "Artisan Boule Case",
+       "kind": "cancel_previous",
+       "quantity": "200 boules",
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": false,
+       "date": true,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-094",
+      "pred": {
+       "item": "Croissant Tray, 24 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-095",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-097",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "Oct 9"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-098",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "today"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-100",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "this week"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-101",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "Monday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-103",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-104",
+      "pred": {
+       "item": "Cake Round, 10 in Vanilla",
+       "kind": "cancel_previous",
+       "quantity": "12 cakes",
+       "date": "next Saturday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": false,
+       "date": false,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-106",
+      "pred": {
+       "item": "Artisan Boule Case",
+       "kind": "one_time_extra",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": null,
+       "date": null,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-107",
+      "pred": {
+       "item": "Pan Loaf Bread Case, White",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-109",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "one_time_extra",
+       "quantity": "300 extra",
+       "date": "Saturday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": null,
+       "date": null,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-110",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-112",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "tonight"
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-113",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": "Friday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-115",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": "3",
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-116",
+      "pred": {
+       "item": "Hamburger Bun Flat, 8 ct",
+       "kind": "not_a_forecast_change",
+       "quantity": "420 hamburger",
+       "date": "this week"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-118",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-119",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     },
+     {
+      "id": "j12-121",
+      "pred": {
+       "item": "none of these",
+       "kind": "not_a_forecast_change",
+       "quantity": null,
+       "date": null
+      },
+      "correct": {
+       "item": false,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-122",
+      "pred": {
+       "item": "none of these",
+       "kind": "one_time_extra",
+       "quantity": null,
+       "date": "on Saturday"
+      },
+      "correct": {
+       "item": true,
+       "kind": false,
+       "quantity": null,
+       "date": null,
+       "all": false
+      },
+      "error": null
+     },
+     {
+      "id": "j12-124",
+      "pred": {
+       "item": "none of these",
+       "kind": "one_time_extra",
+       "quantity": "30 extra",
+       "date": "Sunday"
+      },
+      "correct": {
+       "item": true,
+       "kind": true,
+       "quantity": null,
+       "date": null,
+       "all": true
+      },
+      "error": null
+     }
+    ],
+    "stability": {
+     "reversed": {
+      "item": {
+       "n": 83,
+       "agreement": 0.7108433734939759,
+       "firstOptionRate": 0.27710843373493976
+      },
+      "kind": {
+       "n": 83,
+       "agreement": 1.0,
+       "firstOptionRate": 0.03614457831325301
+      },
+      "quantity": {
+       "n": 46,
+       "agreement": 0.0,
+       "firstOptionRate": 1.0
+      },
+      "date": {
+       "n": 63,
+       "agreement": 0.0,
+       "firstOptionRate": 1.0
+      }
+     },
+     "shuffled": {
+      "item": {
+       "n": 83,
+       "agreement": 0.8313253012048193,
+       "firstOptionRate": 0.1927710843373494
+      },
+      "kind": {
+       "n": 83,
+       "agreement": 1.0,
+       "firstOptionRate": 0.14457831325301204
+      },
+      "quantity": {
+       "n": 46,
+       "agreement": 0.41304347826086957,
+       "firstOptionRate": 1.0
+      },
+      "date": {
+       "n": 63,
+       "agreement": 0.5873015873015873,
+       "firstOptionRate": 1.0
+      }
+     },
+     "normal": {
+      "item": {
+       "n": 83,
+       "agreement": 1.0,
+       "firstOptionRate": 0.24096385542168675
+      },
+      "kind": {
+       "n": 83,
+       "agreement": 1.0,
+       "firstOptionRate": 0.5542168674698795
+      },
+      "quantity": {
+       "n": 46,
+       "agreement": 1.0,
+       "firstOptionRate": 1.0
+      },
+      "date": {
+       "n": 63,
+       "agreement": 1.0,
+       "firstOptionRate": 1.0
+      }
+     }
+    }
+   },
+   "j11": {
+    "n": 32,
+    "accuracy": 0.78125,
+    "macroF1Cause": 0.7760942760942761,
+    "calibration": {
+     "cause": {
+      "n": 32,
+      "brierMulticlass": 0.3849428571428572,
+      "brierTop": 0.17276249999999999,
+      "ece": 0.10124999999999997,
+      "bins": [
+       {
+        "lo": 0.0,
+        "hi": 0.1,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.1,
+        "hi": 0.2,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.2,
+        "hi": 0.3,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.3,
+        "hi": 0.4,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.4,
+        "hi": 0.5,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.5,
+        "hi": 0.6,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.6,
+        "hi": 0.7,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       },
+       {
+        "lo": 0.7,
+        "hi": 0.8,
+        "n": 2,
+        "meanConfidence": 0.7,
+        "accuracy": 1.0
+       },
+       {
+        "lo": 0.8,
+        "hi": 0.9,
+        "n": 30,
+        "meanConfidence": 0.8546666666666667,
+        "accuracy": 0.7666666666666667
+       },
+       {
+        "lo": 0.9,
+        "hi": 1.0,
+        "n": 0,
+        "meanConfidence": null,
+        "accuracy": null
+       }
+      ]
+     }
+    },
+    "calls": {
+     "decisions": 32,
+     "errors": 0,
+     "latencyP50Ms": 0.001979497028514743,
+     "latencyP95Ms": 0.0028934329748153687,
+     "costPer1000Usd": 0.0,
+     "costNote": "local code, no API cost"
+    },
+    "byRule": {
+     "R1:backorder_memo+below": {
+      "n": 10,
+      "accuracy": 1.0
+     },
+     "R2:lost_customer+below": {
+      "n": 7,
+      "accuracy": 1.0
+     },
+     "R4:first_order+reorders": {
+      "n": 3,
+      "accuracy": 1.0
+     },
+     "R5:first_order+no_reorder": {
+      "n": 5,
+      "accuracy": 0.0
+     },
+     "R6:persists": {
+      "n": 1,
+      "accuracy": 1.0
+     },
+     "R7:far_above+reverts": {
+      "n": 2,
+      "accuracy": 1.0
+     },
+     "R8:default": {
+      "n": 4,
+      "accuracy": 0.5
+     }
+    },
+    "confusion": {
+     "customer_gained": {
+      "customer_gained": 3
+     },
+     "customer_lost": {
+      "customer_lost": 7
+     },
+     "one_time_event": {
+      "customer_gained": 5,
+      "one_time_event": 2
+     },
+     "supply_shortage": {
+      "supply_shortage": 10
+     },
+     "noise": {
+      "noise": 2,
+      "lasting_shift_down": 1,
+      "product_substitution": 1
+     },
+     "lasting_shift_up": {
+      "lasting_shift_up": 1
+     }
+    },
+    "rows": [
+     {
+      "id": "miss_item-00001_4",
+      "label": "customer_gained",
+      "pred": "customer_gained",
+      "error": null
+     },
+     {
+      "id": "miss_item-00001_8",
+      "label": "customer_gained",
+      "pred": "customer_gained",
+      "error": null
+     },
+     {
+      "id": "miss_item-00001_14",
+      "label": "customer_lost",
+      "pred": "customer_lost",
+      "error": null
+     },
+     {
+      "id": "miss_item-00001_32",
+      "label": "customer_lost",
+      "pred": "customer_lost",
+      "error": null
+     },
+     {
+      "id": "miss_item-00002_17",
+      "label": "customer_gained",
+      "pred": "customer_gained",
+      "error": null
+     },
+     {
+      "id": "miss_item-00002_19",
+      "label": "one_time_event",
+      "pred": "customer_gained",
+      "error": null
+     },
+     {
+      "id": "miss_item-00003_25",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00003_34",
+      "label": "noise",
+      "pred": "noise",
+      "error": null
+     },
+     {
+      "id": "miss_item-00004_35",
+      "label": "one_time_event",
+      "pred": "customer_gained",
+      "error": null
+     },
+     {
+      "id": "miss_item-00004_37",
+      "label": "customer_lost",
+      "pred": "customer_lost",
+      "error": null
+     },
+     {
+      "id": "miss_item-00005_40",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00005_41",
+      "label": "noise",
+      "pred": "lasting_shift_down",
+      "error": null
+     },
+     {
+      "id": "miss_item-00005_44",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00001_16",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00001_17",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00001_20",
+      "label": "noise",
+      "pred": "noise",
+      "error": null
+     },
+     {
+      "id": "miss_item-00001_38",
+      "label": "customer_lost",
+      "pred": "customer_lost",
+      "error": null
+     },
+     {
+      "id": "miss_item-00001_47",
+      "label": "one_time_event",
+      "pred": "one_time_event",
+      "error": null
+     },
+     {
+      "id": "miss_item-00002_23",
+      "label": "customer_lost",
+      "pred": "customer_lost",
+      "error": null
+     },
+     {
+      "id": "miss_item-00003_43",
+      "label": "one_time_event",
+      "pred": "customer_gained",
+      "error": null
+     },
+     {
+      "id": "miss_item-00003_44",
+      "label": "customer_lost",
+      "pred": "customer_lost",
+      "error": null
+     },
+     {
+      "id": "miss_item-00003_46",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00003_47",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00003_49",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00004_38",
+      "label": "customer_lost",
+      "pred": "customer_lost",
+      "error": null
+     },
+     {
+      "id": "miss_item-00004_40",
+      "label": "lasting_shift_up",
+      "pred": "lasting_shift_up",
+      "error": null
+     },
+     {
+      "id": "miss_item-00004_41",
+      "label": "noise",
+      "pred": "product_substitution",
+      "error": null
+     },
+     {
+      "id": "miss_item-00004_44",
+      "label": "one_time_event",
+      "pred": "one_time_event",
+      "error": null
+     },
+     {
+      "id": "miss_item-00004_46",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00004_47",
+      "label": "supply_shortage",
+      "pred": "supply_shortage",
+      "error": null
+     },
+     {
+      "id": "miss_item-00005_46",
+      "label": "one_time_event",
+      "pred": "customer_gained",
+      "error": null
+     },
+     {
+      "id": "miss_item-00005_47",
+      "label": "one_time_event",
+      "pred": "customer_gained",
+      "error": null
+     }
+    ],
+    "stability": {
+     "reversed": {
+      "cause": {
+       "n": 32,
+       "agreement": 1.0,
+       "firstOptionRate": 0.0625
+      }
+     },
+     "shuffled": {
+      "cause": {
+       "n": 32,
+       "agreement": 1.0,
+       "firstOptionRate": 0.15625
+      }
+     },
+     "normal": {
+      "cause": {
+       "n": 32,
+       "agreement": 1.0,
+       "firstOptionRate": 0.3125
+      }
+     }
+    }
+   }
+  }
+ },
+ "tasks": [
+  "j12",
+  "j11",
+  "backtest"
+ ],
+ "datasets": {
+  "j12": {
+   "path": "eval/data/owner_messages.jsonl",
+   "n": 83
+  },
+  "j11": {
+   "path": "eval/data/miss_cases.jsonl",
+   "n": 32,
+   "labels": {
+    "customer_gained": 3,
+    "customer_lost": 7,
+    "lasting_shift_up": 1,
+    "noise": 4,
+    "one_time_event": 7,
+    "supply_shortage": 10
+   }
+  }
+ },
+ "models": {
+  "jev": "jev-latest",
+  "step5": "stepfun/step-5-preview"
+ },
+ "j12CandidateRecall": {
+  "quantity": {
+   "n": 41,
+   "rate": 0.9024390243902439
+  },
+  "date": {
+   "n": 51,
+   "rate": 0.9803921568627451
+  }
+ },
+ "backtest": {
+  "weeks": 52,
+  "products": 6,
+  "variants": [
+   {
+    "variant": "plain",
+    "wape": 0.3292,
+    "bias": 0.061,
+    "coverage": 0.8425,
+    "misses": 23,
+    "ownerQuestions": 0,
+    "stockoutWeeks": 0,
+    "avgStockUnits": 652.3,
+    "fillRate": 1.0
+   },
+   {
+    "variant": "fixed_rule",
+    "wape": 0.3146,
+    "bias": 0.0518,
+    "coverage": 0.5685,
+    "misses": 63,
+    "ownerQuestions": 0,
+    "stockoutWeeks": 1,
+    "avgStockUnits": 518.3,
+    "fillRate": 0.9981
+   },
+   {
+    "variant": "jev",
+    "wape": 0.3248,
+    "bias": 0.0158,
+    "coverage": 0.8014,
+    "misses": 29,
+    "ownerQuestions": 6,
+    "stockoutWeeks": 1,
+    "avgStockUnits": 591.5,
+    "fillRate": 0.9998
+   }
+  ],
+  "actualPurchasing": {
+   "avgImpliedStockUnits": 369.2,
+   "shortWeeks": 15.0
+  },
+  "jevSource": "stub",
+  "notes": [
+   "One-step-ahead forecasts, refit every week (rolling origin).",
+   "Stock simulation: weekly order-up-to rule, 1-week delivery, same rule for every variant.",
+   "jevSource 'stub' means fixture rules answered J11; it is NOT a Jev result.",
+   "Data is simulated (qb-world-sim); results apply to this simulator."
+  ]
+ }
+}

@@ -1,0 +1,35 @@
+{
+  "supplier": {"id": "alpha", "name": "Alpha Packaging (fixture)", "url": "https://alpha.example", "adapter": "fixture", "origin": "fixture"},
+  "mode": "adapter",
+  "behavior": {"searchSeconds": 16, "cartSeconds": 12, "subsetSeconds": 6, "checkoutSeconds": 8, "blockAt": null},
+  "minimumOrderValue": 0,
+  "freeShippingThreshold": 300,
+  "flatShipping": 14.95,
+  "taxRate": 0.06,
+  "listings": [
+    {
+      "itemId": "syn-gloves", "sku": "A-GLV-M100", "packPrice": 11.49,
+      "title": "Nitrile Food Service Gloves, Medium, Powder-Free - Box of 100",
+      "text": "Box of 100 gloves. 10 boxes/case. Food safe. In stock, ships today.",
+      "jev": {"matchProbs": {"0": 0.01, "1": 0.04, "2": 0.95}, "mustHave": [0.99, 0.97], "inStock": 0.96, "pack": "Box of 100"}
+    },
+    {
+      "itemId": "syn-bakery-boxes", "sku": "A-BKB-10105", "packPrice": 44.00,
+      "title": "White Bakery Box with Window, 10 x 10 x 5 in - Bundle of 50",
+      "text": "Bundle of 50 boxes. Paperboard, window lid. In stock.",
+      "jev": {"matchProbs": {"0": 0.02, "1": 0.08, "2": 0.90}, "mustHave": [0.95, 0.93], "inStock": 0.95, "pack": "Bundle of 50"}
+    },
+    {
+      "itemId": "syn-parchment", "sku": "A-PRC-HS1000", "packPrice": 41.99,
+      "title": "Parchment Paper Pan Liners, Half Sheet, Silicone Coated - Case of 1000",
+      "text": "Case of 1000 sheets, 12 x 16 in. In stock.",
+      "jev": {"matchProbs": {"0": 0.01, "1": 0.03, "2": 0.96}, "mustHave": [0.98, 0.96], "inStock": 0.97, "pack": "Case of 1000"}
+    },
+    {
+      "itemId": "syn-bread-bags", "sku": "A-BRB-8418", "packPrice": 29.50,
+      "title": "Clear Poly Bread Bags, 8 x 4 x 18 in - Pack of 500",
+      "text": "Pack of 500 bags. 1 mil gusseted polyethylene. In stock.",
+      "jev": {"matchProbs": {"0": 0.02, "1": 0.10, "2": 0.88}, "mustHave": [0.94, 0.91], "inStock": 0.94, "pack": "Pack of 500"}
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+# Supply use per product unit sold. ASSUMED values set by the team for the demo
+# (the dataset records no supply use). The owner can change them in the UI.
+# Product units: one bun flat, one croissant tray, one bread case (12 loaves), one cake,
+# one boule case (6 loaves).
+assumed: true
+note: >-
+  Set by the team, not learned from data. Edit to match the bakery's real packaging use.
+supplies:
+  syn-gloves:
+    unit: glove
+    pack: 1000
+    per_product:
+      item-00001: 1.0   # Hamburger Bun Flat
+      item-00002: 1.0   # Croissant Tray
+      item-00003: 1.0   # Pan Loaf Bread Case
+      item-00004: 1.0   # Hot Dog Bun Flat
+      item-00005: 1.0   # Cake Round
+      item-00006: 1.0   # Artisan Boule Case
+  syn-bakery-boxes:
+    unit: box
+    pack: 250
+    per_product:
+      item-00002: 1.0   # each croissant tray ships in one box
+      item-00005: 1.0   # each cake ships in one box
+  syn-bread-bags:
+    unit: bag
+    pack: 1000
+    per_product:
+      item-00003: 12.0  # 12 loaves per case, one bag each
+      item-00006: 6.0   # 6 boules per case
+  syn-parchment:
+    unit: sheet
+    pack: 1000
+    per_product:
+      item-00001: 0.5
+      item-00002: 1.0
+      item-00004: 0.5
+      item-00005: 1.0

@@ -1,0 +1,26 @@
+{
+  "name": "photon-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Photon (Spectrum iMessage/SMS) + ElevenLabs voice agent bridge for the supplier agent backend.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.13",
+    "spectrum-ts": "^12.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

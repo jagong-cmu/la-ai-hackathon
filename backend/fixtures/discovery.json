@@ -1,0 +1,10 @@
+{
+  "category": "packaging_disposables",
+  "candidates": [
+    {"id": "alpha", "name": "Alpha Packaging (fixture)", "url": "https://alpha.example", "adapter": "fixture", "notes": "Packaging and food service disposables. Prices shown to guests."},
+    {"id": "bravo", "name": "Bravo Restaurant Supply (fixture)", "url": "https://bravo.example", "adapter": "fixture", "notes": "Restaurant supply store with guest checkout."},
+    {"id": "charlie", "name": "Charlie Wholesale (fixture)", "url": "https://charlie.example", "adapter": "fixture", "notes": "Wholesale supplies."},
+    {"id": "delta", "name": "Delta Kitchen Depot (fixture, unknown site)", "url": "https://delta.example", "adapter": null, "notes": "Kitchen supply store."},
+    {"id": "echo", "name": "Echo Supply Directory (fixture)", "url": "https://echo.example", "adapter": null, "notes": "A directory of supply companies; not a seller."}
+  ]
+}

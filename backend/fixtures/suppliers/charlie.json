@@ -1,0 +1,10 @@
+{
+  "supplier": {"id": "charlie", "name": "Charlie Wholesale (fixture)", "url": "https://charlie.example", "adapter": "fixture", "origin": "fixture"},
+  "mode": "adapter",
+  "behavior": {"searchSeconds": 22, "cartSeconds": 10, "subsetSeconds": 5, "checkoutSeconds": 8, "blockAt": "search"},
+  "minimumOrderValue": 0,
+  "freeShippingThreshold": null,
+  "flatShipping": 12.0,
+  "taxRate": 0.06,
+  "listings": []
+}
