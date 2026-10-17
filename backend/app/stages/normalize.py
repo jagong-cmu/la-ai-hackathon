@@ -1,7 +1,7 @@
 """Normalize offers: packs needed, cost per needed unit, eligibility, flags.
 
-For each (item, supplier) the cheapest eligible option wins. All arithmetic is here,
-never in a model.
+For each (item, supplier) the cheapest eligible option wins, after the ranking penalty for
+J5 doubts (`low_match`, `must_have_unsure:*`). All arithmetic is here, never in a model.
 """
 
 from __future__ import annotations
@@ -11,6 +11,11 @@ from dataclasses import dataclass, field
 
 from app.config import Thresholds
 from app.contracts import NormalizedOption, ShoppingItem, SupplierOffers
+
+
+def is_doubt(flag: str) -> bool:
+    """A J5 answer in the confirm band: eligible, but Jev was not sure."""
+    return flag == "low_match" or flag.startswith("must_have_unsure:")
 
 
 @dataclass
@@ -77,6 +82,7 @@ def normalize_option(
         effective_unit_price=round(line_cost / item.quantity, 4) if packs else 0.0,
         flags=flags,
         eligible=eligible,
+        risk_penalty=round(line_cost * th.risk_penalty * sum(map(is_doubt, flags)), 2),
     )
 
 
@@ -98,6 +104,7 @@ def normalize(
                 continue
             key = (item.id, offers.supplier_id)
             current = result.best.get(key)
-            if current is None or option.line_cost < current.line_cost:
+            if current is None or (option.line_cost + option.risk_penalty
+                                   < current.line_cost + current.risk_penalty):
                 result.best[key] = option
     return result

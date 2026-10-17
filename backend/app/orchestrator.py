@@ -461,7 +461,10 @@ class Orchestrator:
 
     async def _replan(self, rt: JobRuntime, reason: str) -> None:
         async with rt.plan_lock:
-            result = optimize(rt.request.items, rt.normalized, rt.offers, rt.carts, rt.names)
+            # A worker thread, so a long MILP solve does not stop the events and the call webhooks.
+            # The copies keep other tasks from changing the dicts during the solve.
+            result = await asyncio.to_thread(optimize, list(rt.request.items), rt.normalized,
+                                             dict(rt.offers), dict(rt.carts), dict(rt.names))
             for plan in result.plans:
                 plan.rules_check = check_plan(plan, rt.rules)
             rt.plans = result.plans

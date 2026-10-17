@@ -30,6 +30,7 @@ FastAPI + Python 3.12 + SQLite. The backend holds all the state, all the arithme
 | `app/stages/extract.py` | Regex candidates: pack counts, money amounts | §6 |
 | `app/stages/normalize.py` | Packs needed, cost per unit, eligibility, flags | DATA_FLOW §3.1 |
 | `app/stages/optimize.py` | Every assignment, cart pricing, subset requests | DATA_FLOW §3.2 |
+| `app/stages/solver.py` | MILP fallback (PuLP + HiGHS) that picks candidate assignments past 200,000 | DATA_FLOW §3.2 |
 | `app/stages/totals.py` | J7 picks → costs → sum check (verified or not) | DATA_FLOW §4 |
 | `app/stages/rules.py`, `cards.py`, `rank.py` | Spending rules, simulated cards, results + warnings | §7 |
 | `app/jev.py` | Jev HTTP client: cache, semaphore, retries, stub fallback | §6 |

@@ -225,6 +225,7 @@ class NormalizedOption(Model):
     effective_unit_price: float
     flags: list[str] = []
     eligible: bool
+    risk_penalty: float = 0.0  # ranking only, never part of a price (Thresholds.risk_penalty)
 
 
 class CartLine(Model):
@@ -318,6 +319,8 @@ class Plan(Model):
     uncovered_items: list[str] = []
     total: float
     status: PlanStatus
+    # Ranking only: the sum of the line penalties for J5 doubts. Plans rank by total + this.
+    risk_penalty: float = 0.0
     rules_check: RulesCheck | None = None
     rank: int = 0
 
