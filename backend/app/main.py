@@ -278,6 +278,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                          s: AppState = Depends(state)) -> JobCreated:
         if not 8 <= len(idempotency_key) <= 128:
             raise HTTPException(422, "Idempotency-Key must be 8 to 128 characters")
+        sent = stable_hash(body.model_dump(mode="json", by_alias=True))
+        if s.db.claim_request_hash(idempotency_key, sent) != sent:
+            raise HTTPException(422, {"code": "idempotency_key_reused",
+                                      "text": "This Idempotency-Key was sent before with another request."})
         return await s.orchestrator.create_job(body, idempotency_key)
 
     @app.get("/jobs", response_model=list[JobView])

@@ -18,6 +18,10 @@ from typing import Any
 from app.contracts import Event, JobView
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS request_hashes (
+  idempotency_key TEXT PRIMARY KEY,
+  request_hash TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS jobs (
   job_id TEXT PRIMARY KEY,
   idempotency_key TEXT UNIQUE,
@@ -107,6 +111,14 @@ class Database:
                      snapshot = excluded.snapshot, updated_at = excluded.updated_at""",
                 (view.job_id, idempotency_key, view.state.value, snapshot, now, now),
             )
+
+    def claim_request_hash(self, key: str, request_hash: str) -> str:
+        """Record the hash of the first request sent with this key; return the recorded hash."""
+        with self._lock:
+            self._conn.execute("INSERT OR IGNORE INTO request_hashes VALUES (?, ?)", (key, request_hash))
+            return self._conn.execute(
+                "SELECT request_hash FROM request_hashes WHERE idempotency_key = ?", (key,)
+            ).fetchone()["request_hash"]
 
     def release_idempotency_key(self, job_id: str) -> None:
         """Free the key of a job that no process runs, so a new job can take it."""

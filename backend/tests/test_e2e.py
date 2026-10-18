@@ -370,3 +370,14 @@ def test_following_a_replay_streams_every_event(client, settings, monkeypatch):
     rid = client.post(f"/admin/replay/{src}", params={"speed": 1000}, headers=token).json()["jobId"]
     replayed = _all_events(client, rid)
     assert [e["type"] for e in replayed] == ["replay_started"] + [e["type"] for e in source_events]
+
+
+def test_reused_idempotency_key_with_another_body_is_422(client):
+    """Soak S-005: the same key with a changed body silently returned the first job."""
+    draft = client.get("/shopping-list/draft").json()
+    first = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-reuse-01"}).json()["jobId"]
+    assert client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-reuse-01"}).json()["jobId"] == first
+    draft["items"][0]["quantity"] += 1
+    r = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-reuse-01"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "idempotency_key_reused"
+    wait_for(client, first, {"results_ready"})
