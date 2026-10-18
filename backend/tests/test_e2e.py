@@ -140,6 +140,15 @@ def test_webhook_secret_and_dedupe(client):
     assert client.post("/webhooks/photon", json={"eventId": "e1"}, headers=h).json() == {"duplicate": True}
 
 
+def test_webhook_bad_bodies_are_400_not_500(client):
+    """Soak S-004: a body that is not a JSON object, or a jobId that is not a string, raised (500)."""
+    h = {"X-Webhook-Secret": "dev-webhook", "Content-Type": "application/json"}
+    for raw in (b"{not json", b"[1, 2]", b'"text"', b"null", b"\xff\xfe"):
+        assert client.post("/webhooks/photon", content=raw, headers=h).status_code == 400, raw
+    r = client.post("/webhooks/photon", json={"jobId": ["a"], "eventId": {"x": 1}}, headers=h)
+    assert r.status_code == 200 and r.json() == {"routed": False}
+
+
 def test_preflight_runs_in_fixture_mode(client):
     report = client.get("/health/preflight").json()
     names = {c["name"] for c in report["checks"]}

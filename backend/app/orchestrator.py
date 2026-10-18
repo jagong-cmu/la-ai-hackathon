@@ -260,7 +260,7 @@ class Orchestrator:
 
     async def route_webhook(self, provider: str, payload: dict[str, Any]) -> bool:
         job_id = payload.get("jobId")
-        candidates = [self.jobs[job_id]] if job_id in self.jobs else [
+        candidates = [self.jobs[job_id]] if isinstance(job_id, str) and job_id in self.jobs else [
             rt for rt in self.jobs.values() if rt.view.state is JobState.gathering
         ]
         for rt in candidates:

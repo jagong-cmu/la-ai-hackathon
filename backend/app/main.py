@@ -381,7 +381,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "unknown provider")
         if not hmac.compare_digest(x_webhook_secret, settings.webhook_secret.get_secret_value()):
             raise HTTPException(401, "bad webhook secret")
-        payload = json.loads(await request.body() or b"{}")
+        try:
+            payload = json.loads(await request.body() or b"{}")
+        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+            raise HTTPException(400, "body must be JSON") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(400, "body must be a JSON object")
         event_id = str(payload.get("eventId") or payload.get("id") or "")
         if event_id and not s.db.first_time_webhook(provider, event_id):
             return JSONResponse({"duplicate": True})
