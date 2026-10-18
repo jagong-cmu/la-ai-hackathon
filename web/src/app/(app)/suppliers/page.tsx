@@ -33,7 +33,7 @@ export default function SuppliersPage() {
 
   return (
     <>
-      <PageHead title="Suppliers" meta={`${data.candidates.length} found near ${data.zipCode} · ${used} used`} />
+      <PageHead title="Suppliers" />
       <div className="tbl-wrap">
         <table className="tbl wide">
           <thead>

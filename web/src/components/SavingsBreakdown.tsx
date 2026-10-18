@@ -49,7 +49,7 @@ export function SavingsBreakdown({ job, plan }: { job: JobView; plan: Plan }) {
             <div key={r.item.id} className="savings-row">
               <div className="savings-item">
                 <b>{itemShort(r.item.name)}</b>
-                <span className="small muted">{int(r.item.quantity)} · from {shortName(names[r.supplierId] ?? r.supplierId)}{r.source === "web" ? "" : " (phone)"}</span>
+                <span className="small ink-2">{int(r.item.quantity)} · from {shortName(names[r.supplierId] ?? r.supplierId)}{r.source === "web" ? "" : " (phone)"}</span>
               </div>
               <div className="savings-bars" aria-hidden="true">
                 <span className="was" style={{ width: `${(r.paidBefore / top) * 100}%` }} />
@@ -73,16 +73,6 @@ export function SavingsBreakdown({ job, plan }: { job: JobView; plan: Plan }) {
           </div>
         )}
       </div>
-
-      <p className="small muted">
-        Paid before = your average price on {billCount > 0 ? `${billCount} QuickBooks bills` : "your QuickBooks bills"}
-        {mine.length > 0 && ` (${month(mine[0].txnDate)} – ${month(mine[mine.length - 1].txnDate)})`} times this quantity.
-        {s.skipped > 0 && ` ${s.skipped} ${s.skipped === 1 ? "item has" : "items have"} no past price or no offer and ${s.skipped === 1 ? "is" : "are"} left out.`}
-        {mine.some((b) => b.synthetic) && " Supply bills in this demo are synthetic."}
-      </p>
-      <span className="sr-only">
-        Bars: gray is what you paid before, mint is this plan.
-      </span>
     </section>
   );
 }

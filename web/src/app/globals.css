@@ -1,4 +1,6 @@
-/* sourn tokens and components. Source: the style guide (pages/style-guide). Black, white and mint. */
+/* sourn tokens and components. Source: the Paper style guide "v13 — Style guide, black" (onboarding look):
+   black ground, white screens, mint the only accent. The dark theme block at the end of this file
+   applies it to the app. */
 :root {
   --color-ink: #0A0A0A;
   --color-ink-2: #3A3A3A;
@@ -84,7 +86,6 @@ button, input, select { font: inherit; color: inherit; }
 .head .crumb { font-size: 13px; line-height: 16px; color: var(--color-muted); margin-bottom: 6px; }
 .head .crumb a { color: var(--color-muted); text-decoration: none; }
 @media (hover: hover) { .head .crumb a:hover { color: var(--color-ink); } }
-.head .meta { margin-top: 6px; color: var(--color-muted); }
 .figure { font-weight: 600; font-size: 56px; line-height: 56px; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; text-align: right; }
 .figure-sub { text-align: right; font-size: 13px; line-height: 16px; color: var(--color-mint-text); margin-top: 8px; }
 @media (max-width: 640px) { .figure { font-size: 40px; line-height: 44px; text-align: left; } .figure-sub { text-align: left; } }
@@ -317,11 +318,11 @@ a.bp-watch.on { cursor: pointer; }
 .kpis { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .kpi { border-radius: var(--radius-card); box-shadow: var(--shadow-ring); padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; background: var(--color-white); min-width: 0; }
-.kpi span { font-size: 13px; line-height: 16px; color: var(--color-muted); }
+.kpi > span { font-size: 13px; line-height: 16px; color: var(--color-muted); }
 .kpi b { font-weight: 600; font-size: 28px; line-height: 34px; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .kpi em { font-style: normal; font-size: 13px; line-height: 16px; color: var(--color-ink-2); }
 .kpi.hero { background: var(--color-mint-tint); box-shadow: none; }
-.kpi.hero span, .kpi.hero em { color: var(--color-mint-text); }
+.kpi.hero > span, .kpi.hero em { color: var(--color-mint-text); }
 .kpi.warn b { color: var(--color-failed); }
 
 /* Table extras: savings text, row chevron, compact tables */
@@ -422,3 +423,75 @@ a.bp-watch.on { cursor: pointer; }
 .zip .input { width: 110px; height: 36px; text-align: right; }
 .order-total { display: flex; justify-content: space-between; align-items: baseline; padding-top: 16px; border-top: 1px solid var(--color-line); font-size: 13px; color: var(--color-muted); }
 .order-total b { font-size: 22px; line-height: 28px; font-weight: 600; color: var(--color-ink); }
+
+/* ================================================================ dark theme (style guide v13)
+   The app ground is black. Text on the ground uses the dark values of the role tokens; every
+   content screen (table, card, browser tile) resets to the light values, so it reads as a white
+   screen on black, as in the onboarding device. Status colors and mint keep one meaning. */
+.shell { background: var(--color-black); }
+.main { box-shadow: inset 1px 0 0 var(--color-raised-dark); }
+.main {
+  --color-ink: #FFFFFF;
+  --color-ink-2: #D4D4D4;
+  --color-muted: #A3A3A3;
+  --color-faint: #6B6B6B;
+  --color-line: #1C1C1C;
+  --color-input: #3A3A3A;
+  --color-surface: #1C1C1C;
+  --color-mint-text: #9FE0C0;
+  background: var(--color-black);
+  color: var(--color-ink);
+}
+.main :is(.card, .tbl-wrap, .bp, .order-card, .bestbox, .kpi.hero, .save-callout, .alert) {
+  --color-ink: #0A0A0A;
+  --color-ink-2: #3A3A3A;
+  --color-muted: #6B6B6B;
+  --color-faint: #A3A3A3;
+  --color-line: #ECECEC;
+  --color-input: #D4D4D4;
+  --color-surface: #FAFAFA;
+  --color-mint-text: #1F7A55;
+  color: var(--color-ink);
+}
+/* Screens: r16 white on black, a dark ring for the edge */
+.main :is(.card, .tbl-wrap) { border-radius: 16px; box-shadow: var(--shadow-ring-dark); }
+.main .bp { box-shadow: var(--shadow-ring-dark); }
+.main .callpanel { border: 1px solid transparent; box-shadow: var(--shadow-ring-dark); }
+/* KPI tiles are dark, the number is the picture */
+.main .kpi:not(.hero) { background: var(--color-raised-dark); box-shadow: var(--shadow-ring-dark); }
+.main .kpi b { font-weight: 700; font-size: 34px; line-height: 38px; letter-spacing: -0.04em; }
+/* Display claim for page titles, as on the landing and the onboarding */
+.head h1 { font-weight: 700; font-size: 48px; line-height: 52px; letter-spacing: -0.045em; }
+@media (max-width: 640px) { .head h1 { font-size: 36px; line-height: 40px; } }
+.head .crumb a { color: var(--color-muted); }
+/* Secondary buttons on the ground use the dark ring (style guide: on black) */
+.main .btn-secondary { background: transparent; color: var(--color-white); box-shadow: var(--shadow-ring-dark); border: 1px solid transparent; }
+@media (hover: hover) { .main .btn-secondary:not(:disabled):hover { box-shadow: 0 0 0 1px oklch(1 0 0 / 0.2); } }
+.main :is(.card, .tbl-wrap, .order-card) .btn-secondary { background: var(--color-white); color: var(--color-ink); box-shadow: var(--shadow-ring); }
+.main .link { text-decoration-color: var(--color-input); }
+/* Small sublines read as values, never as gray captions */
+.tbl td .sub { color: var(--color-ink-2); }
+.main .figure { font-weight: 700; letter-spacing: -0.045em; }
+
+/* Staged entrance on every page load: 300ms ease-out, 100ms apart, opacity + 4px blur + 12px rise.
+   The hidden state lives only in the keyframe. */
+.main > * { animation: app-fade 300ms ease-out both; }
+@media (prefers-reduced-motion: no-preference) { .main > * { animation-name: app-rise; } }
+.main > *:nth-child(2) { animation-delay: 100ms; }
+.main > *:nth-child(3) { animation-delay: 200ms; }
+.main > *:nth-child(4) { animation-delay: 300ms; }
+.main > *:nth-child(n + 5) { animation-delay: 400ms; }
+@keyframes app-fade { from { opacity: 0; } }
+@keyframes app-rise { from { opacity: 0; transform: translateY(12px); filter: blur(4px); } }
+
+/* Odometer: one 0-9 strip per digit, clipped to one line; the strip slides to the digit */
+.roll { display: inline-flex; font-variant-numeric: tabular-nums; }
+.roll-col { display: inline-block; height: 1em; line-height: 1; overflow: hidden; vertical-align: baseline; }
+.roll-strip { display: flex; flex-direction: column; transition-property: transform; transition-duration: 400ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+.roll-strip span { height: 1em; line-height: 1; }
+.roll-ch { line-height: 1; }
+@media (prefers-reduced-motion: reduce) { .roll-strip { transition-duration: 0ms; } }
+/* Controls on the ground */
+.main .step { background: transparent; }
+.main :is(.card, .tbl-wrap, .order-card) .step { background: var(--color-white); }
+.main .oline-spec, .main .oline-cost span, .main .order-foot { color: var(--color-ink-2); }

@@ -11,7 +11,8 @@ import { useJobEvents } from "@/hooks/useJobEvents";
 import { cleanName, int, itemShort, shortName } from "@/lib/format";
 import { supplierNames, supplierUrls } from "@/lib/job";
 import { pct, planSavings, pricedPlan } from "@/lib/savings";
-import { Claim, In, ONBOARDED_KEY, Roll, Steps } from "../../steps";
+import { Roll } from "@/components/Roll";
+import { Claim, In, ONBOARDED_KEY, Steps } from "../../steps";
 
 /** The best price so far, with a one-shot flash when it drops. The number is the static cue. */
 function Best({ total }: { total: number | null }) {
@@ -44,7 +45,6 @@ function Result({ job }: { job: JobView }) {
       <main className="ob-stage">
         <In i={0}><Steps at={3} /></In>
         <Claim text="No prices this time" start={100} />
-        <In i={4} as="p" className="ob-sub">Every store stopped before a price.</In>
         <In i={5} className="ob-row">
           <Link href="/start" className="btn btn-primary has-icon">Try again <ArrowRight /></Link>
           <Link href={`/jobs/${job.jobId}`} className="btn btn-on-black">See each store</Link>
@@ -152,9 +152,6 @@ export default function OnboardingJobPage() {
         <div>
           <In i={0}><Steps at={2} /></In>
           <In i={1} as="h1">Getting quotes</In>
-          <In i={2} as="p" className="meta">
-            {job.request.suppliers.length} websites{job.request.distributor ? ` · call to ${distributor}` : ""} · about 2 min
-          </In>
         </div>
         <In i={2}><Best total={s.bestPlan?.total ?? null} /></In>
       </div>

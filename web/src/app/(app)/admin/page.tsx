@@ -21,6 +21,7 @@ const OVERALL: Record<string, string> = { green: "Ready", amber: "Needs attentio
 export default function AdminPage() {
   const [token, setToken] = useState("");
   const [runMode, setRunMode] = useState<string | null>(null);
+  const [disclosure, setDisclosure] = useState<string | null>(null);
   const [modes, setModes] = useState<Record<string, string> | null>(null);
   const [preflight, setPreflight] = useState<PreflightReport | null>(null);
   const [jobs, setJobs] = useState<JobView[]>([]);
@@ -47,6 +48,7 @@ export default function AdminPage() {
       setRunMode(h.runMode);
       setModes((m) => m ?? h.modes);
     }).catch((e) => setError(errorText(e)));
+    api.planner().then((v) => setDisclosure(v.disclosure)).catch(() => undefined);
     api.jobs(20).then((j) => {
       setJobs(j);
       setReplayJob((r) => r || j[0]?.jobId || "");
@@ -84,7 +86,7 @@ export default function AdminPage() {
 
   return (
     <>
-      <PageHead title="Admin" meta={runMode ? `Run mode: ${runMode}` : undefined} />
+      <PageHead title="Admin" />
       <ErrorNote error={error} />
 
       <div className="cols">
@@ -175,6 +177,16 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="tbl-wrap">
+        <div className="tbl-caption"><b>Data</b></div>
+        <table className="tbl">
+          <tbody>
+            <tr><td style={{ width: 180 }}>Run mode</td><td className="l">{runMode ?? ""}</td></tr>
+            <tr><td>Sources</td><td className="l">{disclosure ?? ""}</td></tr>
+          </tbody>
+        </table>
       </div>
 
       {decisions && decisions.length > 0 && (

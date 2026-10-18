@@ -12,7 +12,6 @@
 
 /* Claim: display type scaled for a task screen, one subline of 14 words or fewer */
 .ob-claim { font-weight: 700; font-size: clamp(40px, 6vw, 64px); line-height: 1; letter-spacing: -0.045em; text-align: center; text-wrap: balance; }
-.ob-sub { font-size: 18px; line-height: 26px; color: var(--color-faint); text-align: center; max-width: 56ch; }
 .ob-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
 /* Progress: four thin bars, the fill scales in when a step completes */
@@ -51,9 +50,8 @@
 /* One row, so the browsers get the height: steps · title · facts ... best so far */
 .ob-work-head > div:first-child { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; }
 .ob-work-head h1 { font-weight: 500; font-size: 22px; line-height: 28px; letter-spacing: -0.02em; }
-.ob-work-head .meta { color: var(--color-faint); }
 .ob-best { display: flex; align-items: baseline; gap: 12px; }
-.ob-best span { font-size: 13px; line-height: 16px; color: var(--color-mint); }
+.ob-best > span { font-size: 13px; line-height: 16px; color: var(--color-mint); }
 .ob-best b { font-weight: 600; font-size: 34px; line-height: 38px; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .ob-device.grid { padding: 16px; flex: 1; display: flex; min-height: 0; }
 .ob-device.grid .tiles { flex: 1; height: calc(100dvh - 216px); min-height: 480px; }
@@ -85,10 +83,4 @@
 .ob-best.bump b { color: var(--color-mint); }
 .ob-device.grid .tiles > .ob-in > * { flex: 1; min-width: 0; }
 
-/* Odometer: one 0-9 strip per digit, clipped to one line; the strip slides to the digit */
-.roll { display: inline-flex; font-variant-numeric: tabular-nums; }
-.roll-col { display: inline-block; height: 1em; line-height: 1; overflow: hidden; vertical-align: baseline; }
-.roll-strip { display: flex; flex-direction: column; transition-property: transform; transition-duration: 400ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); }
-.roll-strip span { height: 1em; line-height: 1; }
-.roll-ch { line-height: 1; }
-@media (prefers-reduced-motion: reduce) { .roll-strip { transition-duration: 0ms; } }
+

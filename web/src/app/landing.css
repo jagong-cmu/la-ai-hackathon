@@ -9,3 +9,12 @@
 .land-screen { border-radius: 16px; background: var(--color-white); color: var(--color-ink); overflow: hidden; }
 .land-screen-head { padding: 24px 24px 16px; }
 .land-screen-head h2 { font-weight: 500; font-size: 28px; line-height: 32px; letter-spacing: -0.02em; }
+.land-hero p { color: var(--color-input); }
+/* Staged entrance (style guide v13): 100ms apart, opacity + 4px blur + 12px rise, 300ms ease-out */
+.land-hero > *, .land-device { animation: land-fade 300ms ease-out both; }
+@media (prefers-reduced-motion: no-preference) { .land-hero > *, .land-device { animation-name: land-rise; } }
+.land-hero > *:nth-child(2) { animation-delay: 100ms; }
+.land-hero > *:nth-child(3) { animation-delay: 200ms; }
+.land-device { animation-delay: 300ms; }
+@keyframes land-fade { from { opacity: 0; } }
+@keyframes land-rise { from { opacity: 0; transform: translateY(12px); filter: blur(4px); } }

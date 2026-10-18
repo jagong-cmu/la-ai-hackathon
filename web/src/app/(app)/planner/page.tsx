@@ -7,8 +7,9 @@ import { useEffect, useState } from "react";
 import { api, errorText, money, type PlannerView, type SupplyPlan } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
 import { ErrorNote, Loading, PageHead } from "@/components/PageHead";
+import { Roll } from "@/components/Roll";
 import { useBills, useJobs } from "@/hooks/useData";
-import { day, daysBetween, dollars, each, int, tsDay, weekday } from "@/lib/format";
+import { day, daysBetween, dollars, each, int, tsDay } from "@/lib/format";
 import { jobHref, orderTitle } from "@/lib/job";
 import { bestQuote, itemQuotes, meanPaid, pct, planSavings, pricedPlan, savingsTotals } from "@/lib/savings";
 
@@ -46,7 +47,6 @@ export default function PlannerPage() {
     <>
       <PageHead
         title="Planner"
-        meta={`As of ${weekday(view.asOf)}`}
         right={
           due.length > 0 && (
             <Link href="/orders/new" className="btn btn-primary has-icon">
@@ -60,12 +60,12 @@ export default function PlannerPage() {
       <div className="kpis">
         <div className="kpi hero">
           <span>Saved on approved orders</span>
-          <b>{jobs ? dollars(totals.approved) : "–"}</b>
+          <b>{jobs ? <Roll text={dollars(totals.approved)} fromZero /> : "–"}</b>
           <em>{totals.approvedCount} {totals.approvedCount === 1 ? "order" : "orders"} against your bill prices</em>
         </div>
         <div className="kpi">
           <span>Found in quotes</span>
-          <b>{jobs ? dollars(totals.found) : "–"}</b>
+          <b>{jobs ? <Roll text={dollars(totals.found)} fromZero /> : "–"}</b>
           <em>{totals.foundCount > 0 ? `${pct(totals.pct)} under your bills · ${totals.foundCount} priced` : "No priced orders yet"}</em>
         </div>
         <div className="kpi">
@@ -75,7 +75,7 @@ export default function PlannerPage() {
         </div>
         <div className="kpi">
           <span>Supply spend on bills</span>
-          <b>{bills ? dollars(yearSpend) : "–"}</b>
+          <b>{bills ? <Roll text={dollars(yearSpend)} fromZero /> : "–"}</b>
           <em>{bills ? `${new Set(bills.map((b) => b.billId)).size} QuickBooks bills` : ""}</em>
         </div>
       </div>
@@ -187,7 +187,6 @@ export default function PlannerPage() {
         </table>
       </section>
 
-      {view.disclosure && <p className="small muted">{view.disclosure}</p>}
     </>
   );
 }

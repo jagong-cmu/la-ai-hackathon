@@ -41,7 +41,6 @@ function Connect({ onDone }: { onDone: (b: Books) => void }) {
     <main className={`ob-stage${phase === "leaving" ? " ob-out" : ""}`}>
       <In i={0}><Steps at={0} /></In>
       <Claim text="Connect your books" start={100} />
-      <In i={4} as="p" className="ob-sub">Your supply bills set the prices to beat.</In>
       <In i={5} className="ob-row">
         <button className="btn btn-primary has-icon" onClick={connect} disabled={busy} aria-live="polite">
           {busy ? "Reading your bills" : "Connect QuickBooks"} <ArrowRight />
@@ -89,14 +88,10 @@ function Choose({ books }: { books: Books }) {
     }
   }
 
-  const sites = books.draft.suppliers.length;
   return (
     <main className={`ob-stage${leaving ? " ob-out" : ""}`}>
       <In i={0}><Steps at={1} /></In>
       <Claim text="Pick what to price" start={100} />
-      <In i={4} as="p" className="ob-sub">
-        {int(books.insights.supplyOrders)} bills read · {sites} websites{books.draft.distributor ? " and one call" : ""}
-      </In>
       <In i={5} className="ob-device">
         <div className="ob-screen">
           <div className="ob-screen-head">

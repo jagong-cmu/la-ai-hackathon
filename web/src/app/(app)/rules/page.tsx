@@ -39,7 +39,7 @@ export default function RulesPage() {
 
   return (
     <>
-      <PageHead title="Rules" meta={rules.source === "derived from the books" ? "From your books" : rules.source} />
+      <PageHead title="Rules" />
       <div className="tbl-wrap">
         <table className="tbl">
           <tbody>

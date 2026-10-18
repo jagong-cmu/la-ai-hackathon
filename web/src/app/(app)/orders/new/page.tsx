@@ -147,7 +147,6 @@ export default function NewOrderPage() {
             <button className="btn btn-primary has-icon" style={{ width: "100%" }} onClick={submit} disabled={busy || live.length === 0}>
               {busy ? "Starting" : "Find best price"} <ArrowRight />
             </button>
-            <p className="small muted">The agents stop at payment. You approve every order.</p>
           </div>
         </aside>
       </div>

@@ -86,9 +86,6 @@ function Notes({ view, supply, onChange }: { view: PlannerView; supply: SupplyPl
     <section className="card pad" aria-label="Notes">
       <div>
         <h2>Notes</h2>
-        <p className="small muted" style={{ marginTop: 2 }}>
-          Tell the planner about events that change sales. A note about {[...drivers].map((d) => itemShort(names[d] ?? d).toLowerCase()).slice(0, 2).join(" or ")} changes this forecast.
-        </p>
       </div>
       <form
         className="row"
@@ -112,7 +109,7 @@ function Notes({ view, supply, onChange }: { view: PlannerView; supply: SupplyPl
               <button className="btn btn-ghost sm" disabled={busy} onClick={() => run(() => api.confirmAdjustment(last.adjustmentId, false))}>Not right</button>
             </div>
           ) : (
-            <p className="small muted" style={{ marginTop: 4 }}>
+            <p className="small ink-2" style={{ marginTop: 4 }}>
               {last.status === "applied" ? "Added to the forecast" : last.status === "rejected" ? "Not used" : "No change to the forecast"}
             </p>
           )}
@@ -123,12 +120,12 @@ function Notes({ view, supply, onChange }: { view: PlannerView; supply: SupplyPl
           {notes.map((a) => (
             <li key={a.adjustmentId}>
               <p>{a.message}</p>
-              <span className="small muted">{adjustmentText(a, names)} · {a.status === "applied" ? "in the forecast" : a.status === "rejected" ? "not used" : "waiting for you"}</span>
+              <span className="small ink-2">{adjustmentText(a, names)} · {a.status === "applied" ? "in the forecast" : a.status === "rejected" ? "not used" : "waiting for you"}</span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="small muted">No notes for this supply yet.</p>
+        <p className="small ink-2">No notes for this supply yet.</p>
       )}
     </section>
   );
@@ -175,14 +172,12 @@ export default function SupplyPage() {
   const best = bestQuote(quotes);
   const due = supply.status !== "ok" && supply.recommendedQty > 0;
   const saveEach = best && avg != null ? avg - best.unit : null;
-  const spec = supply.name.split(",").slice(1).join(",").trim();
 
   return (
     <>
       <PageHead
         title={itemShort(supply.name)}
         crumb={{ href: "/planner", label: "Planner", current: itemShort(supply.name) }}
-        meta={[spec, `as of ${weekday(view.asOf)}`].filter(Boolean).join(" · ")}
         right={
           due && (
             <Link href="/orders/new" className="btn btn-primary has-icon">Find best price <ArrowRight /></Link>
@@ -222,9 +217,8 @@ export default function SupplyPage() {
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div>
             <h2>Weekly use and forecast</h2>
-            <p className="small muted" style={{ marginTop: 2 }}>{unit.charAt(0).toUpperCase() + unit.slice(1)} used a week, from the sales of the products below</p>
           </div>
-          <span className="legend small muted">
+          <span className="legend small ink-2">
             <i className="lg-line" />Used <i className="lg-dash" />Forecast <i className="lg-band" />Likely range
           </span>
         </div>
@@ -264,23 +258,18 @@ export default function SupplyPage() {
       <section className="card pad" aria-label="Demand by product">
         <div>
           <h2>Demand by product</h2>
-          <p className="small muted" style={{ marginTop: 2 }}>
-            Weekly sales from your QuickBooks invoices, and the {unit} each sale uses{supply.ratiosAssumed ? " (assumed ratios)" : ""}
-          </p>
         </div>
         <div className="drivers">
           {Object.entries(supply.drivers).map(([pid, ratio]) => {
             const p = view.products.find((x) => x.itemId === pid);
             if (!p) return null;
-            const misses = p.history.filter((h) => h.miss).length;
             return (
               <div key={pid} className="driver">
                 <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
                   <b>{p.name}</b>
-                  <span className="small muted tnum">{ratio} {ratio === 1 ? supply.unit : unit} a sale · ~{int(p.forecast[0]?.mean)} sales next week</span>
+                  <span className="small ink-2 tnum">{ratio} {ratio === 1 ? supply.unit : unit} a sale · ~{int(p.forecast[0]?.mean)} sales next week</span>
                 </div>
                 <ForecastChart name={p.name} history={p.history} forecast={p.forecast} width={440} height={160} />
-                {misses > 0 && <p className="small muted">{misses} {misses === 1 ? "week" : "weeks"} outside the expected range (red)</p>}
               </div>
             );
           })}
@@ -291,9 +280,6 @@ export default function SupplyPage() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <h2>Prices paid and found</h2>
-            <p className="small muted" style={{ marginTop: 2 }}>
-              The unit price on each QuickBooks bill (dot size = quantity) against the best price the agents found
-            </p>
           </div>
           {saveEach != null && saveEach > 0 && (
             <div className="save-callout">
@@ -364,7 +350,6 @@ export default function SupplyPage() {
 
       <Notes view={view} supply={supply} onChange={load} />
 
-      {view.disclosure && <p className="small muted">{view.disclosure}</p>}
     </>
   );
 }

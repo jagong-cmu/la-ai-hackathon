@@ -3,12 +3,10 @@ import Link from "next/link";
 export function PageHead({
   title,
   crumb,
-  meta,
   right,
 }: {
   title: React.ReactNode;
   crumb?: { href: string; label: string; current?: string };
-  meta?: React.ReactNode;
   right?: React.ReactNode;
 }) {
   return (
@@ -21,7 +19,6 @@ export function PageHead({
           </p>
         )}
         <h1>{title}</h1>
-        {meta && <p className="meta">{meta}</p>}
       </div>
       {right}
     </header>

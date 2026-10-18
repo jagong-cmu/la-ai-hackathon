@@ -231,7 +231,7 @@ export function BrowserPane({
           {failed ? null : total != null ? (
             <Status status="verified">{money(total)}</Status>
           ) : !siteUrl || lane.mode === "llm_agent" ? (
-            <span className="small muted">Unknown site</span>
+            <span className="small ink-2">Unknown site</span>
           ) : null}
         </div>
         <ol className="bp-steps" aria-label="Progress">

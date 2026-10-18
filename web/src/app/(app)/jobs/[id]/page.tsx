@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { money } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
+import { Roll } from "@/components/Roll";
 import { ErrorNote, Loading, PageHead } from "@/components/PageHead";
 import { BrowserPane } from "@/components/job/BrowserPane";
 import { CallPanel, callFromEvents } from "@/components/job/CallStrip";
@@ -76,7 +77,7 @@ export default function WorkingPage() {
                 <p className="k">{ready ? "Best plan" : "Best so far"}</p>
                 {best && <p className="v">{planShort(best, job)}</p>}
               </div>
-              <span className="n">{money(bestTotal)}</span>
+              <span className="n"><Roll text={money(bestTotal)} /></span>
             </div>
           )}
           <OrderBasis items={job.request.items} planner={planner} />
