@@ -1,0 +1,10 @@
+{
+  "note": "Sites the team approved for adapter lanes. Discovery adds one when CREAO does not return it. A site is used only after its adapter is registered under this name (see ADAPTER_DOMAINS in app/discovery.py).",
+  "sites": [
+    {"id": "webstaurant", "name": "WebstaurantStore", "url": "https://www.webstaurantstore.com", "adapter": "webstaurant"},
+    {"id": "katom", "name": "KaTom Restaurant Supply", "url": "https://www.katom.com", "adapter": "katom"},
+    {"id": "uline", "name": "Uline", "url": "https://www.uline.com", "adapter": "uline"},
+    {"id": "restaurantware", "name": "Restaurantware", "url": "https://www.restaurantware.com", "adapter": "restaurantware"},
+    {"id": "wasserstrom", "name": "Wasserstrom", "url": "https://www.wasserstrom.com", "adapter": "wasserstrom"}
+  ]
+}
