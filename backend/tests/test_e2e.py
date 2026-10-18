@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 
 import pytest
@@ -443,3 +444,14 @@ def test_late_update_does_not_replace_results_after_approval(settings, monkeypat
         types = [line[7:] for line in client.get(f"/jobs/{job_id}/events?follow=false").text.splitlines()
                  if line.startswith("event: ")]
         assert "results_updated" not in types[types.index("approved"):]
+
+
+def test_negative_past_price_or_cadence_is_refused(client):
+    """Soak S-011: a negative pastUnitPrice was accepted. call_anchor() then anchored the distributor
+    call on a negative price ("we paid about $-..."), and a negative cadence gave negative savings."""
+    draft = client.get("/shopping-list/draft").json()
+    for field, value in (("pastUnitPrice", -3), ("orderCadenceDays", -7)):
+        body = json.loads(json.dumps(draft))
+        body["items"][0][field] = value
+        r = client.post("/jobs", json=body, headers={"Idempotency-Key": f"test-neg-{field}"})
+        assert r.status_code == 422, (field, r.status_code)

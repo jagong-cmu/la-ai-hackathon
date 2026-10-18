@@ -41,8 +41,8 @@ class ShoppingItem(Model):
     name: str
     quantity: int = Field(gt=0)
     unit: str
-    past_unit_price: float | None = None
-    order_cadence_days: float | None = None
+    past_unit_price: float | None = Field(default=None, ge=0)  # anchors the distributor call
+    order_cadence_days: float | None = Field(default=None, ge=0)
     source_bill_ids: list[str] = []
     spec: SearchSpec | None = None
 
