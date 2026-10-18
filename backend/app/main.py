@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 import json
 from collections.abc import AsyncIterator
@@ -36,7 +37,7 @@ from app.discovery import Discovery, selected_suppliers
 from app.events import EventBus
 from app.jev import JevClient
 from app.llm import Step5Client
-from app.observability import init_sentry
+from app.observability import capture, init_sentry
 from app.orchestrator import ApprovalError, Orchestrator
 from app.planner.sales import load_sales
 from app.planner.schemas import (
@@ -87,6 +88,7 @@ class AppState:
         self.planner = Planner(settings, self.db, self.decider, self.sales, self.books)
         self._insights: SpendInsights | None = None
         self._insights_lock = asyncio.Lock()
+        self._warm: asyncio.Task | None = None
         self.orchestrator = Orchestrator(settings, self.db, self.bus, self.decider, self.llm, self.modes,
                                          self.books, self.insights)
 
@@ -116,7 +118,24 @@ class AppState:
             request.items = due
         return request
 
+    def warm_up(self) -> None:
+        """Build the planner in the background at start, so the first request does not wait for it.
+
+        The first build sends every forecast miss of the year to J11 (about 80 s with live Jev and
+        Step 5, more when the APIs are slow). Later builds use the cached answers."""
+        self._warm = asyncio.create_task(self._warm_planner())
+
+    async def _warm_planner(self) -> None:
+        try:
+            await self.planner.view()
+        except Exception as exc:  # a failed warm-up only means the first request builds it
+            capture(exc)
+
     async def aclose(self) -> None:
+        if self._warm is not None and not self._warm.done():
+            self._warm.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._warm
         await self.orchestrator.shutdown()
         await self.jev.aclose()
         await self.llm.aclose()
@@ -130,6 +149,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.s = AppState(settings)
+        app.state.s.warm_up()
         yield
         await app.state.s.aclose()
 
