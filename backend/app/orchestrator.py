@@ -21,6 +21,7 @@ from app.contracts import (
     ApprovalDecision,
     CartLine,
     CheckoutHandoff,
+    Event,
     JobCreated,
     JobState,
     JobView,
@@ -243,9 +244,33 @@ class Orchestrator:
         if source is None:
             raise KeyError(source_job_id)
         job_id = "job_" + secrets.token_hex(5)
-        view = source.model_copy(update={"job_id": job_id, "replay_of": source_job_id})
+        final = source.model_copy(update={"job_id": job_id, "replay_of": source_job_id})
+        # The replay starts like a new job. Its state follows the replayed job_state events, so the
+        # event stream stays open until the replay reaches the source's final state.
+        view = JobView(job_id=job_id, state=JobState.created, replay_of=source_job_id, request=source.request)
         self.db.save_job(view)
-        self._spawn(self.bus.replay(source_job_id, job_id, speed))
+
+        def follow(event: Event) -> None:
+            if event.type != "job_state":
+                return
+            try:
+                state = JobState(event.data.get("state"))
+            except ValueError:
+                return
+            if state in FINAL_JOB_STATES or state is final.state:
+                self.db.save_job(final.model_copy(update={"state": state}))
+                return
+            view.state = state
+            if state is not JobState.gathering:
+                view.results = final.results
+            view.updated_at = utcnow()
+            self.db.save_job(view)
+
+        async def run() -> None:
+            await self.bus.replay(source_job_id, job_id, speed, before_emit=follow)
+            self.db.save_job(final)
+
+        self._spawn(run())
         return JobCreated(job_id=job_id, state=view.state)
 
     async def route_webhook(self, provider: str, payload: dict[str, Any]) -> bool:

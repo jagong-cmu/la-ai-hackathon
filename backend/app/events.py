@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 
 from app.contracts import Event, utcnow
@@ -59,8 +59,11 @@ class EventBus:
                 last = event.seq
                 yield event
 
-    async def replay(self, source_job_id: str, target_job_id: str, speed: float = 1.0) -> None:
-        """Re-emit a recorded job's events under a new job id with the original timing."""
+    async def replay(self, source_job_id: str, target_job_id: str, speed: float = 1.0,
+                     before_emit: Callable[[Event], None] | None = None) -> None:
+        """Re-emit a recorded job's events under a new job id with the original timing.
+
+        `before_emit` sees each source event before it is re-emitted (to update the job view)."""
         events = self.db.events_after(source_job_id, 0, limit=100_000)
         await self.emit(target_job_id, "replay_started", {"sourceJobId": source_job_id})
         prev: datetime | None = None
@@ -70,4 +73,6 @@ class EventBus:
                 with contextlib.suppress(Exception):
                     await asyncio.sleep(max(0.0, min(gap, 30.0)))
             prev = event.ts
+            if before_emit is not None:
+                before_emit(event)
             await self.emit(target_job_id, event.type, event.data, event.lane_id)
