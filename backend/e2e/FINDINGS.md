@@ -78,3 +78,4 @@ The full flow passed in a headless browser with no console errors: planner, owne
 | 008 | 0.1 | 20 | 0 | none (also a UI pass; see above) |
 | 009 | 1.0 | 20 + 2 deadline | 0 | none in the cycle; in-process probes in the same period found S-020 to S-027 |
 | 010 | 0.1 | 22 + 5 sms_first | 0 | none; new `sms_first` profile (SMS, no reply, then the call) passed |
+| 011 | 0.1 | 23 + 6 sms_first | 0 | none in the cycle; the UI and contract checks in the same period found S-028 and S-029 |
