@@ -12,10 +12,12 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+import app.discovery as discovery
+import app.lanes.registry as registry
 from app.config import RuntimeModes, Settings
 from app.db import Database
 from app.decide import Decider
-from app.discovery import CreaoError, Discovery, _parse_creao_output
+from app.discovery import CreaoError, Discovery, _parse_creao_output, adapter_for_url
 
 APP_ID = "00000000-0000-4000-8000-000000000000"
 RUN_ID = "11111111-1111-4111-8111-111111111111"
@@ -162,6 +164,16 @@ async def test_malformed_output_raises_and_falls_back(live_settings, db, decider
     assert result.source == "fallback"
 
 
+async def test_suppliers_only_in_chat_text(live_settings, db, decider):
+    # Real CREAO run shape: `text` is the agent's session record, the JSON is in `chatText`.
+    record = json.dumps({"category": "packaging_disposables", "zipCode": 49007, "supplier_count": 2})
+    handler = scripted([run_state("completed", result={"text": record, "chatText": FINAL_TEXT})])
+    disc = make_discovery(live_settings, db, decider, handler)
+
+    _, rows = await disc._run_creao("packaging_disposables", "49007")
+    assert {r["url"] for r in rows} == {"https://westside.example", "https://harbor.example"}
+
+
 async def test_start_auth_error_is_creao_error(live_settings, db, decider):
     disc = make_discovery(live_settings, db, decider,
                           lambda r: httpx.Response(401, json={"error": "AUTHENTICATION_REQUIRED"}))
@@ -237,3 +249,93 @@ def test_parse_skips_unrelated_json_before_the_supplier_block():
 def test_parse_rejects_malformed(bad):
     with pytest.raises(CreaoError):
         _parse_creao_output(bad)
+
+
+# ---------------------------------------------------------------- adapters, prices filter, saved run
+
+KATOM = {"name": "KaTom Restaurant Supply", "url": "https://www.katom.com", "phone": None, "email": None,
+         "notes": "Restaurant supply with public prices.", "pricesPublic": True}
+
+
+def completed_with(*rows: dict) -> Handler:
+    text = "```json\n" + json.dumps({"suppliers": list(rows)}) + "\n```"
+    return scripted([run_state("completed", result={"text": text})])
+
+
+@pytest.mark.parametrize("url, adapter", [
+    ("https://www.webstaurantstore.com/", "webstaurant"),
+    ("https://katom.com/cat/gloves", "katom"),
+    ("https://shop.uline.com", "uline"),
+    ("https://notkatom.com", None),
+    ("https://katom.com.evil.example", None),
+    ("https://westside.example", None),
+])
+def test_adapter_for_url(url, adapter):
+    assert adapter_for_url(url) == adapter
+
+
+async def test_domain_maps_only_to_a_registered_adapter(live_settings, db, decider, monkeypatch):
+    # Not registered yet: KaTom is an unknown site for the LLM agent lane.
+    disc = make_discovery(live_settings, db, decider, completed_with(KATOM))
+    katom = (await disc.discover("packaging_disposables", "90024", None)).candidates[0]
+    assert (katom.adapter, katom.selected, katom.reason) == (None, True, "unknown site: LLM agent lane")
+
+    # Registered: the same CREAO row maps to the adapter lane by domain.
+    monkeypatch.setitem(registry._ADAPTERS, "katom", lambda supplier: None)
+    disc = make_discovery(live_settings, db, decider, completed_with(KATOM))
+    katom = (await disc.discover("packaging_disposables", "90024", None)).candidates[0]
+    assert (katom.adapter, katom.selected, katom.reason) == ("katom", True, "known adapter")
+
+
+async def test_hidden_prices_are_filtered_before_j3(live_settings, db, decider, monkeypatch):
+    judged: list[str] = []
+    real_j3 = discovery.j3_supplier
+
+    async def spy(decider_, cand, category, notes):
+        judged.append(cand.name)
+        return await real_j3(decider_, cand, category, notes)
+
+    monkeypatch.setattr(discovery, "j3_supplier", spy)
+    handler = scripted([run_state("completed", result={"text": FINAL_TEXT})])  # Harbor: pricesPublic false
+    result = await make_discovery(live_settings, db, decider, handler).discover("packaging_disposables", "90024", None)
+
+    by_name = {c.name: c for c in result.candidates}
+    assert by_name["Harbor Paper Co"].reason == "filtered: prices not public"
+    assert not by_name["Harbor Paper Co"].selected
+    assert by_name["Westside Restaurant Supply"].selected
+    assert judged == ["Westside Restaurant Supply"]  # no Jev call for the filtered supplier
+
+
+def test_missing_prices_flag_is_not_hidden():
+    assert not discovery._prices_hidden({"url": "https://a.example"})
+    assert discovery._prices_hidden({"url": "https://a.example", "prices_public": False})
+
+
+def test_saved_real_run_parses():
+    run_id, rows, age = discovery._load_seed("packaging_disposables", "49007")
+    assert run_id.startswith("13698a75") and age is not None and age > 0
+    assert len(rows) == 10 and all(r["url"].startswith("https://") for r in rows)
+    assert discovery._load_seed("packaging_disposables", "90024") is None
+
+
+async def test_live_mode_falls_back_to_saved_real_run(live_settings, db, decider):
+    live = live_settings.model_copy(update={"run_mode": "live"})
+    disc = make_discovery(live, db, decider, scripted([run_state("failed", errorCode="INSUFFICIENT_CREDITS")]))
+
+    result = await disc.discover("packaging_disposables", "49007", None)
+
+    assert result.source == "fallback" and result.age_s is not None
+    assert len(result.candidates) == 10
+    assert all(c.creao_run_id and c.creao_run_id.startswith("13698a75") for c in result.candidates)
+    assert not any("(fixture)" in c.name for c in result.candidates)
+    hidden = {c.name for c in result.candidates if c.reason == "filtered: prices not public"}
+    assert {"KSS Enterprises", "Highland Supply"} <= hidden
+    assert all(c.adapter is None for c in result.candidates)  # no real adapters registered yet
+
+
+async def test_fixture_mode_keeps_the_fake_list(settings, db, decider):
+    modes = RuntimeModes(settings.initial_modes())
+    result = await Discovery(settings, db, modes, decider).discover("packaging_disposables", "49007", None)
+
+    assert result.source == "fixture"
+    assert {c.id for c in result.candidates} == {"alpha", "bravo", "charlie", "delta", "echo"}
