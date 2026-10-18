@@ -20,6 +20,7 @@ FLAG_TEXT = {
     "low_match": "match is uncertain",
     "overbuy": "pack size buys more than you need",
     "pack_unknown": "pack size not stated",
+    "price_missing": "no price shown",
 }
 
 
