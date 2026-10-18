@@ -205,6 +205,18 @@ select.input { padding-right: 32px; }
 .bp-live-tag i { width: 6px; height: 6px; border-radius: 3px; background: var(--color-ink); }
 @media (prefers-reduced-motion: no-preference) { .bp-live-tag i { animation: bp-pulse 1.6s ease-in-out infinite; } }
 @keyframes bp-pulse { 50% { opacity: 0.3; } }
+/* The watched lane's live browser, large, above the tiles. 2:1 matches the cloud browser's window with its
+   tab bar (a 16:9 box left a black band under the page, 2026-10-18). */
+.stage { border-radius: var(--radius-card); box-shadow: var(--shadow-ring); background: var(--color-white); padding: 6px; margin-bottom: 16px; }
+.stage-bar { display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 10px; }
+.stage-bar b { font-weight: 600; white-space: nowrap; }
+.stage-bar .bp-url { flex: 1; min-width: 0; }
+.stage-open { flex-shrink: 0; }
+.stage-view { aspect-ratio: 2 / 1; max-height: 72vh; width: 100%; border-radius: var(--radius-control); overflow: hidden; background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-line); }
+.bp.watched { box-shadow: 0 0 0 2px var(--color-mint), var(--shadow-ring); }
+.bp-watch { appearance: none; border: 0; background: var(--color-mint-tint); color: var(--color-mint-text); font: 600 12px/16px var(--font-sans); padding: 3px 8px; border-radius: 4px; cursor: pointer; flex-shrink: 0; }
+@media (hover: hover) { .bp-watch:hover { background: var(--color-mint); color: var(--color-mint-ink); } }
+.bp-watch:focus-visible { outline: 2px solid var(--color-mint-text); outline-offset: 2px; }
 .bp-body { height: 232px; overflow: hidden; position: relative; background: var(--color-white); }
 .bp-live { width: 100%; height: 100%; border: 0; display: block; }
 .bp-shot { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1px; }
