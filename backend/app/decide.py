@@ -11,6 +11,7 @@ Every call is logged to the `decisions` table (the Intuit evaluation data).
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
@@ -126,12 +127,15 @@ class Decider:
         jev_source: str = "jev",
     ) -> Decision:
         try:
-            answers = await self.llm.answer_questions(state, questions)
-        except (LLMError, ValueError, TypeError) as exc:
+            answers = await asyncio.wait_for(self.llm.answer_questions(state, questions),
+                                             timeout=self.settings.step5_escalation_timeout_s)
+        except (TimeoutError, LLMError, ValueError, TypeError) as exc:
+            why = (f"no answer in {self.settings.step5_escalation_timeout_s:g} s"
+                   if isinstance(exc, TimeoutError) else exc)
             if jev_answers is not None:
                 return Decision(jev_answers, "unsure", source=jev_source, jev_answers=jev_answers,
-                                notes=[reason, f"step5 failed: {exc}"])
-            return Decision({}, "unsure", source="default", notes=[reason, f"step5 failed: {exc}"])
+                                notes=[reason, f"step5 failed: {why}"])
+            return Decision({}, "unsure", source="default", notes=[reason, f"step5 failed: {why}"])
         latency = answers.pop("_latency_ms", None)
         decision = Decision(answers, "confirm", escalated=True, source="step5",
                             jev_answers=jev_answers, notes=[reason])

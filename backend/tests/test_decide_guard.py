@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 import pytest
 
 from app.contracts import PageInput, PageSnapshot
@@ -117,3 +120,20 @@ async def test_stub_guard_detects_bot_check(decider, settings):
     v = await check_page(decider, PageSnapshot(url="u", visible_text="Please verify you are human"),
                          settings.thresholds)
     assert not v.stop and v.blocked == "bot_check"
+
+
+async def test_a_slow_step5_second_opinion_keeps_jevs_answer(decider, monkeypatch):
+    """Live 2026-10-18: Step 5 took 24 s and 18 s on two J5 listings, so the Restaurantware search
+    passed its 45 s budget and the lane failed. Past the limit, Jev's answer stays, marked unsure."""
+    async def slow(state, questions):
+        await asyncio.sleep(5)
+        return {"q": "never"}
+
+    monkeypatch.setattr(decider.settings, "step5_escalation_timeout_s", 0.05)
+    monkeypatch.setattr(decider.llm, "answer_questions", slow)
+    decider.jev = FakeJev({"q": {"type": "noul", "noul": 0.85}})  # confirm band
+    started = time.monotonic()
+    d = await decider.decide("J9", {"x": 1}, {"q": noul("?")})
+    assert time.monotonic() - started < 1
+    assert d.band == "unsure" and not d.escalated and d.answers == d.jev_answers
+    assert "no answer in 0.05 s" in " ".join(d.notes)
