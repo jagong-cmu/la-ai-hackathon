@@ -82,6 +82,11 @@ class WebstaurantLane(PlaywrightAdapterLane):
         return f"{self._base()}/search/{quote(search_slug(query))}.html"
 
     async def result_extract(self, page: Page) -> list[ResultCard]:
+        # Wait for the cards: a slower (cloud) browser can still be navigating or rendering.
+        try:
+            await page.wait_for_selector(CARD, state="attached", timeout=20000)
+        except PlaywrightError as exc:
+            raise AdapterStepError(f"no search results on {page.url} ({await page.title()!r})") from exc
         rows = await page.eval_on_selector_all(CARD, RESULTS_JS)
         return [ResultCard(title=r["title"], snippet=r["snippet"], url=r["url"]) for r in rows]
 
