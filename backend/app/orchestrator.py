@@ -260,10 +260,11 @@ class Orchestrator:
             if state in FINAL_JOB_STATES or state is final.state:
                 self.db.save_job(final.model_copy(update={"state": state}))
                 return
-            if state in (JobState.created, JobState.gathering):
-                current = view.model_copy(update={"state": state})
-            else:  # from results_ready on, the replay shows the source's plans
-                current = final.model_copy(update={"state": state, "approval": None, "cards": [], "handoffs": []})
+            current = view.model_copy(update={"state": state})
+            if state not in (JobState.created, JobState.gathering):
+                # From results_ready on, show the source's plans. Lane tiles still come from the
+                # replayed events: the source's final lanes are already at the payment stop.
+                current.offers, current.plans, current.results = final.offers, final.plans, final.results
             current.updated_at = utcnow()
             self.db.save_job(current)
 

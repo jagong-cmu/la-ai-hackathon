@@ -321,6 +321,17 @@ def test_replay_streams_every_recorded_event(client):
     wait_for(client, source, {"at_payment", "partial_handoff"})
     recorded = _all_events(client, source)
 
+    # Record what the replay's job view shows when each replayed results_ready goes out.
+    s = client.app.state.s
+    at_results: list[dict] = []
+    emit = s.orchestrator.bus.emit
+
+    async def recording_emit(job_id, type_, data=None, lane_id=None):
+        if type_ == "results_ready" and job_id != source:
+            at_results.append(s.db.load_job(job_id).model_dump(by_alias=True, mode="json"))
+        return await emit(job_id, type_, data, lane_id)
+
+    s.orchestrator.bus.emit = recording_emit
     r = client.post(f"/admin/replay/{source}?speed=50", headers={"X-Admin-Token": "dev-admin"})
     assert r.status_code == 200
     replay_id = r.json()["jobId"]
@@ -336,3 +347,9 @@ def test_replay_streams_every_recorded_event(client):
     done = client.get(f"/jobs/{replay_id}").json()
     assert done["state"] == client.get(f"/jobs/{source}").json()["state"]
     assert done["results"]["recommendedPlanId"] == plan_id
+
+    # At results the replay shows the source's plans, but its lane tiles still follow the
+    # replayed events: the source's final lanes are already stopped at payment.
+    mid = at_results[0]
+    assert mid["state"] == "results_ready" and mid["results"]["recommendedPlanId"] == plan_id
+    assert mid["lanes"] == [] and mid["handoffs"] == [] and mid["approval"] is None
