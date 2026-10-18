@@ -7,6 +7,7 @@ and page.url look the same as on the site. A live run is app/lanes/live/adapter_
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -254,10 +255,12 @@ def test_tax_rows_for_j7():
 @pytest.fixture
 def broken_fetch_store() -> AsyncIterator:
     """A local Shopify-like store whose page fetch() always fails, like Wees Express in the cloud
-    browser on 2026-10-18. The JSON URLs themselves answer."""
+    browser on 2026-10-18. The JSON URLs and the /cart/add and /cart/change GET forms answer, and
+    the cart lives behind a cart cookie, as on Shopify."""
     import json
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
 
     product = {"title": "Bakery Box 10 x 10 x 5", "description": "<p>White. 100 per case.</p>",
                "variants": [{"id": 7, "title": "Default Title", "sku": "BB-10", "price": 4599, "available": True}]}
@@ -269,32 +272,49 @@ def broken_fetch_store() -> AsyncIterator:
                                                      "price": "45.99"}]}}})),
         "/products/bakery-box.js": ("application/json", json.dumps(product)),
     }
-
-    carts: dict[str, list] = {}  # cart cookie -> lines
+    carts: dict[str, dict[int, int]] = {}  # cart cookie -> variant -> quantity
     cart_cookies: list[str] = []  # the Cookie header of each GET /cart
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            path = self.path.split("?")[0]
-            if path == "/cart":
+            url = urlparse(self.path)
+            query = {k: v[0] for k, v in parse_qs(url.query).items()}
+            token = (self.headers.get("Cookie") or "").partition("cart=")[2].split(";")[0]
+            new_token = None
+            if url.path in ("/cart/add", "/cart/change"):
+                if not token:
+                    token = new_token = f"tok{len(carts) + 1}"
+                cart = carts.setdefault(token, {})
+                variant, quantity = int(query["id"]), int(query["quantity"])
+                cart[variant] = cart.get(variant, 0) + quantity if url.path == "/cart/add" else quantity
+                if not cart[variant]:
+                    del cart[variant]
+                url = url._replace(path="/cart")
+            if url.path == "/cart":
                 cart_cookies.append(self.headers.get("Cookie") or "")
-            if path == "/cart.js":
-                token = (self.headers.get("Cookie") or "").partition("cart=")[2].split(";")[0]
-                pages[path] = ("application/json", json.dumps({"items": carts.get(token, [])}))
-            kind, body = pages.get(path, ("text/plain", ""))
+            if url.path == "/cart.js":
+                items = [{"sku": "BB-10", "variant_id": v, "quantity": q, "final_price": 4599}
+                         for v, q in carts.get(token, {}).items()]
+                pages["/cart.js"] = ("application/json", json.dumps({"items": items}))
+            kind, body = pages.get(url.path, ("text/plain", ""))
             self.send_response(200 if body else 404)
             self.send_header("Content-Type", kind)
+            if new_token:
+                self.send_header("Set-Cookie", f"cart={new_token}; Path=/")
             self.end_headers()
             self.wfile.write(body.encode())
 
-        def do_POST(self):
+        def do_POST(self):  # /cart/add.js, for a client that can post outside the page
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            lines = [{"sku": "BB-10", "variant_id": i["id"], "quantity": i["quantity"], "final_price": 4599}
-                     for i in body["items"]]
-            carts["tok1"] = lines
-            self.send_response(200 if self.path == "/cart/add.js" else 404)
+            token = (self.headers.get("Cookie") or "").partition("cart=")[2].split(";")[0]
+            new_token = None if token else f"tok{len(carts) + 1}"
+            cart = carts.setdefault(token or new_token, {})
+            for item in body.get("items", []):
+                cart[item["id"]] = cart.get(item["id"], 0) + item["quantity"]
+            self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Set-Cookie", "cart=tok1; Path=/")
+            if new_token:
+                self.send_header("Set-Cookie", f"cart={new_token}; Path=/")
             self.end_headers()
             self.wfile.write(b"{}")
 
@@ -308,27 +328,64 @@ def broken_fetch_store() -> AsyncIterator:
     server.shutdown()
 
 
-@needs_browser
-async def test_shopify_reads_json_when_the_page_fetch_fails(broken_fetch_store):
+@pytest.fixture
+async def cdp_browser() -> AsyncIterator:
+    """Chromium attached over CDP, as the cloud browser is. A launched browser can hide CDP-only
+    behavior: on 2026-10-18, context.request sent no cookie that the page had set on a CDP browser."""
+    import socket
+    import tempfile
+
     from playwright.async_api import async_playwright
 
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    async with async_playwright() as pw:
+        proc = await asyncio.create_subprocess_exec(
+            pw.chromium.executable_path, f"--remote-debugging-port={port}", "--headless=new",
+            f"--user-data-dir={tempfile.mkdtemp()}", "about:blank", stderr=asyncio.subprocess.DEVNULL)
+        try:
+            for _ in range(100):
+                try:
+                    browser = await pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+                    break
+                except Exception:
+                    await asyncio.sleep(0.1)
+            yield browser
+            await browser.close()
+        finally:
+            proc.terminate()
+            await proc.wait()
+
+
+@needs_browser
+async def test_shopify_works_when_the_page_fetch_fails(broken_fetch_store, cdp_browser):
+    """Live 2026-10-18 on Wees Express: the search (job_993d36dce8), then the cart (job_8ec7d51952)
+    failed with 'Failed to fetch'. With a context.request fallback, the cart then read $0.00
+    (job_4fdc7ee9ff). The fallback is now the browser's own page loads in another tab."""
+    from app.contracts import CartLine
     from app.lanes.live.shopify import WEES_EXPRESS, ShopifyAdapterLane
 
     store = f"http://127.0.0.1:{broken_fetch_store.server_port}"
     lane = ShopifyAdapterLane(SupplierRef(id="w", name="W", url=f"{store}/"), WEES_EXPRESS)
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch()
-        page = await browser.new_page()
-        await page.goto(f"{store}/cart")
-        cards = await lane.search_cards(page, "white bakery box")
-        assert [c.url for c in cards] == [f"{store}/products/bakery-box"]
-        listing = await lane.card_listing(page, cards[0])
-        assert listing is not None and listing.sku == "BB-10" and listing.price == 45.99
 
-        # The cart failed the same way in the next live run (job_8ec7d51952): POST /cart/add.js.
-        assert await lane._post(page, f"{store}/cart/add.js", {"items": [{"id": 7, "quantity": 5}]}) == 200
-        rows = await lane.cart_rows(page)
-        assert [(r.sku, r.pack_quantity) for r in rows] == [("BB-10", 5)]
-        await page.goto(f"{store}/cart")  # the browser's own cart page sees the same cart
-        await browser.close()
+    async def no_guard(page, **kwargs):
+        return None
+
+    lane.after_nav = no_guard  # the payment guard has its own tests
+    context = cdp_browser.contexts[0]
+    page = context.pages[0] if context.pages else await context.new_page()
+    await page.goto(f"{store}/cart")
+    cards = await lane.search_cards(page, "white bakery box")
+    assert [c.url for c in cards] == [f"{store}/products/bakery-box"]
+    listing = await lane.card_listing(page, cards[0])
+    assert listing is not None and listing.sku == "BB-10" and listing.price == 45.99
+
+    line = CartLine(item_id="boxes", sku="BB-10", pack_quantity=5, unit_price=45.99, url=listing.url)
+    assert await lane.add_lines(page, [line])
+    assert [(r.sku, r.pack_quantity) for r in await lane.cart_rows(page)] == [("BB-10", 5)]
+    await page.goto(f"{store}/cart")  # the browser's own cart page has the same cart
     assert "cart=tok1" in broken_fetch_store.cart_cookies[-1]
+    await lane.remove_item(page, "BB-10")
+    assert await lane.cart_rows(page) == []
+    assert len(context.pages) == 1  # the extra tabs are closed
