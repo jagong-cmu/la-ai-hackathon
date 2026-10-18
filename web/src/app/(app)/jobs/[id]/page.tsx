@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import { money } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
 import { ErrorNote, Loading, PageHead } from "@/components/PageHead";
-import { BrowserPane } from "@/components/job/BrowserPane";
+import { BrowserPane, LiveStage } from "@/components/job/BrowserPane";
 import { CallStrip, callFromEvents } from "@/components/job/CallStrip";
 import { useJobEvents } from "@/hooks/useJobEvents";
 import { shortName } from "@/lib/format";
@@ -13,6 +14,7 @@ import { jobHref, orderTitle, planShort, supplierNames, supplierUrls } from "@/l
 export default function WorkingPage() {
   const { id } = useParams<{ id: string }>();
   const s = useJobEvents(id);
+  const [picked, setPicked] = useState<string | null>(null);
   const job = s.job;
   if (!job) return s.error ? <ErrorNote error={s.error} /> : <Loading label="Loading the order" />;
 
@@ -20,6 +22,9 @@ export default function WorkingPage() {
   const urls = supplierUrls(job);
   const order = job.request.suppliers.map((x) => x.id);
   const lanes = Object.values(s.lanes).sort((a, b) => order.indexOf(a.supplierId) - order.indexOf(b.supplierId));
+  // The stage shows the lane the owner picked, else the first lane with a live browser.
+  const withLive = lanes.filter((l) => l.liveUrl);
+  const watched = withLive.find((l) => l.laneId === picked) ?? withLive[0] ?? null;
   const call = callFromEvents(s.events);
   const distributor = job.request.distributor ? shortName(job.request.distributor.name) : "Distributor";
   const ready = !!job.results;
@@ -43,9 +48,26 @@ export default function WorkingPage() {
       />
       <ErrorNote error={s.error} />
 
+      {watched && (
+        <LiveStage
+          key={watched.laneId}
+          lane={watched}
+          name={names[watched.supplierId] ?? watched.supplierId}
+          siteUrl={urls[watched.supplierId]}
+        />
+      )}
+
       <div className="panes">
         {lanes.map((l) => (
-          <BrowserPane key={l.laneId} lane={l} name={names[l.supplierId] ?? l.supplierId} siteUrl={urls[l.supplierId]} job={job} />
+          <BrowserPane
+            key={l.laneId}
+            lane={l}
+            name={names[l.supplierId] ?? l.supplierId}
+            siteUrl={urls[l.supplierId]}
+            job={job}
+            watched={watched?.laneId === l.laneId}
+            onWatch={() => setPicked(l.laneId)}
+          />
         ))}
         {lanes.length === 0 && <div className="skeleton" style={{ minHeight: 320 }} />}
       </div>
