@@ -406,3 +406,40 @@ def test_jobs_left_unfinished_by_a_restart_fail_at_start(settings):
         again = c.post("/jobs", json=body, headers={"Idempotency-Key": "key-job_orphan0001"}).json()["jobId"]
         assert again != "job_orphan0001"  # the key starts a new job
         wait_for(c, again, {"results_ready"})
+
+
+def test_late_update_does_not_replace_results_after_approval(settings, monkeypatch):
+    """Soak S-007: _late() checks for an approval, then awaits the summary (Step 5 takes ~12 s live),
+    then sets view.results. An approval during that wait got results_updated after it."""
+    import threading
+
+    fast = settings.model_copy(update={"job_deadline_s": 0.9})  # alpha/bravo verified, delta still searching
+    with TestClient(create_app(fast)) as client:
+        orch = client.app.state.s.orchestrator
+        real = orch.llm.summarize
+        late_started, release = threading.Event(), asyncio.Event()
+        calls = []
+
+        async def summarize(facts):
+            calls.append(1)
+            if len(calls) == 2:  # the late update's summary
+                late_started.set()
+                await release.wait()
+            return await real(facts)
+
+        monkeypatch.setattr(orch.llm, "summarize", summarize)
+        draft = client.get("/shopping-list/draft").json()
+        job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-late-01"}).json()["jobId"]
+        first = wait_for(client, job_id, {"results_ready"})
+        plan_id = first["results"]["recommendedPlanId"]
+        assert plan_id and first["results"]["deadlineHit"]
+        assert late_started.wait(10)
+        assert client.post(f"/jobs/{job_id}/approve", json={"action": "approve", "planId": plan_id}).status_code == 200
+        client.portal.call(release.set)
+        view = wait_for(client, job_id, {"at_payment", "partial_handoff"})
+        time.sleep(0.2)
+        view = client.get(f"/jobs/{job_id}").json()
+        assert plan_id in [p["planId"] for p in view["results"]["plans"]]
+        types = [line[7:] for line in client.get(f"/jobs/{job_id}/events?follow=false").text.splitlines()
+                 if line.startswith("event: ")]
+        assert "results_updated" not in types[types.index("approved"):]

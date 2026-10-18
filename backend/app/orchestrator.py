@@ -672,18 +672,23 @@ class Orchestrator:
             from app.llm import template_summary
 
             results.summary = template_summary(summary_facts(results, results.plans))
-        rt.view.results = results
-        if rt.view.state is JobState.gathering:
-            await self._set_job_state(rt, JobState.results_ready)
-        self._save(rt)
-        best = next((p for p in results.plans if p.plan_id == results.recommended_plan_id), None)
-        await self.bus.emit(rt.job_id, event, {
-            "recommendedPlanId": results.recommended_plan_id,
-            "total": best.total if best else None,
-            "status": results.status,
-            "deadlineHit": results.deadline_hit,
-            "savingsVsPaidBefore": results.savings_vs_paid_before,
-        })
+        # The summary can take seconds; the owner may decide meanwhile. approve() reads the results
+        # under this lock, and a late update must not replace the results that a decision used.
+        async with rt.approve_lock:
+            if event == "results_updated" and rt.view.approval is not None:
+                return
+            rt.view.results = results
+            if rt.view.state is JobState.gathering:
+                await self._set_job_state(rt, JobState.results_ready)
+            self._save(rt)
+            best = next((p for p in results.plans if p.plan_id == results.recommended_plan_id), None)
+            await self.bus.emit(rt.job_id, event, {
+                "recommendedPlanId": results.recommended_plan_id,
+                "total": best.total if best else None,
+                "status": results.status,
+                "deadlineHit": results.deadline_hit,
+                "savingsVsPaidBefore": results.savings_vs_paid_before,
+            })
 
     async def _late(self, rt: JobRuntime, pending: set[asyncio.Task]) -> None:
         await asyncio.wait(pending)
