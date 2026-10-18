@@ -23,6 +23,7 @@ from playwright.async_api import Page
 
 from app.config import CheckoutContact
 from app.lanes.live.adapter_base import (
+    US_STATES,
     AdapterStepError,
     CartRow,
     PlaywrightAdapterLane,
@@ -37,7 +38,9 @@ ZIP_INPUT = "[data-testid=zip-code-input]:visible"
 LINE = "tbody[data-cart-item-id]"
 GUEST_EMAIL = "input[name=email]:not(#email-login)"  # the first email box is the sign-in form
 CONTINUE = "[data-testid=guestcheckout-continue-button]"
-COMPANY_TYPE = "Restaurant"  # a required select on the shipping step
+STEP2_URL = "**/viewinfo.cfm**"  # "Review & Payment", step 2 of 3
+NOT_SHIPPABLE = "not eligible to be shipped to the selected shipping address"
+COMPANY_TYPE = "Cafés & Bakery"  # required on the shipping step; the site's list, seen 2026-10-18
 # The pack price on a search card: "ITEM NUMBER #394EN403LCASE $48.49/Case $0.05/Ea".
 PRICE_ON_CARD = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})\s*/")
 # Freight options are <button role="radio">; the selected one has aria-checked="true".
@@ -79,6 +82,10 @@ class WebstaurantLane(PlaywrightAdapterLane):
     # network-idle wait. A product page opens only when J5 is not sure from the card.
     nav_settle_ms = 0
     parallel_cart_adds = True  # the cart is server-side; checked live with two adds on 2026-10-18
+    # No checkout check before approval (team decision 2026-10-18): the guest form runs reCAPTCHA
+    # Enterprise, which turned repeated automated submits away, and an item that cannot ship to the
+    # address hides the total. The cart stays `estimated` with its real ZIP freight.
+    quote_at_checkout = False
 
     def open_url(self) -> None:
         return None
@@ -200,21 +207,43 @@ class WebstaurantLane(PlaywrightAdapterLane):
         # The street box suggests addresses; Escape closes the list and keeps the typed text.
         await self.fill(page, "input[autocomplete='shipping address-line1']", contact.address1)
         await page.keyboard.press("Escape")
-        await self.choose(page, "[data-testid=company-type-select] input[role=combobox]", COMPANY_TYPE)
-        await self.choose(page, "input[autocomplete='shipping address-level1']", contact.state)
+        await self.choose(page, "[data-testid=company-type-select]", COMPANY_TYPE)
+        await self.choose(page, "input[autocomplete='shipping address-level1']",
+                          US_STATES.get(contact.state.upper(), contact.state))
+        coupons = page.locator("input[name=receiveCoupons]")
+        if await coupons.count() and await coupons.is_checked():  # ticked by default: no marketing email
+            await self.click(page, coupons, js=True)  # the site draws its own box over the input
         return ["email", "name", "company", "company_type", "address1", "city", "state", "zip", "phone"]
 
     async def next_checkout_step(self, page: Page) -> bool:
         button = page.locator(CONTINUE)
         if await button.count() == 0:
             return False
-        await self.click(page, button, wait_nav=True)
+        # The step changes the page without a navigation Playwright's expect_navigation() sees:
+        # click, then wait for the step 2 URL (seen 2026-10-18: about 1 s).
+        await self.click(page, button)
+        try:
+            await page.wait_for_url(STEP2_URL, timeout=15000)
+        except PlaywrightError as exc:
+            errors = await page.locator("[role=alert], .zest-input-error, [class*=error i]").all_inner_texts()
+            note = "; ".join(e.strip() for e in errors if e.strip())[:200]
+            # The form also runs reCAPTCHA Enterprise, which can turn an automated submit away.
+            raise AdapterStepError(f"checkout step 1 not accepted ({note or 'no error shown: reCAPTCHA?'})") from exc
+        text = await page.inner_text("body")
+        if NOT_SHIPPABLE in text:
+            raise AdapterStepError("an item cannot ship to the checkout address (the site shows no total)")
         return True
 
-    async def choose(self, page: Page, selector: str, value: str) -> None:
-        """Pick an option in a searchable select: type it, then Enter takes the first match."""
-        await self.fill(page, selector, value)
-        await page.keyboard.press("Enter")
+    async def choose(self, page: Page, selector: str, option: str) -> None:
+        """Pick an option in a dropdown: open it, then click the option with exactly that name.
+        Typing and Enter picked the first partial match ("CA" -> "Armed Forces Americas")."""
+        await self.click(page, page.locator(selector).first)
+        target = page.get_by_role("option", name=option, exact=True)
+        try:
+            await target.first.wait_for(timeout=5000)
+        except PlaywrightError as exc:
+            raise AdapterStepError(f"no option {option!r} in {selector}") from exc
+        await self.click(page, target)
 
 
 def search_slug(query: str) -> str:

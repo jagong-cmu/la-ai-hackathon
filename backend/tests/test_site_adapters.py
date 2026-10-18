@@ -157,3 +157,66 @@ async def test_webstaurant_refuses_placeholder_contact():
 
     with pytest.raises(AdapterStepError, match="contact is not set"):
         await wss_lane().fill_contact(None, CheckoutContact())  # never reaches the page
+
+
+def test_pair_labels_joins_each_amount_to_its_label():
+    from app.lanes.live.adapter_base import pair_labels
+
+    raw = "Subtotal · 2 items\n$119.02\nShipping\n$26.85\nTotal\nUSD\n$145.87"
+    assert pair_labels(raw) == "Subtotal · 2 items $119.02\nShipping $26.85\nTotal USD $145.87"
+
+
+SHOPIFY_CHECKOUT = """<form>
+  <input name="email" autocomplete="shipping email">
+  <input name="firstName" autocomplete="shipping given-name"><input name="lastName" autocomplete="shipping family-name">
+  <input name="address1" autocomplete="shipping address-line1"><input name="city" autocomplete="shipping address-level2">
+  <select name="zone"><option>Michigan</option><option>California</option></select>
+  <input name="postalCode" autocomplete="{postal}">
+  <button id="pay" onclick="document.body.dataset.paid = 1">Pay now</button>
+</form>
+<div role="table">Item Value Subtotal <span>$49.59</span>
+  <div>Shipping</div><div>$26.85</div><div>Total</div><div>USD</div><div>$76.44</div></div>"""
+
+
+@needs_browser
+@pytest.mark.parametrize("postal, ok", [("shipping postal-code", True), ("cc-number", False)])
+async def test_shopify_payment_page_fill_types_only_shipping_fields(postal, ok):
+    from playwright.async_api import async_playwright
+
+    from app.config import CheckoutContact
+    from app.lanes.live.adapter_base import AdapterStepError, CardFieldRefused
+    from app.lanes.live.shopify import WEES_EXPRESS, ShopifyAdapterLane
+
+    lane = ShopifyAdapterLane(SupplierRef(id="w", name="W", url="https://wees-express.com/"), WEES_EXPRESS)
+    contact = CheckoutContact(address1="325 Westwood Plaza", city="Los Angeles", state="CA", zip="90095")
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch()
+        page = await browser.new_page()
+        await page.set_content(SHOPIFY_CHECKOUT.format(postal=postal))
+        if ok:
+            await lane.fill_contact_on_payment_page(page, contact)
+            assert await page.input_value("input[name=postalCode]") == "90095"
+            assert await page.eval_on_selector("select[name=zone]", "s => s.value") == "California"
+            assert "Shipping $26.85" in await lane.checkout_summary(page)
+        else:
+            with pytest.raises((AdapterStepError, CardFieldRefused)):
+                await lane.fill_contact_on_payment_page(page, contact)
+            assert await page.input_value("input[name=postalCode]") == ""  # nothing typed into it
+        assert await page.evaluate("document.body.dataset.paid") is None  # never clicked
+        await browser.close()
+
+
+def test_stub_j6_treats_the_review_and_pay_page_as_payment():
+    """WebstaurantStore step 2 shows no card field until a payment method is picked, so the
+    guard's DOM check cannot stop there; the stub J6 must (step 1's progress bar names step 2)."""
+    import re
+
+    from app.stub_rules import PAGE_RULES
+
+    payment = dict(PAGE_RULES)["payment_step"]
+    step1 = re.sub(r"<[^>]+>", " ", (SITES / "webstaurant" / "checkout.html").read_text())
+    step2 = ("Shipping & Billing step 1 of 3 Review & Payment step 2 of 3 Order Confirmation step 3 of 3\n"
+             "Review & Payment\nINFORMATION\nBilling Address\nEdit Billing Address\nShipping Address\n"
+             "Change Shipping Address\nCART\nEdit")
+    assert not payment.search(step1)
+    assert payment.search(step2)

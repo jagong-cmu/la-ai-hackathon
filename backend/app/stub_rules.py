@@ -39,7 +39,10 @@ def j1_triage(state: dict, questions: dict) -> dict:
 
 
 PAGE_RULES = [
-    ("payment_step", re.compile(r"card number|payment method|cvv|security code|pay now", re.I)),
+    # A review-and-pay page can show no card field yet (WebstaurantStore step 2): fail safe. Its
+    # name also sits in step 1's progress bar, so match what only the review page shows.
+    ("payment_step", re.compile(r"card number|payment method|cvv|security code|pay now|place order|"
+                                r"payment information|change shipping address|edit billing address", re.I)),
     # "This form is protected by reCAPTCHA" is a footer notice on normal forms, not a challenge.
     ("bot_check", re.compile(r"(?<!protected by re)captcha|verify you are human|unusual traffic", re.I)),
     ("login_wall", re.compile(r"sign in to continue|log in to see prices|create an account to", re.I)),
