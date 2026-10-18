@@ -50,28 +50,35 @@ def test_job_spans_reach_sentry_in_the_request_trace(settings, sentry):
     sentry_sdk.flush()
     by_name = {t["transaction"]: t for t in sentry.transactions}
     job, request = by_name["restock job"], by_name["/jobs"]
-    ops = {s["op"] for s in job["spans"]}
-    assert {"lane.open", "lane.search", "distributor.run"} <= ops
-    assert job["contexts"]["trace"]["trace_id"] == request["contexts"]["trace"]["trace_id"]
+    trace_id = request["contexts"]["trace"]["trace_id"]
+    assert job["contexts"]["trace"]["trace_id"] == trace_id
     assert job["tags"]["job_id"] == job_id
-    # Parallel lanes are siblings: each search is a child of its own lane span, and each lane span of the job.
+    # Each lane is its own transaction in the job's trace, so lane work after the deadline still arrives.
     job_span = job["contexts"]["trace"]["span_id"]
-    lanes = {s["span_id"]: s for s in job["spans"] if s["op"] == "lane.run"}
+    lane_txns = [t for t in sentry.transactions if t["transaction"].startswith("lane ")]
+    assert lane_txns and all(t["contexts"]["trace"]["trace_id"] == trace_id for t in lane_txns)
+    assert all(t["contexts"]["trace"]["parent_span_id"] == job_span and t["tags"]["job_id"] == job_id
+               for t in lane_txns)
+    lane_spans = [s for t in lane_txns for s in t["spans"]]
+    ops = {s["op"] for s in job["spans"]} | {s["op"] for s in lane_spans}
+    assert {"lane.open", "lane.search", "distributor.run"} <= ops
+    # Each search is a child of its own lane span, and each lane span is the root child of its transaction.
+    roots = {t["contexts"]["trace"]["span_id"] for t in lane_txns}
+    lanes = {s["span_id"]: s for s in lane_spans if s["op"] == "lane.run"}
     agents = {s["span_id"] for s in sentry.ai_spans if s["attributes"]["sentry.op"]["value"] == "gen_ai.invoke_agent"}
-    searches = [s for s in job["spans"] if s["op"] == "lane.search"]
+    searches = [s for s in lane_spans if s["op"] == "lane.search"]
     assert searches and all(s["parent_span_id"] in lanes.keys() | agents for s in searches)
-    assert lanes and all(s["parent_span_id"] == job_span for s in lanes.values())
+    assert lanes and all(s["parent_span_id"] in roots for s in lanes.values())
     # Each step records how it ended, so Sentry can group runs by result.
     assert all("offers.status" in s["data"] or s["data"]["error.type"] for s in searches)
     assert any(s["data"].get("error.type") == "LaneBlocked" and s["status"] != "ok" for s in searches)
     assert all(s["data"]["lane.state"] and s["status"] for s in lanes.values())
-    carts = [s for s in job["spans"] if s["op"] == "lane.set_cart"]
+    carts = [s for s in lane_spans if s["op"] == "lane.set_cart"]
     assert carts and all(s["data"]["cart.verification"] for s in carts)
     trace = job["contexts"]["trace"]
     assert trace["data"]["job.state"] == "results_ready" and trace["data"]["job.lanes"] >= 1
-    decisions = [s for s in job["spans"] if s["op"] == "decide"]
+    decisions = [s for s in job["spans"] + lane_spans if s["op"] == "decide"]
     assert decisions and all(s["data"]["decision.band"] for s in decisions)
-
 
 def test_ai_span_has_gen_ai_attributes(sentry):
     obs.init_sentry(type("S", (), {"sentry_dsn": "https://public@example.invalid/1", "run_mode": "fixture",

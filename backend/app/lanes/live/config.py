@@ -36,7 +36,15 @@ class LiveLaneSettings(BaseSettings):
     # fallback. HOSTED_AGENT_FIRST=false makes the Step 5 agent the lane again.
     hosted_agent_first: bool = True
     hosted_agent_api_base: str = "https://api.browser-use.com/api/v4"
-    hosted_agent_model: str | None = None  # None: the API default model (StepFun is not on its list)
+    hosted_agent_model: str | None = None  # None: the API default, gpt-6-luna (StepFun is not on its list)
+    # Reasoning effort for an OpenAI model (low | medium | high). The API default is high; the
+    # 2026-10-18 live run spent 81-93% of each run waiting for the model, with high effort.
+    hosted_agent_reasoning: str | None = "low"
+    # A search that ends with no listings and an error runs once more with this effort. None: no retry.
+    hosted_agent_retry_reasoning: str | None = "high"
+    # A cropped screenshot of the cost summary cost about 4 min of a 6 min cart run (2026-10-18).
+    # Off: the live view and the run's own records are the evidence.
+    hosted_agent_screenshot: bool = False
     hosted_agent_max_cost_usd: float = 2.0  # spend cap for one lane's whole session
     hosted_agent_keep_alive_s: int = 900  # the browser stays open between runs and for the owner at payment
     hosted_agent_poll_s: float = 2.0
@@ -71,7 +79,7 @@ class LiveLaneSettings(BaseSettings):
     snapshot_text_chars: int = 6000
 
     @field_validator("browser_use_api_key", "openrouter_api_key", "browser_llm_model", "browser_llm_fallback",
-                     "browser_executable", "hosted_agent_model", mode="before")
+                     "browser_executable", "hosted_agent_model", "hosted_agent_reasoning", "hosted_agent_retry_reasoning", mode="before")
     @classmethod
     def _blank_is_unset(cls, value: Any) -> Any:
         return None if isinstance(value, str) and not value.strip() else value

@@ -39,7 +39,10 @@ def normalize_option(
 
     if product.jev is not None:
         p_same = product.jev.match_probs.get("2", 0.0)
-        if p_same < th.match_min:
+        musts = product.jev.must_have
+        confirmed = (bool(musts) and all(p >= th.must_have_act for p in musts.values())
+                     and product.jev.match_probs.get("0", 1.0) <= th.match_different_max)
+        if p_same < th.match_min and not confirmed:
             eligible = False
             flags.append("no_match")
         elif p_same < th.match_act:

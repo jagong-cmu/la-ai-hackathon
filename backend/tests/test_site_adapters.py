@@ -220,3 +220,30 @@ def test_stub_j6_treats_the_review_and_pay_page_as_payment():
              "Change Shipping Address\nCART\nEdit")
     assert not payment.search(step1)
     assert payment.search(step2)
+
+
+def test_shipping_shown_ignores_an_empty_shipping_row():
+    from app.lanes.live.shopify import shipping_shown
+
+    # While rates load, the empty Shipping label joins the next row: not a shipping amount.
+    assert not shipping_shown("Subtotal $223.82\nShipping Estimated taxes The final tax and total will be "
+                              "confirmed by email or text after you place your order. $22.94\nTotal USD $246.76")
+    assert not shipping_shown("Subtotal $99.18\nShipping Total USD $119.02")
+    assert shipping_shown("Subtotal $223.82\nShipping $18.50\nEstimated taxes $24.60\nTotal USD $266.92")
+
+
+
+def test_tax_rows_for_j7():
+    from app.lanes.live.shopify import clean_tax_rows, tax_shown
+
+    # Live Restaurantware summaries, 2026-10-18.
+    loading = "Subtotal $223.82\nShipping $22.72\nTaxes Total USD $246.54"
+    assert not tax_shown(loading)
+    assert clean_tax_rows(loading) == "Subtotal $223.82\nShipping $22.72\nTotal USD $246.54"
+    sentence = ("Subtotal $223.82\nShipping $22.72\nEstimated taxes The final tax and total will be confirmed by "
+                "email or text after you place your order. $22.94\nTotal USD $269.48")
+    assert tax_shown(sentence)
+    assert clean_tax_rows(sentence) == ("Subtotal $223.82\nShipping $22.72\nEstimated taxes $22.94\n"
+                                        "Total USD $269.48")
+    plain = "Subtotal $99.18\nShipping $8.00\nTaxes $0.00\nTotal USD $107.18"
+    assert tax_shown(plain) and clean_tax_rows(plain) == plain
