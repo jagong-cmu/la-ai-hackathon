@@ -6,7 +6,12 @@ own JSON instead of theme markup:
 - `/cart/add?id=<variant>&quantity=<n>` and `/cart/change?id=<variant>&quantity=0`: guarded
   navigations that add and remove a cart line.
 - `/cart.js`: the cart lines and the store's own item subtotal.
-Reads run as fetch() calls inside the page. Every navigation goes through the guarded goto().
+Reads run as fetch() calls inside the page. Every navigation goes through the guarded goto(),
+and each cart change runs the guard on the current page first.
+
+Speed (2026-10-18): search uses the store's predictive search JSON and the product JSON, so no
+search or product page loads; the cart takes all lines in one /cart/add.js request. A lane loads
+two pages: the cart at open (the origin for the JSON calls) and the cart again to show it.
 
 A store that blocks these URLs (EcoQuality returns 404 for all of them) needs its own adapter.
 Checkout is one page with the payment fields on it, so the guard stops on that page: the handoff.
@@ -21,7 +26,7 @@ from urllib.parse import parse_qs, quote_plus, urlparse
 from playwright.async_api import Page
 
 from app.config import CheckoutContact
-from app.contracts import SupplierRef
+from app.contracts import CartLine, SupplierRef
 from app.lanes.live.adapter_base import (
     AdapterStepError,
     CartRow,
@@ -50,6 +55,8 @@ RESULTS_JS = """() => {
   return [...seen.values()].filter(r => r.title.length > 3).slice(0, 12);
 }"""
 JSON_JS = "url => fetch(url, {headers: {Accept: 'application/json'}}).then(r => r.ok ? r.json() : null)"
+POST_JS = """([url, body]) => fetch(url, {method: 'POST', body: JSON.stringify(body),
+  headers: {'Content-Type': 'application/json', Accept: 'application/json'}}).then(r => r.status)"""
 TAGS = re.compile(r"<[^>]+>")
 
 
@@ -65,20 +72,48 @@ WEES_EXPRESS = ShopifyStore(name="wees_express")
 
 class ShopifyAdapterLane(PlaywrightAdapterLane):
     single_page_checkout = True
+    card_listing_is_full = True  # the product JSON is the whole listing
+    cart_rows_on_any_page = True  # /cart.js answers on any page of the store
+    nav_settle_ms = 0  # pages here are read through JSON, not through late-rendered markup
+    tab_per_item = False  # searches are JSON calls on the store page, not page loads
 
     def __init__(self, supplier: SupplierRef, store: ShopifyStore, cfg: LiveLaneSettings | None = None):
         super().__init__(supplier, cfg)
         self.store = store
         self.free_shipping_threshold = store.free_shipping_threshold
         self.minimum_order_value = store.minimum_order_value
-        self._query = ""
+        self._query = ""  # the last page search (the page-search fallback path)
+        self._query_by_handle: dict[str, str] = {}  # items search at once: each product keeps its query
         self._variant_ids: dict[str, int] = {}  # cart SKU -> variant id, for removal
 
     def _base(self) -> str:
         u = urlparse(self.supplier.url)
         return f"{u.scheme}://{u.netloc}"
 
+    def open_url(self) -> str:
+        return self.cart_url()  # small page; the store origin the JSON calls need
+
     # ---- search ------------------------------------------------------------------
+
+    async def search_cards(self, page: Page, query: str) -> list[ResultCard]:
+        self._query = query
+        url = (f"{self._base()}/search/suggest.json?q={quote_plus(query)}"
+               "&resources[type]=product&resources[limit]=10&resources[options][unavailable_products]=last")
+        data = await page.evaluate(JSON_JS, url)
+        found = ((data or {}).get("resources") or {}).get("results", {}).get("products") or []
+        if not found:  # predictive search off or empty: the search page
+            cards = await super().search_cards(page, query)
+        else:
+            cards = [ResultCard(title=r["title"], url=f"{self._base()}/products/{r['handle']}",
+                                snippet=f"{r['title']} ${r.get('price', '')} {r.get('vendor', '')}".strip())
+                     for r in found if r.get("handle")]
+        for card in cards:
+            self._query_by_handle.setdefault(_handle(card.url), query)
+        return cards
+
+    async def card_listing(self, page: Page, card: ResultCard) -> ProductPage | None:
+        data = await self._json(page, f"/products/{_handle(card.url)}.js")
+        return self._listing(data, card.url) if data and data.get("variants") else None
 
     def search_url(self, query: str) -> str:
         self._query = query  # product_extract picks the variant that matches it
@@ -93,10 +128,11 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         data = await self._json(page, f"/products/{handle}.js")
         if not data or not data.get("variants"):
             raise AdapterStepError(f"no product data for {handle}")
-        variant = pick_variant(data["variants"], self._query, _variant_param(page.url))
-        if _variant_param(page.url) != variant["id"]:
-            # Put the variant in the URL: the plan's cart line opens this URL to add it.
-            page = await self.goto(f"{self._base()}/products/{handle}?variant={variant['id']}")
+        return self._listing(data, page.url)
+
+    def _listing(self, data: dict, url: str) -> ProductPage:
+        query = self._query_by_handle.get(_handle(url), self._query)
+        variant = pick_variant(data["variants"], query, _variant_param(url))
         title = data["title"] if variant.get("title") in (None, "", "Default Title") else (
             f"{data['title']} - {variant['title']}")
         options = "; ".join(f"{v.get('title')}: ${v['price'] / 100:.2f}" for v in data["variants"])
@@ -107,6 +143,8 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
             sku=_sku(variant),
             price=variant["price"] / 100,
             text=f"{title}\n{stock}\nOptions: {options}\n{description}",
+            # The variant goes in the URL: the cart line adds exactly this variant.
+            url=f"{self._base()}/products/{_handle(url)}?variant={variant['id']}",
         )
 
     # ---- cart --------------------------------------------------------------------
@@ -123,6 +161,19 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
             variant = pick_variant(data["variants"], "", None)["id"]
         await self.goto(f"{self._base()}/cart/add?id={variant}&quantity={pack_quantity}")
 
+    async def add_lines(self, page: Page, lines: list[CartLine]) -> bool:
+        items = []
+        for line in lines:
+            variant = _variant_param(line.url or "")
+            if variant is None:
+                return False  # no variant in the URL: add from each product page instead
+            items.append({"id": variant, "quantity": line.pack_quantity})
+        await self.after_nav(page)  # the guard on the current page before the cart changes
+        status = await page.evaluate(POST_JS, [f"{self._base()}/cart/add.js", {"items": items}])
+        if status != 200:
+            raise AdapterStepError(f"cart add refused (HTTP {status})")
+        return True
+
     async def cart_rows(self, page: Page) -> list[CartRow]:
         cart = await self._json(page, "/cart.js")
         if cart is None:
@@ -138,7 +189,10 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         variant = self._variant_ids.get(sku)
         if variant is None:
             raise AdapterStepError(f"no cart line for {sku}")
-        await self.goto(f"{self._base()}/cart/change?id={variant}&quantity=0")
+        await self.after_nav(page)
+        status = await page.evaluate(POST_JS, [f"{self._base()}/cart/change.js", {"id": str(variant), "quantity": 0}])
+        if status != 200:
+            raise AdapterStepError(f"cart remove refused (HTTP {status})")
 
     async def cart_summary(self, page: Page, skus: list[str]) -> str:
         # The store's own cart figures, not the theme's summary block: themes mix promo text

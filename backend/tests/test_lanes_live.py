@@ -226,7 +226,7 @@ async def test_example_adapter_end_to_end(settings, decider, tmp_path):
                 assert await page.input_value(sel) == ""
             assert await page.inner_text("#msg") == ""  # "Place order" was never clicked
 
-            shots = list((tmp_path / "evidence" / "job_live" / "example").glob("*.png"))
+            shots = list((tmp_path / "evidence" / "job_live" / "example").glob("*.jpg"))
             assert shots, "screenshots are written as evidence"
         finally:
             await lane.close(ctx)
@@ -253,3 +253,27 @@ async def test_adapter_refuses_to_type_into_card_field(settings, decider, tmp_pa
             assert await page.input_value("#cc-number") == ""
         finally:
             await lane.close(ctx)
+
+
+async def test_warm_pool_hands_one_browser_to_one_lane(monkeypatch):
+    from app.lanes.live import warm
+
+    started: list[str] = []
+
+    class FakeBrowser:
+        def __init__(self, cfg, label="lane"):
+            self.label = label
+
+        async def start(self):
+            started.append(self.label)
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(warm, "LaneBrowser", FakeBrowser)
+    a = SupplierRef(id="a", name="A", url="https://a.example", adapter="x")
+    await warm.prewarm([a, a], cfg=object())  # the same supplier twice starts one browser
+    first = await warm.claim(a)
+    assert started == ["a"] and isinstance(first, FakeBrowser)
+    assert await warm.claim(a) is None  # taken: the next lane starts its own
+    await warm.close_all()
