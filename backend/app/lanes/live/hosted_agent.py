@@ -586,6 +586,8 @@ class HostedAgentLane:
 
     async def _judge(self, ctx: LaneContext, spec: SearchSpec, listing: HostedListing) -> Product:
         text = listing.listing_text
+        # J5 judges stock from the text. The agent saw the stock state on the page, so say it.
+        text += "\nAvailability on the page: " + ("in stock, can be ordered now" if listing.in_stock else "out of stock")
         if listing.differences:  # J5 sees what the agent found different, beside the page text
             text += "\nDifferences from the request (browser agent): " + "; ".join(listing.differences)
         jev, candidates, units = await j5_listing(ctx.decider, spec, listing.title, text, job_id=ctx.job_id)

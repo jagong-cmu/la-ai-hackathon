@@ -71,6 +71,35 @@ SUMMARY_JS = """() => {
 POST_JS = """([url, body]) => fetch(url, {method: 'POST', body: JSON.stringify(body),
   headers: {'Content-Type': 'application/json', Accept: 'application/json'}}).then(r => r.status)"""
 TAGS = re.compile(r"<[^>]+>")
+# A Shipping row with its own amount. While rates load, the row is empty and its label joins the
+# next row: "Shipping Total USD $119.02" (Wees Express) or "Shipping Estimated taxes ... $22.94"
+# (Restaurantware, 2026-10-18). Neither may count as a shipping amount.
+SHIPPING_ROW = re.compile(r"^Shipping(?![^\n]*(?:Total|tax))[^\n]*\$\d", re.M | re.I)
+
+
+def shipping_shown(summary: str) -> bool:
+    return bool(SHIPPING_ROW.search(summary))
+
+
+# Tax rows. "Total" is the capitalized row label ("Total USD $246.54"), never the word inside a
+# sentence: Restaurantware's tax row reads "Estimated taxes The final tax and total will be
+# confirmed by email or text after you place your order. $22.94" (2026-10-18).
+TAX_LABEL = r"(?i:(?:estimated )?tax(?:es)?)"
+TOTAL_ROW = r"Total (?:[A-Z]{3} )?\$"
+TAX_ROW = re.compile(rf"^{TAX_LABEL}(?![^\n]*{TOTAL_ROW})[^\n]*\$\d", re.M)
+EMPTY_TAX_ROW = re.compile(rf"^{TAX_LABEL}[^\n$]*?(?={TOTAL_ROW})", re.M)
+LONG_TAX_ROW = re.compile(rf"^({TAX_LABEL})\b(?![^\n]*{TOTAL_ROW})[^\n$]*(\$[\d,.]+)", re.M)
+
+
+def tax_shown(summary: str) -> bool:
+    return bool(TAX_ROW.search(summary))
+
+
+def clean_tax_rows(summary: str) -> str:
+    """Give J7 plain tax rows: drop an empty tax label joined to the total ('Taxes Total USD $246.54'
+    -> 'Total USD $246.54'), and cut a tax row's sentence ('Estimated taxes The final tax ... $22.94'
+    -> 'Estimated taxes $22.94'), whose word 'total' could mislead J7."""
+    return LONG_TAX_ROW.sub(r"\1 \2", EMPTY_TAX_ROW.sub("", summary))
 
 
 @dataclass(frozen=True)
@@ -261,22 +290,25 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         zone = page.locator("select[name=zone]")
         if await zone.count():  # selecting an option is not a click on the page
             await zone.first.select_option(label=US_STATES.get(contact.state.upper(), contact.state))
-        # Shipping rates and tax arrive a few seconds after the address.
-        for _ in range(20):
+        # Shipping rates arrive a few seconds after the address, and tax after shipping. Wait for both,
+        # or for a summary that has stopped changing: Restaurantware shows no tax before an order
+        # ("The final tax and total will be confirmed ... after you place your order", 2026-10-18).
+        last, same = "", 0
+        for _ in range(30):
             await page.wait_for_timeout(500)
             text = await self.checkout_summary(page)
-            # A Shipping row with its own amount. While rates load the row is empty and its label
-            # joins the next one ("Shipping Total USD $119.02"), which must not count.
-            if re.search(r"^Shipping(?!.*Total)[^\n]*\$\d", text, re.M):
+            same = same + 1 if text == last else 0
+            last = text
+            if shipping_shown(text) and (tax_shown(text) or same >= 4):
                 return
-        raise AdapterStepError("shipping did not appear in the checkout summary")
+        raise AdapterStepError("shipping and tax did not appear in the checkout summary")
 
     async def checkout_summary(self, page: Page) -> str:
         text = await page.evaluate(SUMMARY_JS)
         if "Subtotal" not in text:
             return ""
         # Drop the table's header cells ("Item", "Value") so they do not join the Subtotal line.
-        return pair_labels(text[text.index("Subtotal"):])
+        return clean_tax_rows(pair_labels(text[text.index("Subtotal"):]))
 
     async def next_checkout_step(self, page: Page) -> bool:
         return False
