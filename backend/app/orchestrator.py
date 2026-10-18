@@ -348,7 +348,10 @@ class Orchestrator:
                 decider=self.decider, emit=self._lane_emitter(rt, lr), evidence_dir=self.settings.evidence_dir,
                 specs=rt.specs,
             )
-            tasks.append((lr, self._spawn(self._run_lane(rt, lr))))
+            # Its own transaction in the job's trace: a lane can end after the job transaction (the
+            # deadline), and Sentry drops spans whose transaction has already been sent.
+            tasks.append((lr, self._spawn(in_transaction("lane", f"lane {supplier.id}", self._run_lane(rt, lr),
+                                                         job_id=rt.job_id, supplier=supplier.id))))
         self._save(rt)
         return tasks
 

@@ -26,6 +26,10 @@ class Thresholds(BaseModel):
 
     match_min: float = 0.5  # P(same product) below this: not eligible
     match_act: float = 0.8  # below this: eligible, flagged low_match
+    # J5 can call a listing "related" while it confirms every must-have (live run 2026-10-18: P(same)
+    # 0.39, all four must-haves 0.97+). By J5's own definition that is the same product, so it stays
+    # eligible, flagged low_match, when P(different) is at most this.
+    match_different_max: float = 0.1
     must_have_min: float = 0.5
     must_have_act: float = 0.8
     in_stock_min: float = 0.5

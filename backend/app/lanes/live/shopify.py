@@ -68,6 +68,8 @@ class ShopifyStore:
 
 
 WEES_EXPRESS = ShopifyStore(name="wees_express")
+# Checked 2026-10-18: /search/suggest.json, /products/<handle>.js and /cart.js answer for a guest.
+RESTAURANTWARE = ShopifyStore(name="restaurantware")
 
 
 class ShopifyAdapterLane(PlaywrightAdapterLane):

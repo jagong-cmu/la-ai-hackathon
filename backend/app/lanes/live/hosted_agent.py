@@ -53,6 +53,7 @@ from app.contracts import (
 from app.judgments import j5_listing, j7_totals
 from app.lanes.base import LaneBlocked, LaneContext, LaneGuardStopped
 from app.lanes.live.config import LiveLaneSettings, get_live_settings
+from app.observability import ai_span, outcome, set_data
 from app.stages.totals import build_verified_cart
 
 log = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ FORBIDDEN_RUN_FIELDS = frozenset({
     "agentcardWalletId", "stripeLinkConnectionId", "secretBindings", "opVaultId", "opVaultAllowedDomains",
 })
 TERMINAL = {"completed", "failed", "cancelled"}
+DEFAULT_MODEL = "gpt-6-luna"  # the API's default when a run names no model
 PLACEHOLDER_ADDRESS = CheckoutContact().address1
 PAYMENT_STOPS = ("dom_card_field", "payment_step")
 
@@ -93,7 +95,7 @@ class HostedPage(BaseModel):
     """The page the agent stopped on. Code runs the payment guard on it."""
 
     url: str
-    visible_text: str = Field(description="The visible text of the page, at most 3000 characters")
+    visible_text: str = Field(description="The visible text of the page, at most 1500 characters")
     inputs: list[HostedInput] = Field(default_factory=list, description="Every visible form input on the page")
 
 
@@ -110,7 +112,12 @@ class HostedListing(BaseModel):
     pack_price_cents: int = Field(ge=0, description="Price of one purchasable package, in integer US cents")
     in_stock: bool
     listing_text: str = Field(description="Visible specification text, including the package size, "
-                                          "at most 1500 characters, copied from the page")
+                                          "at most 800 characters, copied from the page")
+    match_status: Literal["exact", "uncertain", "different"] = Field(
+        description="exact: the type, material, size, color and pack match the request. uncertain: the page "
+                    "does not show one of them. different: one of them does not match.")
+    differences: list[str] = Field(default_factory=list, description="Each way the listing differs from the "
+                                   "request, for example 'height 8.25 in, not 5 in' or 'plastic, not paperboard'")
 
 
 class HostedSearchOutput(BaseModel):
@@ -250,7 +257,8 @@ class HostedAgentClient:
                 return None
 
 
-def run_body(cfg: LiveLaneSettings, task: str, schema: dict[str, Any], session_id: str | None) -> dict[str, Any]:
+def run_body(cfg: LiveLaneSettings, task: str, schema: dict[str, Any], session_id: str | None,
+             reasoning: str | None = None) -> dict[str, Any]:
     body: dict[str, Any] = {"task": task, "outputSchema": schema, "agentmail": False,
                             "keepAlive": cfg.hosted_agent_keep_alive_s}
     if session_id is None:  # a new session: its browser and its spend cap
@@ -260,6 +268,10 @@ def run_body(cfg: LiveLaneSettings, task: str, schema: dict[str, Any], session_i
         body["sessionId"] = session_id
     if cfg.hosted_agent_model:
         body["model"] = cfg.hosted_agent_model
+    model = cfg.hosted_agent_model or DEFAULT_MODEL
+    effort = reasoning or cfg.hosted_agent_reasoning
+    if effort and model.startswith("gpt-"):  # OpenAI models take a reasoning effort
+        body["modelParams"] = {"reasoning": {"effort": effort}}
     if FORBIDDEN_RUN_FIELDS & body.keys():  # a check in code, not only a habit of this function
         raise RuntimeError(f"refusing a run with payment or secret fields: {sorted(FORBIDDEN_RUN_FIELDS & body.keys())}")
     return body
@@ -311,16 +323,37 @@ def search_prompt(supplier: SupplierRef, items: list[ShoppingItem], specs: dict[
     return "\n".join([
         f"Find products sold directly by {supplier.name} at {supplier.url}.",
         f"Requested items: {json.dumps(wanted)}",
-        "For each item, use the site's search, then open up to 3 product pages that may match.",
+        f"For each item, open the search results page directly: {search_url(supplier.url)}<query> (URL-encode the "
+        "query). Many sites load results with a script: wait up to 5 seconds for them. If the result cards do not "
+        "show in the page text, read the page's links to product pages (for example, links that contain "
+        "/products/ or /p/) and use their link text. If there are still no results, use the site's search box "
+        "once before you decide that the item is missing.",
+        "Open at most 2 product pages for each item, and stop at the first exact match.",
         "For each product page, report its itemId, title, SKU, URL, the price of one purchasable package in integer "
-        "US cents, stock status, and listing_text: the visible specification text, including the package size.",
-        "Report plausible matches only. Put an itemId in missing_item_ids when no plausible product exists.",
+        "US cents, stock status, listing_text (the visible specification text, including the package size), "
+        "match_status and differences.",
+        "Compare the type, material, size, color and pack size with the request. A product of another type or size "
+        "is 'different', even when it is close. List every difference.",
+        "Put an itemId in missing_item_ids when no listing is an exact or uncertain match. Do not report the "
+        "nearest product instead.",
         "Do not add anything to the cart.",
         RULES.format(site=supplier.url),
     ])
 
 
-def cart_prompt(supplier: SupplierRef, lines: list[CartLine], contact: CheckoutContact | None) -> str:
+def search_url(site: str) -> str:
+    """The search results URL prefix. /search?q= works on Shopify and most store platforms."""
+    parts = urlparse(site)
+    return f"{parts.scheme}://{parts.netloc}/search?q="
+
+
+SCREENSHOT_STEP = ("Before you report, save a PNG screenshot of the cost summary at evidence/cart.png. "
+                   "Use one plain viewport screenshot; do not crop or retry it. Do not include the name, email, "
+                   "phone or address in it.")
+
+
+def cart_prompt(supplier: SupplierRef, lines: list[CartLine], contact: CheckoutContact | None,
+                screenshot: bool = False) -> str:
     wanted = [{"lineId": line.sku, "productUrl": line.url, "packagesToAdd": line.pack_quantity} for line in lines]
     steps = [
         f"Build one cart at {supplier.name} ({supplier.url}) in this browser.",
@@ -343,8 +376,7 @@ def cart_prompt(supplier: SupplierRef, lines: list[CartLine], contact: CheckoutC
         "Report subtotal, shipping, tax, fees, discounts and total in integer US cents. Use zero only when the page "
         "shows zero, free or none.",
         "Set reached_complete_total to true only when the page shows the full payable total and its breakdown.",
-        "Before you report, save a PNG screenshot of only the cost summary at evidence/cart.png. "
-        "Do not include the name, email, phone or address in it.",
+        *([SCREENSHOT_STEP] if screenshot else []),
         RULES.format(site=supplier.url),
     ]
     return "\n".join(steps)
@@ -386,8 +418,23 @@ class HostedAgentLane:
 
     # ---- one run ---------------------------------------------------------------
 
-    async def _run(self, ctx: LaneContext, task: str, model: type[T], tag: str) -> T:
-        body = run_body(self.cfg, task, output_schema(model), self.session_id)
+    async def _run(self, ctx: LaneContext, task: str, model: type[T], tag: str, reasoning: str | None = None) -> T:
+        name = self.cfg.hosted_agent_model or DEFAULT_MODEL
+        with ai_span("browser-use", name, f"hosted.{tag}", supplier=self.supplier.id) as s:
+            summary = await self._run_once(ctx, task, model, tag, reasoning)
+            set_data(s, **{
+                "hosted.run_id": summary.get("id"), "hosted.status": summary.get("status"),
+                "gen_ai.usage.input_tokens": summary.get("totalInputTokens"),
+                "gen_ai.usage.output_tokens": summary.get("totalOutputTokens"),
+                "gen_ai.cost.total_cost": _float(summary.get("totalCostUsd")),
+            })
+            outcome(s, "ok" if summary.get("status") == "completed" else "internal_error")
+        return self._parse(summary, model)
+
+    async def _run_once(self, ctx: LaneContext, task: str, model: type[BaseModel], tag: str,
+                        reasoning: str | None = None) -> dict[str, Any]:
+        """Start one run, wait for its end, and return the run summary."""
+        body = run_body(self.cfg, task, output_schema(model), self.session_id, reasoning)
         created = await self.client.create_run(body)
         run_id = str(created["id"])
         self._run_id = run_id
@@ -420,6 +467,11 @@ class HostedAgentLane:
         summary = await self.client.get(run_id)
         await ctx.emit("hosted_run", {"runId": run_id, "step": tag, "status": summary.get("status"),
                                       "costUsd": summary.get("totalCostUsd")})
+        return summary
+
+    @staticmethod
+    def _parse(summary: dict[str, Any], model: type[T]) -> T:
+        run_id = summary.get("id")
         if summary.get("status") != "completed":
             raise HostedRunError(f"run {run_id} {summary.get('status')}: {summary.get('error') or 'no detail'}", run_id)
         output = summary.get("output")
@@ -482,8 +534,15 @@ class HostedAgentLane:
             return await self._agent.search(ctx, items)
         specs = {item.id: ctx.specs.get(item.id) or item.spec or SearchSpec(
             item_id=item.id, query=item.name, unit=item.unit, spec_fallback=True) for item in items}
+        task = search_prompt(self.supplier, items, specs)
         try:
-            out = await self._run(ctx, search_prompt(self.supplier, items, specs), HostedSearchOutput, "search")
+            out = await self._run(ctx, task, HostedSearchOutput, "search")
+            retry = self.cfg.hosted_agent_retry_reasoning
+            if not out.listings and out.errors and not out.blocker and retry:
+                # Low effort is fast but gives up on a slow or unusual page (2026-10-18: high effort
+                # found listings that low effort did not). One more run, same browser, more effort.
+                await ctx.emit("hosted_retry", {"step": "search", "reasoning": retry, "error": out.errors[0][:200]})
+                out = await self._run(ctx, task, HostedSearchOutput, "search_retry", reasoning=retry)
         except HostedRunError as exc:
             if await self._fallback(ctx, exc, "search"):
                 return await self._agent.search(ctx, items)
@@ -503,29 +562,40 @@ class HostedAgentLane:
             if not same_site(listing.product_url, self.supplier.url):
                 errors.append(f"off-site product URL for {listing.item_id}")
                 continue
+            if listing.match_status == "different":
+                errors.append(f"{listing.item_id}: rejected {listing.title[:60]} ({'; '.join(listing.differences)[:120]})")
+                continue
             visited.append(listing.product_url)
             product = await self._judge(ctx, specs[listing.item_id], listing)
             if listing.item_id not in best or p_same(product) > p_same(best[listing.item_id]):
                 best[listing.item_id] = product
         products = list(best.values())
+        if not products and not out.listings and out.errors:
+            # The agent could not search (a page did not load): a failed search, not a missing item.
+            status = "failed"
+        else:
+            status = "ok" if len(products) == len(items) else ("partial" if products else "not_found")
         return SupplierOffers(
             supplier_id=self.supplier.id,
             source="web",
-            status="ok" if len(products) == len(items) else ("partial" if products else "not_found"),
+            status=status,
             products=products,
             evidence=Evidence(visited_urls=list(dict.fromkeys(visited))),
             error="; ".join(errors) or None,
         )
 
     async def _judge(self, ctx: LaneContext, spec: SearchSpec, listing: HostedListing) -> Product:
-        jev, candidates, units = await j5_listing(ctx.decider, spec, listing.title, listing.listing_text,
-                                                  job_id=ctx.job_id)
+        text = listing.listing_text
+        if listing.differences:  # J5 sees what the agent found different, beside the page text
+            text += "\nDifferences from the request (browser agent): " + "; ".join(listing.differences)
+        jev, candidates, units = await j5_listing(ctx.decider, spec, listing.title, text, job_id=ctx.job_id)
         if not listing.in_stock:
             jev = jev.model_copy(update={"in_stock": 0.0})
         sku = listing.sku or url_sku(listing.product_url)
         path, rel = ctx.evidence(f"listing_{spec.item_id}_{safe_name(sku)}.json")
-        path.write_text(json.dumps({"url": listing.product_url, "title": listing.title,
-                                    "text": listing.listing_text, "priceCents": listing.pack_price_cents}))
+        path.write_text(json.dumps({"url": listing.product_url, "title": listing.title, "text": listing.listing_text,
+                                    "priceCents": listing.pack_price_cents, "matchStatus": listing.match_status,
+                                    "differences": listing.differences}))
         return Product(
             item_id=spec.item_id, title=listing.title, sku=sku, url=listing.product_url, raw_listing=rel,
             pack_candidates=candidates, pack_price=round(listing.pack_price_cents / 100, 2),
@@ -537,14 +607,15 @@ class HostedAgentLane:
             return await self._agent.set_cart(ctx, lines)
         contact = ctx.settings.checkout_contact
         full_totals = contact.address1 != PLACEHOLDER_ADDRESS  # no team address: stay on the cart page
-        out = await self._run(ctx, cart_prompt(self.supplier, lines, contact if full_totals else None),
+        out = await self._run(ctx, cart_prompt(self.supplier, lines, contact if full_totals else None,
+                                               screenshot=self.cfg.hosted_agent_screenshot),
                               HostedCartOutput, "cart")
         if out.order_submitted:
             await self._order_submitted(ctx, out.final_page)
         if out.blocker:
             raise LaneBlocked(out.blocker)
         await self._check(ctx, out.final_page, allow_payment=True)
-        shot = await self._screenshot(ctx, f"cart_{len(lines)}")
+        shot = await self._screenshot(ctx, f"cart_{len(lines)}") if self.cfg.hosted_agent_screenshot else None
 
         candidates = money_candidates(out.costs)
         picks, confs = await j7_totals(ctx.decider, candidates, job_id=ctx.job_id)
@@ -683,6 +754,13 @@ def norm(value: str) -> str:
 
 def safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", value)[:60]
+
+
+def _float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def p_same(product: Product) -> float:
