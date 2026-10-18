@@ -23,6 +23,11 @@ PACK_PATTERNS = [
     re.compile(rf"\b(\d[\d,]*)\s*[- ]?(?:{UNITS})\b(?:\s*/\s*(?:{CONTAINERS}))?", re.I),
     re.compile(rf"\b(\d[\d,]*)\s*(?:per|/)\s*(?:{CONTAINERS}|cs|bx)\b", re.I),
 ]
+# Nested packs: "10 boxes of 100", or "100/Box" with "10 Boxes/Case". The case holds the product.
+INNER = r"(?:box|pack|bag|sleeve|roll|carton|package)"
+NESTED_OF = re.compile(rf"\b(\d[\d,]*)\s*{INNER}e?s\s+of\s+(\d[\d,]*)\b", re.I)
+PER_INNER = re.compile(rf"\b(\d[\d,]*)\s*(?:[a-z]+\s*)?/\s*{INNER}\b", re.I)
+INNER_PER_CASE = re.compile(rf"\b(\d[\d,]*)\s*{INNER}e?s\s*/\s*(?:case|cs|carton)\b", re.I)
 RATIO = re.compile(r"\b(\d{1,4})\s*/\s*(\d{1,5})\b(?!\s*(?:in|inch|mm|cm|\"|oz|lb))", re.I)
 
 
@@ -52,6 +57,13 @@ def pack_candidates(text: str) -> list[PackCandidate]:
             value = _int(match.group(1))
             if value > 0 and value not in found:
                 found[value] = PackCandidate(text=match.group(0).strip(), value=value)
+    nested = [(_int(m.group(1)), _int(m.group(2)), m.group(0)) for m in NESTED_OF.finditer(text)]
+    inner, outer = PER_INNER.search(text), INNER_PER_CASE.search(text)
+    if inner and outer:
+        nested.append((_int(outer.group(1)), _int(inner.group(1)), f"{outer.group(0)} x {inner.group(0)}"))
+    for a, b, phrase in nested:
+        if a > 0 and b > 0 and a * b not in found:
+            found[a * b] = PackCandidate(text=phrase.strip(), value=a * b)
     for match in RATIO.finditer(text):
         a, b = int(match.group(1)), int(match.group(2))
         if a > 0 and b > 0 and a * b not in found:

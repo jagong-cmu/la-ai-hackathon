@@ -88,3 +88,13 @@ def test_free_shipping_text_is_a_zero_candidate():
     assert not any(c.value == 0.0 and "over" in c.label for c in cands)  # the banner keeps only its $75
     costs, flags = resolve_costs(cands, {"subtotal": 0, "shipping": cands.index(ship[0]), "tax": 2, "total": 3})
     assert not flags and costs.total == 84.80
+
+
+def test_nested_packs_give_the_case_count_too():
+    """Soak S-025: '100/Box, 10 Boxes/Case' gave the candidates 10 and 100 but not 1,000, so J5 could
+    not choose the units in the case that is sold (a 100 pick for a case price buys 10x too much)."""
+    for text in ("100/Box, 10 Boxes/Case", "case contains 10 boxes of 100 gloves",
+                 "10 Boxes/Case, 100 Gloves/Box", "Case of 1,000 (10 boxes of 100)"):
+        values = {c.value for c in pack_candidates(text)}
+        assert 1000 in values and 100 in values, (text, values)
+    assert {c.value for c in pack_candidates("Pack of 50")} == {50}  # no product without a nested pack
