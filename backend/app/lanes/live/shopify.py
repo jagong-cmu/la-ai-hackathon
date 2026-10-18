@@ -59,7 +59,9 @@ RESULTS_JS = """() => {
   }
   return [...seen.values()].filter(r => r.title.length > 3).slice(0, 12);
 }"""
-JSON_JS = "url => fetch(url, {headers: {Accept: 'application/json'}}).then(r => r.ok ? r.json() : null)"
+# Each in-page fetch has a time limit: a hung request rejects (TimeoutError), so the tab fallback runs.
+JSON_JS = """([url, ms]) => fetch(url, {headers: {Accept: 'application/json'}, signal: AbortSignal.timeout(ms)})
+  .then(r => r.ok ? r.json() : null)"""
 # Shopify's PCI card iframes (number, expiry, CVV) on the checkout page (seen 2026-10-17).
 CARD_IFRAME = "iframe[src*='checkout.pci.shopifyinc.com'], iframe[name^='card-fields']"
 # The order summary is an accessible table: Subtotal, Shipping, Taxes, Total rows (seen 2026-10-18).
@@ -68,8 +70,9 @@ SUMMARY_JS = """() => {
     .filter(el => el.checkVisibility() && el.innerText.includes('Subtotal') && el.innerText.includes('Total'));
   return tables.length ? tables[tables.length - 1].innerText : '';
 }"""
-POST_JS = """([url, body]) => fetch(url, {method: 'POST', body: JSON.stringify(body),
-  headers: {'Content-Type': 'application/json', Accept: 'application/json'}}).then(r => r.status)"""
+POST_JS = """([url, body, ms]) => fetch(url, {method: 'POST', body: JSON.stringify(body),
+  headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+  signal: AbortSignal.timeout(ms)}).then(r => r.status)"""
 TAGS = re.compile(r"<[^>]+>")
 # A Shipping row with its own amount. While rates load, the row is empty and its label joins the
 # next row: "Shipping Total USD $119.02" (Wees Express) or "Shipping Estimated taxes ... $22.94"
@@ -120,6 +123,10 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
     cart_rows_on_any_page = True  # /cart.js answers on any page of the store
     nav_settle_ms = 0  # pages here are read through JSON, not through late-rendered markup
     tab_per_item = False  # searches are JSON calls on the store page, not page loads
+    # Live 2026-10-18 (job_458035c3a1): a Wees search waited 45 s on one in-page fetch that never
+    # settled, so the lane timed out before the tab fallback could run.
+    fetch_timeout_ms = 8000
+    tab_timeout_ms = 15000
 
     def __init__(self, supplier: SupplierRef, store: ShopifyStore, cfg: LiveLaneSettings | None = None):
         super().__init__(supplier, cfg)
@@ -322,9 +329,9 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         cloud browser (attached over CDP): in live test job_4fdc7ee9ff (2026-10-18) the cart read
         $0.00, and locally that client sent no cookie the page had set."""
         try:
-            return await page.evaluate(POST_JS, [url, body])
+            return await page.evaluate(POST_JS, [url, body, self.fetch_timeout_ms])
         except PlaywrightError as exc:
-            if "Failed to fetch" not in str(exc):
+            if not _page_fetch_failed(exc):
                 raise
         for nav in nav_urls:
             status, _ = await self._tab_get(page, nav)
@@ -341,9 +348,9 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         fetch' inside the store's fetch wrapper, while the URL answered. A tab uses the browser's
         cookies, so /cart.js reads this browser's cart (see _post)."""
         try:
-            return await page.evaluate(JSON_JS, url)
+            return await page.evaluate(JSON_JS, [url, self.fetch_timeout_ms])
         except PlaywrightError as exc:
-            if "Failed to fetch" not in str(exc):
+            if not _page_fetch_failed(exc):
                 raise
         status, data = await self._tab_get(page, url)
         return data if status == 200 else None
@@ -352,7 +359,7 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         """Load url in a new tab of the same context: the status, and the body if it is JSON."""
         tab = await page.context.new_page()
         try:
-            response = await tab.goto(url)
+            response = await tab.goto(url, timeout=self.tab_timeout_ms)
             if response is None:
                 return 0, None
             try:
@@ -363,6 +370,12 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         finally:
             with contextlib.suppress(PlaywrightError):
                 await tab.close()
+
+def _page_fetch_failed(exc: PlaywrightError) -> bool:
+    """The in-page fetch failed (Wees Express: 'Failed to fetch') or passed its time limit."""
+    text = str(exc)
+    return "Failed to fetch" in text or "TimeoutError" in text or "signal timed out" in text
+
 
 def pick_variant(variants: list[dict], query: str, wanted: int | None) -> dict:
     """The variant in the URL, else the in-stock one whose title words appear in the query
