@@ -63,3 +63,4 @@ The full flow passed in a headless browser with no console errors: planner, owne
 | 005 | 1.0 | 16 | 10 | none: harness timeouts (a fixture job takes ~125 s at real time); fixed in 29a8cd2. S-007 to S-010 came from new tests this cycle |
 | 006 | 1.0 | 19 + 2 deadline | 5 | S-018 (the restart in `restart_mid_job` could not start the server); the deadline profile passed |
 | 007 | 0.1 | 19 | 1 | S-019 (fuzzer); then 10 more fuzz seeds and a new `fuzz_other_bodies` scenario (3 seeds) passed |
+| 008 | 0.1 | 20 | 0 | none. Not explained yet: the harness process lived about 13 min after its last scenario, and a read at 05:37 showed one job as `gathering` while its stored row (updated 05:24:04) says `handing_off`. A rerun of the last scenario exits in 15 s. Watch in later cycles |
