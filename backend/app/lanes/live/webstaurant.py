@@ -38,6 +38,8 @@ ZIP_INPUT = "[data-testid=zip-code-input]:visible"
 LINE = "tbody[data-cart-item-id]"
 GUEST_EMAIL = "input[name=email]:not(#email-login)"  # the first email box is the sign-in form
 CONTINUE = "[data-testid=guestcheckout-continue-button]"
+STEP2_URL = "**/viewinfo.cfm**"  # "Review & Payment", step 2 of 3
+NOT_SHIPPABLE = "not eligible to be shipped to the selected shipping address"
 COMPANY_TYPE = "Cafés & Bakery"  # required on the shipping step; the site's list, seen 2026-10-18
 # The pack price on a search card: "ITEM NUMBER #394EN403LCASE $48.49/Case $0.05/Ea".
 PRICE_ON_CARD = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})\s*/")
@@ -213,7 +215,19 @@ class WebstaurantLane(PlaywrightAdapterLane):
         button = page.locator(CONTINUE)
         if await button.count() == 0:
             return False
-        await self.click(page, button, wait_nav=True)
+        # The step changes the page without a navigation Playwright's expect_navigation() sees:
+        # click, then wait for the step 2 URL (seen 2026-10-18: about 1 s).
+        await self.click(page, button)
+        try:
+            await page.wait_for_url(STEP2_URL, timeout=15000)
+        except PlaywrightError as exc:
+            errors = await page.locator("[role=alert], .zest-input-error, [class*=error i]").all_inner_texts()
+            note = "; ".join(e.strip() for e in errors if e.strip())[:200]
+            # The form also runs reCAPTCHA Enterprise, which can turn an automated submit away.
+            raise AdapterStepError(f"checkout step 1 not accepted ({note or 'no error shown: reCAPTCHA?'})") from exc
+        text = await page.inner_text("body")
+        if NOT_SHIPPABLE in text:
+            raise AdapterStepError("an item cannot ship to the checkout address (the site shows no total)")
         return True
 
     async def choose(self, page: Page, selector: str, option: str) -> None:
