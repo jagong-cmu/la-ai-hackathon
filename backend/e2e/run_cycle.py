@@ -46,6 +46,7 @@ def start_server(port: int, var_dir: Path, log_path: Path, extra_env: dict[str, 
     env.update(_dotenv(REPO_DIR / ".env"))
     env.update({
         "RUN_MODE": "fixture",  # every dependency cached; never live from this harness
+        "LIVE_DEPENDENCIES": "[]",  # the demo .env may start the phone live: never here
         "VAR_DIR": str(var_dir),
         "CORS_ORIGINS": '["http://localhost:3000"]',
         **extra_env,
