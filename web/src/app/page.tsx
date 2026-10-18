@@ -22,10 +22,10 @@ export default function Landing() {
         <Link href="/planner" className="btn btn-primary">Open app</Link>
       </header>
       <section className="land-hero">
-        <h1>Restocking that runs itself for bakeries</h1>
-        <p>Forecasts what runs out, prices it at every supplier, and orders when you approve.</p>
+        <h1>Procurement that runs itself for bakeries</h1>
+        <p>The full process: it forecasts what runs out, gets quotes from every supplier at once, and places the order when you approve.</p>
         <div className="row" style={{ justifyContent: "center", gap: 8 }}>
-          <Link href="/start" className="btn btn-primary has-icon">Start a restock <ArrowRight /></Link>
+          <Link href="/start" className="btn btn-primary has-icon">Start an order <ArrowRight /></Link>
           <Link href="/planner" className="btn btn-on-black">Open planner</Link>
         </div>
       </section>
