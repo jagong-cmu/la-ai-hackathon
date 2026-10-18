@@ -140,6 +140,15 @@ class Database:
             ).fetchall()
         return [JobView.model_validate_json(r["snapshot"]) for r in rows]
 
+    def unfinished_jobs(self, final_states: set[str]) -> list[JobView]:
+        """Jobs whose stored state is not final: after a restart, no process runs them."""
+        marks = ",".join("?" * len(final_states))
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT snapshot FROM jobs WHERE state NOT IN ({marks})", sorted(final_states)  # noqa: S608
+            ).fetchall()
+        return [JobView.model_validate_json(r["snapshot"]) for r in rows]
+
     # ------------------------------------------------------------ events
 
     def append_event(self, job_id: str, type_: str, ts: str, lane_id: str | None, data: dict) -> int:

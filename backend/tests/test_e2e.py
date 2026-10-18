@@ -381,3 +381,28 @@ def test_reused_idempotency_key_with_another_body_is_422(client):
     r = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-reuse-01"})
     assert r.status_code == 422 and r.json()["detail"]["code"] == "idempotency_key_reused"
     wait_for(client, first, {"results_ready"})
+
+
+def test_jobs_left_unfinished_by_a_restart_fail_at_start(settings):
+    """Soak S-006: after a restart, a gathering or results_ready job had no process. Its event stream
+    never ended and approve gave 404, so a watcher waited forever. Start fails them with a reason."""
+    from app.contracts import JobState, JobView, ShoppingRequest
+    from app.db import Database
+
+    with TestClient(create_app(settings)) as c:
+        request = ShoppingRequest.model_validate(c.get("/shopping-list/draft").json())
+    db = Database(settings.db_path)
+    for jid, state in (("job_orphan0001", JobState.gathering), ("job_orphan0002", JobState.results_ready)):
+        db.save_job(JobView(job_id=jid, state=state, request=request), idempotency_key=f"key-{jid}")
+    db.close()
+
+    with TestClient(create_app(settings)) as c:
+        for jid in ("job_orphan0001", "job_orphan0002"):
+            assert c.get(f"/jobs/{jid}").json()["state"] == "failed"
+            events = _all_events(c, jid)  # the live stream ends
+            assert [e["type"] for e in events[-2:]] == ["job_failed", "job_state"]
+            assert "restart" in events[-2]["data"]["error"]
+        body = request.model_dump(mode="json", by_alias=True)
+        again = c.post("/jobs", json=body, headers={"Idempotency-Key": "key-job_orphan0001"}).json()["jobId"]
+        assert again != "job_orphan0001"  # the key starts a new job
+        wait_for(c, again, {"results_ready"})

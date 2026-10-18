@@ -178,6 +178,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.s = AppState(settings)
+        await app.state.s.orchestrator.fail_orphans()
         app.state.s.warm_up()
         yield
         await app.state.s.aclose()

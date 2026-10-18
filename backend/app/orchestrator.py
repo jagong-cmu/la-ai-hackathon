@@ -177,6 +177,19 @@ class Orchestrator:
         self._spawn(in_transaction("job", "restock job", self._run(rt), job_id=job_id))
         return JobCreated(job_id=job_id, state=view.state)
 
+    async def fail_orphans(self) -> int:
+        """At start: fail the jobs that an earlier process left unfinished. Nothing runs them now, so
+        their event stream would never end and approve would 404. Free their keys for a retry."""
+        orphans = [v for v in self.db.unfinished_jobs({s.value for s in FINAL_JOB_STATES})
+                   if v.job_id not in self.jobs and v.replay_of is None]
+        for view in orphans:
+            view.state = JobState.failed
+            self.db.save_job(view)
+            self.db.release_idempotency_key(view.job_id)
+            await self.bus.emit(view.job_id, "job_failed", {"error": "The server restarted; this job no longer runs."})
+            await self.bus.emit(view.job_id, "job_state", {"state": JobState.failed.value})
+        return len(orphans)
+
     def get_view(self, job_id: str) -> JobView | None:
         rt = self.jobs.get(job_id)
         return rt.view if rt else self.db.load_job(job_id)
