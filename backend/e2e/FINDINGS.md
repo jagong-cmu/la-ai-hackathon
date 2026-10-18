@@ -32,6 +32,7 @@ expectation in the harness was wrong).
 | S-015 | discovery | A CREAO row with an int `id` or `phone`, or a list `name`, `email` or `adapter`, raised in discovery. The rows were cached first, so every later draft failed. | Model-written fields went to `SupplierCandidate` and a set lookup with no type check. | fixed (3b159c6): numbers become text, lists and objects are dropped |
 | S-016 | optimizer | A listing with `pack_price` 0 ("$0.00, see the price in the cart") was eligible with a line cost of 0, so it ranked as the cheapest offer. | `normalize_option()` had no price check. | fixed (5ac15db): ineligible, flag `price_missing` |
 | S-017 | spending rules | 8 approved orders in one month ($6,825) passed a monthly budget of $2,533. | `monthly_budget_remaining` comes only from the books; orders approved in this system never count. | open (team decision): a fix was written and tested, then reverted. See the open questions |
+| S-018 | persistence | Regression from S-011: after a restart, the server did not start ("Application startup failed"). A job saved before the `ge=0` rule had `pastUnitPrice=-3`. | `fail_orphans()` and `GET /jobs` validated every stored snapshot against the current contract. Each stricter rule can do this to the live database. | fixed (214aba9): such a snapshot is skipped with a warning; an unfinished one is marked failed |
 
 Open questions for the team (not changed by the loop):
 - `POST /admin/replay?speed=0` or a negative speed replays at once. The route could refuse them with 422.
@@ -54,3 +55,4 @@ Open questions for the team (not changed by the loop):
 | 003 | 0.1 | 14 | 0 | none (S-003 to S-005 fixes hold) |
 | 004 | 0.1 | 16 | 1 | S-006 (new scenario `restart_mid_job`); `create_race_new_key` passed |
 | 005 | 1.0 | 16 | 10 | none: harness timeouts (a fixture job takes ~125 s at real time); fixed in 29a8cd2. S-007 to S-010 came from new tests this cycle |
+| 006 | 1.0 | 19 + 2 deadline | 5 | S-018 (the restart in `restart_mid_job` could not start the server); the deadline profile passed |
