@@ -57,3 +57,22 @@ def test_missing_subtotal_still_fails():
     cands = [MoneyCandidate(label="Total", value=5.0)]
     cart = build_verified_cart("x", lines, cands, {"subtotal": None, "total": 0}, {})
     assert cart.verification_status == "failed" and cart.costs is None
+
+
+def test_a_picked_shipping_or_tax_row_with_fee_in_its_label_is_not_counted_twice():
+    """Soak S-021: rows labelled 'Delivery fee' (picked as shipping) or 'Taxes and fees' (picked as tax)
+    were also added to other_fees, so a correct cart failed with sum_mismatch:-9.95."""
+    from app.contracts import MoneyCandidate
+    from app.stages.totals import resolve_costs
+
+    cands = [MoneyCandidate(label="Subtotal", value=50.0), MoneyCandidate(label="Delivery fee", value=9.95),
+             MoneyCandidate(label="Taxes and fees", value=3.0), MoneyCandidate(label="Order total", value=62.95)]
+    costs, flags = resolve_costs(cands, {"subtotal": 0, "shipping": 1, "tax": 2, "total": 3})
+    assert not any(f.startswith("sum_mismatch") for f in flags), flags
+    assert costs.other_fees == 0.0 and costs.total == 62.95
+    # A separate fee row still counts.
+    cands.insert(3, MoneyCandidate(label="Service fee", value=2.0))
+    cands[-1] = MoneyCandidate(label="Order total", value=64.95)
+    costs, flags = resolve_costs(cands, {"subtotal": 0, "shipping": 1, "tax": 2, "total": 4})
+    assert not any(f.startswith("sum_mismatch") for f in flags), flags
+    assert costs.other_fees == 2.0
