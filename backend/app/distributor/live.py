@@ -31,7 +31,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config import BACKEND_DIR, REPO_DIR
 from app.contracts import Evidence, Product, SupplierOffers
-from app.distributor.base import DistributorContext, allocate_total, call_scope, wait_for_call_start
+from app.distributor.base import (
+    DistributorContext,
+    allocate_total,
+    anchored_items,
+    call_anchor,
+    call_scope,
+    wait_for_call_start,
+)
 from app.judgments import j8_reply, j9_call_line, j10_terms
 from app.stages.extract import money_candidates
 
@@ -326,11 +333,13 @@ class LiveDistributor:
 
     # ------------------------------------------------------------ the call
 
-    async def _start_call(self, ctx: DistributorContext, to: str, best_total: float) -> str | None:
+    async def _start_call(self, ctx: DistributorContext, to: str, best_total: float,
+                          anchor_source: str = "web_plan") -> str | None:
         body = {
             "jobId": ctx.job_id, "to": to,
             "openingContext": {
                 "bestTotal": round(best_total, 2),
+                "anchorSource": anchor_source,
                 "items": [{"id": i.id, "name": i.name, "quantity": i.quantity, "unit": i.unit} for i in ctx.items],
                 "businessName": BUSINESS_NAME,
             },
@@ -420,14 +429,15 @@ class LiveDistributor:
             return None
 
     async def _run_call(self, ctx: DistributorContext, to: str, best_total: float,
-                        line_costs: dict[str, float], sms_offers: SupplierOffers | None) -> SupplierOffers | None:
+                        line_costs: dict[str, float], sms_offers: SupplierOffers | None,
+                        anchor_source: str = "web_plan") -> SupplierOffers | None:
         loop = asyncio.get_running_loop()
         self._line_costs = line_costs
         self._scoped = len(ctx.items) < len(line_costs)
         call_id: str | None = None
         connected = False
         for _attempt in range(self.cfg.call_redials + 1):
-            call_id = await self._start_call(ctx, to, best_total)
+            call_id = await self._start_call(ctx, to, best_total, anchor_source)
             if call_id is None:
                 return sms_offers
             deadline = loop.time() + self.cfg.call_connect_timeout_s
@@ -550,20 +560,24 @@ class LiveDistributor:
         # Call when the first plan exists (at the latest T0 + distributor_call_latest_s).
         # call_first (default): this is the first contact; the text recap follows the call.
         await wait_for_call_start(ctx, loop.time)
-        plan = ctx.best_plan()
-        if plan is None:
+        anchor = call_anchor(ctx.items, ctx.best_plan())
+        if anchor is not None and anchor.source == "past_bills" and not ctx.settings.distributor_call_past_price:
+            anchor = None  # the live prompt cannot say "we paid" yet (see Settings.distributor_call_past_price)
+        if anchor is None:
             await ctx.emit("call_skipped", {"reason": "no plan to anchor the call"})
             return sms_offers
-        line_costs = {a.item_id: a.line_cost for a in plan.assignments}
-        scope = call_scope(ctx.items, plan, ctx.settings.distributor_call_max_items)
+        line_costs = anchor.line_costs
+        items = anchored_items(ctx.items, anchor)
+        scope = call_scope(items, line_costs, ctx.settings.distributor_call_max_items)
         if len(scope) < len(ctx.items):
-            # A short call: only these items. The anchor is the web cost of exactly these items.
+            # A short call: only these items. The anchor is the cost of exactly these items.
             ctx = dataclasses.replace(ctx, items=scope)
-            anchor = round(sum(line_costs.get(i.id, 0.0) for i in scope), 2)
-            await ctx.emit("call_scope", {"itemIds": [i.id for i in scope], "anchor": anchor})
+            total = round(sum(line_costs.get(i.id, 0.0) for i in scope), 2)
+            await ctx.emit("call_scope", {"itemIds": [i.id for i in scope], "anchor": total,
+                                          "anchorSource": anchor.source})
         else:
-            anchor = plan.total
-        return await self._run_call(ctx, to, anchor, line_costs, sms_offers)
+            total = anchor.total
+        return await self._run_call(ctx, to, total, line_costs, sms_offers, anchor.source)
 
     async def _sms_first(self, ctx: DistributorContext, to: str, loop: asyncio.AbstractEventLoop,
                          t0: float) -> SupplierOffers | None:

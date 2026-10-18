@@ -386,10 +386,10 @@ async def test_per_unit_price_becomes_a_line_total(settings: Settings, j9_decide
 
 def test_call_scope_and_total_split() -> None:
     from app.distributor.base import allocate_total, call_scope
-    plan = _plan()  # gloves $260, boxes $150
-    assert [i.id for i in call_scope(ITEMS, plan, 1)] == ["gloves"]
-    assert [i.id for i in call_scope(ITEMS, plan, 2)] == ["gloves", "boxes"]
-    assert [i.id for i in call_scope(ITEMS, plan, 0)] == ["gloves", "boxes"]
+    costs = {a.item_id: a.line_cost for a in _plan().assignments}  # gloves $260, boxes $150
+    assert [i.id for i in call_scope(ITEMS, costs, 1)] == ["gloves"]
+    assert [i.id for i in call_scope(ITEMS, costs, 2)] == ["gloves", "boxes"]
+    assert [i.id for i in call_scope(ITEMS, costs, 0)] == ["gloves", "boxes"]
     parts = allocate_total(395.0, {"gloves": 260.0, "boxes": 150.0})
     assert parts == {"gloves": 250.49, "boxes": 144.51} and round(sum(parts.values()), 2) == 395.0
 
@@ -409,7 +409,7 @@ async def test_short_call_splits_a_total_over_its_items(settings: Settings, j9_d
     result = await asyncio.wait_for(
         LiveDistributor(_config(), transport=httpx.MockTransport(fake.handler)).run(ctx), timeout=5)
     scope = next(d for t, d in events if t == "call_scope")
-    assert scope == {"itemIds": ["gloves"], "anchor": 260.0}
+    assert scope == {"itemIds": ["gloves"], "anchor": 260.0, "anchorSource": "web_plan"}
     call_body = next(b for p, b in fake.requests if p == "/calls")
     assert [i["id"] for i in call_body["openingContext"]["items"]] == ["gloves"]
     assert call_body["openingContext"]["bestTotal"] == 260.0

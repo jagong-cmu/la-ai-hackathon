@@ -37,6 +37,18 @@ def registered() -> dict[str, list[str] | bool]:
     return {"adapters": sorted(_ADAPTERS), "llmAgent": _LLM_AGENT is not None}
 
 
+def can_run(supplier: SupplierRef, modes: RuntimeModes) -> bool:
+    """True if lane_for() can give this supplier a lane that does real work in the current mode.
+
+    Cached browsers replay fixtures/suppliers/<id>.json. Live browsers need a registered adapter,
+    or the LLM agent for an unknown site; a "fixture" adapter has no live site behind it."""
+    if modes.get("browser") == "cached":
+        return fixture_path(supplier.id).exists()
+    if supplier.adapter:
+        return supplier.adapter in _ADAPTERS
+    return _LLM_AGENT is not None
+
+
 def lane_for(supplier: SupplierRef, modes: RuntimeModes) -> SupplierLane:
     if modes.get("browser") == "cached":
         if fixture_path(supplier.id).exists():
