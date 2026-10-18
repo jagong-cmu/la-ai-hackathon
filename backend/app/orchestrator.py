@@ -144,6 +144,7 @@ class Orchestrator:
         self.books = books
         self.insights_provider = insights_provider
         self.jobs: dict[str, JobRuntime] = {}
+        self.replaying: set[str] = set()  # replay jobs still re-emitting; their copied view is already final
         self._tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------ public API
@@ -203,8 +204,9 @@ class Orchestrator:
                                           "text": f"The job is {rt.view.state.value}, not ready for approval."})
             if decision.action == "reject":
                 rt.view.approval = decision
-                await self._set_job_state(rt, JobState.rejected)
+                # The terminal job_state goes last: a follower's stream ends on it (main.job_events).
                 await self.bus.emit(job_id, "rejected", {"reason": decision.reason})
+                await self._set_job_state(rt, JobState.rejected)
                 self._spawn(self._close_lanes(rt))
                 return rt.view
 
@@ -245,7 +247,15 @@ class Orchestrator:
         job_id = "job_" + secrets.token_hex(5)
         view = source.model_copy(update={"job_id": job_id, "replay_of": source_job_id})
         self.db.save_job(view)
-        self._spawn(self.bus.replay(source_job_id, job_id, speed))
+        self.replaying.add(job_id)
+
+        async def play() -> None:
+            try:
+                await self.bus.replay(source_job_id, job_id, speed)
+            finally:
+                self.replaying.discard(job_id)
+
+        self._spawn(play())
         return JobCreated(job_id=job_id, state=view.state)
 
     async def route_webhook(self, provider: str, payload: dict[str, Any]) -> bool:
@@ -303,8 +313,8 @@ class Orchestrator:
         except Exception as exc:  # the job must always end in a known state
             capture(exc)
             outcome(current(), "internal_error", **{"job.state": "failed", "job.error": type(exc).__name__})
-            await self._set_job_state(rt, JobState.failed)
             await self.bus.emit(job_id, "job_failed", {"error": f"{type(exc).__name__}: {exc}"})
+            await self._set_job_state(rt, JobState.failed)  # last: a follower's stream ends on it
 
     def _record_job(self, rt: JobRuntime) -> None:
         """Put the job result on its transaction: one row per job in Sentry, to compare runs and releases."""

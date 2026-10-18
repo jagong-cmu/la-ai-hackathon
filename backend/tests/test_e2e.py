@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import pytest
@@ -333,3 +334,30 @@ def test_draft_with_no_selected_supplier_is_a_503_not_a_crash(client, monkeypatc
     assert detail["candidates"] and all(c["reason"] for c in detail["candidates"])
     check = client.post("/planner/check", params={"autostart": "true"})
     assert check.status_code in (200, 503)  # never a 500
+
+
+def test_following_a_replay_streams_every_event(client, settings, monkeypatch):
+    """A replay copies its source's final view at once, so the events route closed the live stream
+    after the events emitted so far (soak S-003). A follower must get the whole playback."""
+    draft = client.get("/shopping-list/draft").json()
+    src = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-replay-01"}).json()["jobId"]
+    wait_for(client, src, {"results_ready"})
+    client.post(f"/jobs/{src}/approve", json={"action": "reject"})
+    wait_for(client, src, {"rejected"})
+    source_events = _all_events(client, src)
+    # The reason comes before the terminal job_state, which a follower's stream ends on.
+    assert [e["type"] for e in source_events[-2:]] == ["rejected", "job_state"]
+
+    bus = client.app.state.s.bus
+    real_emit = bus.emit
+
+    async def slow_emit(job_id, *args, **kwargs):
+        if job_id != src:
+            await asyncio.sleep(0.01)  # stretch the playback so the follower joins while it runs
+        return await real_emit(job_id, *args, **kwargs)
+
+    monkeypatch.setattr(bus, "emit", slow_emit)
+    token = {"X-Admin-Token": settings.admin_token.get_secret_value()}
+    rid = client.post(f"/admin/replay/{src}", params={"speed": 1000}, headers=token).json()["jobId"]
+    replayed = _all_events(client, rid)
+    assert [e["type"] for e in replayed] == ["replay_started"] + [e["type"] for e in source_events]

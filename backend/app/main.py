@@ -320,7 +320,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async def stream() -> AsyncIterator[str]:
             yield "retry: 2000\n\n"
             view = s.orchestrator.get_view(job_id)
-            if not follow or (view is not None and view.state.value in TERMINAL_JOB_STATES):
+            final = view is not None and view.state.value in TERMINAL_JOB_STATES
+            if not follow or (final and job_id not in s.orchestrator.replaying):
                 for event in s.db.events_after(job_id, start, limit=100_000):
                     yield frame(event)
                 return
