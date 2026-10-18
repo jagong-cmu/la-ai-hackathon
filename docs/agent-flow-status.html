@@ -105,23 +105,23 @@ td .sub { color: var(--muted); font-size: 13px; display: block; margin-top: 2px;
 
 <div class="wrap">
   <h1>Supplier Agent Flow Status</h1>
-  <p class="lede">The build status of each agent and component on Sat 17 Oct 2026 at 16:41 (commit <code>643537a</code> + uncommitted work). The full flow runs end to end in fixture mode. The distributor call and the Step 5 calls run live, and the browser agent lane passed the H3 gate on the test site. Real supplier sites, CREAO agents and a public URL are the main open work.</p>
+  <p class="lede">The build status of each agent and component on Sat 17 Oct 2026, evening (commit <code>c91faaf</code>). The full flow runs end to end in fixture mode. With live Jev and Step 5, the owner flow and the live browser lanes on the test site both ran to the payment stop, traced in Sentry. Real supplier sites are the main open work.</p>
 
   <div class="summary">
-    <div class="sum live"><div class="n">5</div><div class="l">Live</div><p>Tested with real services and keys.</p></div>
+    <div class="sum live"><div class="n">7</div><div class="l">Live</div><p>Tested with real services and keys.</p></div>
     <div class="sum built"><div class="n">14</div><div class="l">Built</div><p>Code and tests done. Runs in fixture mode.</p></div>
-    <div class="sum part"><div class="n">7</div><div class="l">Partial</div><p>Started. A key, a site or a screen is missing.</p></div>
+    <div class="sum part"><div class="n">5</div><div class="l">Partial</div><p>Started. A key, a site or a screen is missing.</p></div>
     <div class="sum todo"><div class="n">3</div><div class="l">Not started</div><p>Only notes or a spec line.</p></div>
   </div>
-  <div class="bar" role="img" aria-label="5 live, 14 built, 7 partial, 3 not started, of 29 components">
-    <span class="live" style="width:17.2%"></span><span class="built" style="width:48.3%"></span><span class="part" style="width:24.1%"></span>
+  <div class="bar" role="img" aria-label="7 live, 14 built, 5 partial, 3 not started, of 29 components">
+    <span class="live" style="width:24.1%"></span><span class="built" style="width:48.3%"></span><span class="part" style="width:17.2%"></span>
   </div>
   <div class="facts">
-    <span><b>135 / 135</b> backend tests pass</span>
+    <span><b>152 / 152</b> backend tests pass</span>
     <span><b>13 / 13</b> Photon service tests pass</span>
     <span><b>Web</b> type check passes</span>
-    <span><b>Keys set:</b> Jev, StepFun, Photon, ElevenLabs, CREAO</span>
-    <span><b>Keys empty:</b> Browser Use, CREAO app ID, public URL, restock token, owner phone, checkout contact, Sentry</span>
+    <span><b>Keys set:</b> Jev, StepFun, Photon, ElevenLabs, CREAO + app ID, Browser Use, Sentry, public URL, restock token, checkout contact</span>
+    <span><b>Keys empty:</b> owner phone</span>
   </div>
 
   <section class="sec">
@@ -147,21 +147,18 @@ td .sub { color: var(--muted); font-size: 13px; display: block; margin-top: 2px;
       <div class="blk crit"><div class="t"><b>No real supplier sites</b><span class="st crit">Critical</span><span class="mono">agents team</span></div>
         <p>Only <code>example_site.py</code> exists, on a local test site. The spec put the site choice at H0 and one real lane at H10.</p>
         <p><strong>Unblock:</strong> run the site preflight, choose 3 sites, and copy <code>example_site.py</code> for each.</p></div>
-      <div class="blk crit"><div class="t"><b>No public URL</b><span class="st crit">Critical</span><span class="mono">backend</span></div>
-        <p><code>PUBLIC_BASE_URL</code> and <code>RESTOCK_TOKEN</code> are empty. Without a tunnel, CREAO cannot call the backend, so the daily restock check and CREAO callbacks cannot run.</p>
-        <p><strong>Unblock:</strong> start the tunnel, set both values, and rerun the preflight.</p></div>
-      <div class="blk crit"><div class="t"><b>CREAO agents not made</b><span class="st crit">Critical</span><span class="mono">backend</span></div>
-        <p>"Depth on CREAO" is 25% of the CREAO track score. The Discovery and Daily Restock Check agents exist only as setup steps. Scheduled runs need the Pro Plus plan.</p>
-        <p><strong>Unblock:</strong> make both agents from <code>agents/creao/README.md</code> and set <code>CREAO_APP_ID</code>.</p></div>
-      <div class="blk part"><div class="t"><b>Agent lane is slow, and the cloud browser is off</b><span class="st part">High</span><span class="mono">agents team</span></div>
-        <p>On the test site, search and cart took 185 s together (92 s + 93 s), and the job deadline is 150 s. The lane searches only 1 item to fit. Step 5 failed the gate, so the lane uses Step 3.7 Flash. <code>BROWSER_USE_API_KEY</code> is empty, so the cloud browser and its live view cannot run. The lane changes are not committed.</p>
-        <p><strong>Unblock:</strong> commit the lane work, set the Browser Use key, and time the lane on one real site.</p></div>
-      <div class="blk part"><div class="t"><b>Empty contact and owner fields</b><span class="st part">Medium</span><span class="mono">backend</span></div>
-        <p>The <code>CHECKOUT_CONTACT__*</code> fields and <code>OWNER_PHONE</code> are empty. Guest checkout cannot fill the shipping step, and J12 cannot get real owner texts.</p>
-        <p><strong>Unblock:</strong> fill them with the team-controlled contact and the Photon number.</p></div>
-      <div class="blk part"><div class="t"><b>Sentry not connected</b><span class="st part">Medium</span><span class="mono">backend + frontend</span></div>
-        <p>The code calls <code>init_sentry</code>, but <code>SENTRY_DSN</code> and <code>NEXT_PUBLIC_SENTRY_DSN</code> are empty. The Sentry track needs Replay, Tracing and AI monitoring.</p>
-        <p><strong>Unblock:</strong> make the Sentry project and set both DSN values.</p></div>
+      <div class="blk part"><div class="t"><b>Public URL and CREAO not tested</b><span class="st part">High</span><span class="mono">backend</span></div>
+        <p><code>PUBLIC_BASE_URL</code>, <code>RESTOCK_TOKEN</code> and <code>CREAO_APP_ID</code> are set now, and live discovery uses a saved real CREAO run (10 suppliers). Nobody has run the daily check from CREAO through the tunnel yet.</p>
+        <p><strong>Unblock:</strong> run the preflight, then trigger one scheduled CREAO run and find its <code>/planner/check</code> trace in Sentry.</p></div>
+      <div class="blk part"><div class="t"><b>Slow AI APIs stop the lanes</b><span class="st part">High</span><span class="mono">whole team</span></div>
+        <p>In one live run, Jev and StepFun slowed down. The J6 guard got no answer in 3 s, failed closed and stopped both lanes (<code>guard_unavailable</code>). This is the correct safety behavior, but it can stop a live demo.</p>
+        <p><strong>Unblock:</strong> run the preflight just before the demo, and keep the replay ready.</p></div>
+      <div class="blk part"><div class="t"><b>Agent lane is close to the deadline</b><span class="st part">High</span><span class="mono">agents team</span></div>
+        <p>In live job runs on the test site, the agent lane took 122–150 s, and the job deadline is 150 s. A late cart only arrives as <code>results_updated</code>. The lane searches only 1 item. It uses Step 3.7 Flash, with Step 3.5 Flash as the fallback (one HTTP 502 switched to it). The Browser Use key is set now, but the cloud browser and live view are not tested.</p>
+        <p><strong>Unblock:</strong> time the lane on one real site, and test the cloud live view.</p></div>
+      <div class="blk part"><div class="t"><b>Owner phone empty</b><span class="st part">Medium</span><span class="mono">backend</span></div>
+        <p>The checkout contact is set now. <code>OWNER_PHONE</code> is still empty, so J12 cannot get real owner texts.</p>
+        <p><strong>Unblock:</strong> set <code>OWNER_PHONE</code> to a team-controlled number.</p></div>
     </div>
   </section>
 
@@ -205,7 +202,7 @@ td .sub { color: var(--muted); font-size: 13px; display: block; margin-top: 2px;
       <div class="stage-h"><h3>2 · Find suppliers</h3><span class="when">cached by category + ZIP</span></div>
       <div class="grid">
         <div class="node creao"><div class="top"><b>Supplier Discovery agent</b><span class="st part">Partial</span></div>
-          <p>The backend client, polling and parser are done and tested. The CREAO agent is not made. The backend uses the fixture list.</p></div>
+          <p>Live mode uses a saved real CREAO run (10 suppliers). Domains map to adapters when one is registered. <code>CREAO_APP_ID</code> is set; a fresh CREAO run is not tested.</p></div>
         <div class="node jev"><div class="top"><b>J3 filter</b><span class="st built">Built</span></div>
           <p>Does it sell the category, show prices without login, and ship to businesses?</p></div>
         <div class="node code"><div class="top"><b>Pick lanes</b><span class="st built">Built</span></div>
@@ -275,10 +272,10 @@ td .sub { color: var(--muted); font-size: 13px; display: block; margin-top: 2px;
           <p>One-time event, lost customer, shortage and more. Code applies the rule for each cause.</p></div>
         <div class="node jev"><div class="top"><b>J12 owner text</b><span class="st part">Partial</span></div>
           <p>The parser is built and tested. <code>OWNER_PHONE</code> is empty, so no real owner SMS yet.</p></div>
-        <div class="node code"><div class="top"><b>Intuit eval report</b><span class="st part">Partial</span></div>
-          <p>The last report had keyword rules only. A full run with live Jev and Step 5 runs now.</p></div>
-        <div class="node sentry"><div class="top"><b>Sentry</b><span class="st part">Partial</span></div>
-          <p>The code is in place. Both DSN values are empty.</p></div>
+        <div class="node code"><div class="top"><b>Intuit eval report</b><span class="st live">Live</span></div>
+          <p>Ran with live Jev and Step 5. J12: Jev 84.3% all fields at 90 ms (Step 5: 84.3% at 4.1 s). J11 is weak (37.5%) on weak labels.</p></div>
+        <div class="node sentry"><div class="top"><b>Sentry</b><span class="st live">Live</span></div>
+          <p>One trace from the UI click to every lane, the call and checkout. AI spans for Jev, Step 5 and the browser agent. Session Replay and logs.</p></div>
         <div class="node jev is-todo"><div class="top"><b>J13 bill check</b><span class="st todo">Not started</span></div>
           <p>Stretch goal: match a new bill with our order.</p></div>
         <div class="node code"><div class="top"><b>Preflight + replay</b><span class="st built">Built</span></div>
@@ -293,13 +290,14 @@ td .sub { color: var(--muted); font-size: 13px; display: block; margin-top: 2px;
     <div class="cols">
       <div class="panel"><span class="who">Agents team</span><h3>Real lanes</h3><ul>
         <li>Choose 3 sites and write 3 adapters, with golden tests.</li>
-        <li>Make the agent lane fit the 150 s deadline, and confirm the live view URL.</li>
+        <li>Make the agent lane fit the 150 s deadline, and confirm the cloud live view URL.</li>
         <li>One real lane to J7 verified (H10), then a full real run under 150 s (H14).</li>
       </ul></div>
       <div class="panel"><span class="who">Backend</span><h3>Connect the services</h3><ul>
-        <li>Tunnel, <code>PUBLIC_BASE_URL</code>, <code>RESTOCK_TOKEN</code>, CREAO agents.</li>
-        <li>Commit the work in this worktree: the planner fixes, the conformal ranges, and the other session's StepFun and lane changes.</li>
-        <li>Check the live eval results and add them to the Intuit submission.</li>
+        <li>Test one scheduled CREAO run through the tunnel, and find its trace in Sentry.</li>
+        <li>Set <code>OWNER_PHONE</code>.</li>
+        <li>Put the live eval results and the Sentry traces in the Intuit and Sentry submissions.</li>
+        <li>Look at J11: Jev scores 37.5% and sends every miss to the owner.</li>
         <li>Optional: a text to the owner when quotes are ready.</li>
       </ul></div>
       <div class="panel"><span class="who">Frontend</span><h3>Real UI</h3><ul>
@@ -318,19 +316,18 @@ td .sub { color: var(--muted); font-size: 13px; display: block; margin-top: 2px;
 
   <section class="sec">
     <h2>Changes since the last status page</h2>
-    <p class="lede">Since version 1 of this page, at commit <code>fd01f7f</code> (15:20).</p>
+    <p class="lede">Since version 3 of this page (16:41).</p>
     <ul class="changes">
-      <li>MILP solver (PuLP) for large optimizer searches, and a ranking penalty for doubtful J5 matches.</li>
-      <li>A live call transcript through an ElevenLabs webhook tool.</li>
-      <li>The daily planner check now starts one job per day and order. A job that a restart stopped no longer blocks its key.</li>
-      <li>The planner check and the draft list now use the same "due" rule.</li>
-      <li>Conformal ranges for a product's first 6 forecast weeks. Plain backtest coverage went from 84% to 92%, with the target at 90%.</li>
-      <li>Step 5 runs live through StepFun directly. Search specs, SMS drafts and the summary use it.</li>
-      <li>The LLM-agent lane passed the H3 gate on the test site with Step 3.7 Flash.</li>
-    </ul>
+      <li>Sentry: projects <code>supplier-agent-api</code> and <code>supplier-agent-web</code>, with a transaction for each job and handoff, gen_ai spans, Session Replay, logs, and linked web and backend traces.</li>
+      <li>End-to-end runs with live Jev and Step 5: the owner flow, and the adapter and agent lanes on the test site, ran to the payment stop.</li>
+      <li>Fixed: cart lines lost the product URL, so a scripted adapter failed at the cart step (it would hit every real-site adapter).</li>
+      <li>Fixed: the first planner build (78–768 s with live AI) now runs in the background when the server starts.</li>
+      <li>Fixed: tests no longer read the repo's <code>.env</code> (browser-use loaded it on import).</li>
+      <li>The eval report now has live Jev and Step 5 results.</li>
+</ul>
   </section>
 
-  <p class="foot">Sources: git history, <code>.env</code> key names (values not read), <code>uv run pytest</code>, <code>npm test</code> in <code>services/photon</code>, <code>tsc --noEmit</code> in <code>web</code>, and spec §11–12. "Live" means that a person ran it with real services. The counts include 29 components. The Sentry, automatic approval, eval report and preflight cards are new in this version.</p>
+  <p class="foot">Sources: git history, <code>.env</code> key names (values not read), <code>uv run pytest</code>, <code>npm test</code> in <code>services/photon</code>, <code>tsc --noEmit</code> in <code>web</code>, and spec §11–12. "Live" means that a person ran it with real services. The counts include 29 components. Sentry traces were read through the Sentry MCP.</p>
 </div>
 
 </body>
