@@ -31,7 +31,7 @@ class LiveLaneSettings(BaseSettings):
     cloud_proxy_country_code: str | None = "us"
     cloud_timeout_min: int = 15
 
-    # Hosted agent lane (hosted_agent.py, ported from Cartwise): the Browser Use Cloud agent, API v4.
+    # Hosted agent lane (hosted_agent.py): the Browser Use Cloud agent, API v4.
     # With BROWSER_USE_API_KEY set, it is the lane for unknown sites, and the Step 5 agent is its
     # fallback. HOSTED_AGENT_FIRST=false makes the Step 5 agent the lane again.
     hosted_agent_first: bool = True
@@ -40,6 +40,9 @@ class LiveLaneSettings(BaseSettings):
     hosted_agent_max_cost_usd: float = 2.0  # spend cap for one lane's whole session
     hosted_agent_keep_alive_s: int = 900  # the browser stays open between runs and for the owner at payment
     hosted_agent_poll_s: float = 2.0
+    # Times the base lane budgets (search 45 s, cart 45 s, subset 20 s): 8 gives 6 min to search and
+    # to fill a cart. The job deadline does not cut a lane: late carts update the results.
+    hosted_agent_budget_factor: float = 8.0
 
     # LLM for the Browser Use agent lane (unknown sites). Any OpenAI-compatible endpoint: the team
     # uses StepFun directly (OPENROUTER_BASE_URL=https://api.stepfun.ai/v1) with the same key names.

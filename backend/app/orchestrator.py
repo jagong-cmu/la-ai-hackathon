@@ -369,6 +369,10 @@ class Orchestrator:
         return ranked[: self.settings.agent_lane_max_items]
 
     def _budget(self, lr: LaneRuntime, base: float) -> float:
+        # A lane can set its own factor: a hosted agent run takes minutes, not seconds.
+        own = getattr(lr.lane, "budget_factor", None)
+        if isinstance(own, (int, float)) and own > 0:
+            return base * own
         return base * (self.settings.lane_agent_budget_factor if lr.is_agent else 1.0)
 
     async def _timed(self, fn: Callable[[], Awaitable[T]], budget: float, retries: int = 1) -> T:

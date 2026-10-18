@@ -22,6 +22,7 @@ from app.lanes.live.hosted_agent import (
     HostedAgentClient,
     HostedAgentLane,
     HostedCartOutput,
+    HostedRunError,
     output_schema,
     run_body,
     view_urls,
@@ -277,3 +278,54 @@ def test_hosted_agent_is_the_lane_for_unknown_sites(monkeypatch):
     assert done["hosted_agent"] and not done["llm_agent"]
     assert registry._LLM_AGENT is not None
     assert isinstance(registry._LLM_AGENT(SUPPLIER), HostedAgentLane)
+
+
+async def test_a_short_api_outage_is_retried(settings, decider, tmp_path):
+    fake = FakeBrowserUse([OPEN])
+    flaky = {"left": 2}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/status") and flaky["left"] > 0:
+            flaky["left"] -= 1
+            return httpx.Response(503, text="overloaded")
+        return fake(request)
+
+    c = cfg()
+    client = HostedAgentClient(c, transport=httpx.MockTransport(handler))
+    client.retry_delay_s = 0
+    lane = HostedAgentLane(SUPPLIER, c, client=client)
+    ctx, _ = make_ctx(settings, decider, tmp_path)
+    await lane.open(ctx)
+    assert flaky["left"] == 0 and ctx.session_id == "sess-1"
+
+
+async def test_a_client_error_is_not_retried(settings, decider, tmp_path):
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(401, text="bad key")
+
+    c = cfg()
+    client = HostedAgentClient(c, transport=httpx.MockTransport(handler))
+    client.retry_delay_s = 0
+    lane = HostedAgentLane(SUPPLIER, c, client=client)
+    ctx, _ = make_ctx(settings, decider, tmp_path)
+    with pytest.raises(HostedRunError):
+        await lane.open(ctx)
+    assert calls["n"] == 1
+
+
+def test_the_lane_sets_its_own_step_budget(settings, db, decider):
+    from app.contracts import LaneStatus
+    from app.orchestrator import LaneRuntime
+
+    lane = make_lane(FakeBrowserUse([]))
+    lr = LaneRuntime(status=LaneStatus(lane_id="lane_acme", supplier_id="acme", mode="llm_agent"), lane=lane)
+    from app.orchestrator import Orchestrator
+
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.settings = settings
+    assert Orchestrator._budget(orch, lr, 45) == 45 * 8
+    lr.lane = None
+    assert Orchestrator._budget(orch, lr, 45) == 45 * settings.lane_agent_budget_factor
