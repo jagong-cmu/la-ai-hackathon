@@ -41,7 +41,7 @@ Many real carts show no total before checkout. Such a cart is `estimated`, never
 
 ## Hosted agent lane (sites with no adapter)
 
-`live/hosted_agent.py` is the Cartwise prototype (`cartwise/`) as a lane. The Browser Use Cloud agent (API v4) runs on Browser Use's servers. Each lane step is one run, and the follow-up runs use the same session, so one browser holds the cart from search to the payment page.
+`live/hosted_agent.py` runs the Browser Use Cloud agent (API v4). The agent and its browser run on Browser Use's servers. Each lane step is one run, and the follow-up runs use the same session, so one browser holds the cart from search to the payment page.
 
 | Lane step | Run | Code after the run |
 |---|---|---|
@@ -53,7 +53,7 @@ Many real carts show no total before checkout. Such a cart is `estimated`, never
 
 The guard cannot see each click of a hosted agent, so the payment stop has these layers: the run body never has a wallet, a Stripe Link connection or a secret (`run_body` refuses one); code runs the guard on the page that each run reports; a reported order submission stops the lane; and the prompt forbids sign-in, payment entry and order submission.
 
-With `BROWSER_USE_API_KEY` set, this lane is the LLM lane for unknown sites, and the Step 5 agent (`agent_lane.py`) is its fallback when a run fails before a cart exists. `HOSTED_AGENT_FIRST=false` makes the Step 5 agent the lane again. Hosted runs take minutes, so the agent budgets (`LANE_AGENT_BUDGET_FACTOR`, `JOB_DEADLINE_S`) may need to be longer for a live run.
+With `BROWSER_USE_API_KEY` set, this lane is the LLM lane for unknown sites, and the Step 5 agent (`agent_lane.py`) is its fallback when a run fails before a cart exists. `HOSTED_AGENT_FIRST=false` makes the Step 5 agent the lane again. Hosted runs take minutes, so the lane sets its own budget factor (`HOSTED_AGENT_BUDGET_FACTOR`, default 8: 6 min to search or fill a cart). The job deadline does not cut the lane: the results show what finished, and a late cart updates them.
 
 ## Rules
 

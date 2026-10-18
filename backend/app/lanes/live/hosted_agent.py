@@ -1,7 +1,6 @@
 """Hosted-agent lane for unknown supplier sites: the Browser Use Cloud agent (API v4).
 
-Ported from the Cartwise prototype (cartwise/src/browser/*.ts). Browser Use runs the agent and
-its browser on their servers. Each lane step is one run, and every run after the first is a
+Browser Use runs the agent and its browser on their servers. Each lane step is one run, and every run after the first is a
 follow-up in the same session, so one browser holds the cart from search to the payment step:
 
     open      -> run 1: open the site (gives the live view URL)
@@ -69,10 +68,14 @@ PLACEHOLDER_ADDRESS = CheckoutContact().address1
 PAYMENT_STOPS = ("dom_card_field", "payment_step")
 
 
+TRANSIENT_HTTP = {408, 429, 500, 502, 503, 504}
+
+
 class HostedRunError(Exception):
-    def __init__(self, message: str, run_id: str | None = None):
+    def __init__(self, message: str, run_id: str | None = None, *, transient: bool = False):
         super().__init__(message)
         self.run_id = run_id
+        self.transient = transient
 
 
 # ---------------------------------------------------------------- agent output schemas
@@ -186,18 +189,32 @@ class HostedAgentClient:
             timeout=60.0,
             transport=transport,
         )
+        self.retry_delay_s = 2.5
 
     async def aclose(self) -> None:
         await self.http.aclose()
 
-    async def _call(self, method: str, path: str, **kwargs: Any) -> Any:
-        r = await self.http.request(method, path, **kwargs)
-        if r.status_code >= 400:
-            raise HostedRunError(f"{method} {path}: HTTP {r.status_code} {r.text[:200]}")
-        return r.json() if r.content else {}
+    async def _call(self, method: str, path: str, *, retries: int = 3, **kwargs: Any) -> Any:
+        """One API call. A short outage (429, 5xx, a dropped connection) is retried with a backoff,
+        because a status poll that fails once must not fail a lane that is minutes into a run."""
+        for attempt in range(retries + 1):
+            try:
+                r = await self.http.request(method, path, **kwargs)
+            except httpx.TransportError as exc:
+                error = HostedRunError(f"{method} {path}: {type(exc).__name__}", transient=True)
+            else:
+                if r.status_code < 400:
+                    return r.json() if r.content else {}
+                error = HostedRunError(f"{method} {path}: HTTP {r.status_code} {r.text[:200]}",
+                                       transient=r.status_code in TRANSIENT_HTTP)
+            if not error.transient or attempt == retries:
+                raise error
+            await asyncio.sleep(min(15.0, self.retry_delay_s * 2**attempt))
+        raise AssertionError("unreachable")
 
     async def create_run(self, body: dict[str, Any]) -> dict[str, Any]:
-        return await self._call("POST", "/runs", json=body)
+        # One retry only: a second POST after a lost reply could start a second run.
+        return await self._call("POST", "/runs", retries=1, json=body)
 
     async def status(self, run_id: str) -> str:
         return str((await self._call("GET", f"/runs/{run_id}/status")).get("status", ""))
@@ -360,6 +377,7 @@ class HostedAgentLane:
         self.cfg = cfg or get_live_settings()
         self.client = client or HostedAgentClient(self.cfg)
         self.step5_fallback = step5_fallback
+        self.budget_factor = self.cfg.hosted_agent_budget_factor  # the orchestrator reads it
         self.session_id: str | None = None
         self.workspace_id: str | None = None
         self.interactive_url: str | None = None
@@ -624,7 +642,7 @@ def money_candidates(costs: HostedCosts) -> list[MoneyCandidate]:
 
 
 def cart_problems(lines: list[CartLine], observed: list[HostedCartLine]) -> list[str]:
-    """Cartwise's cart checks: every requested line once, the right pack count, the right SKU."""
+    """Cart line checks: every requested line once, the right pack count, the right SKU."""
     problems: list[str] = []
     want = {line.sku: line for line in lines}
     seen: dict[str, HostedCartLine] = {}
