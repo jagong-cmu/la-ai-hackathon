@@ -240,13 +240,13 @@ STEPS
 3. If the request fails (connection error, timeout, or a status that is not 2xx), do not
    retry more than once. Report the status code and the first 300 characters of the body.
 4. If the status is 200, the body is JSON:
-   {"due": [{"name", "recommended_qty", "unit", "status", ...}], "job_id": string|null,
+   {"due": [{"name", "recommendedQty", "unit", "status", ...}], "jobId": string|null,
     "message": string}
 
 REPORT (Markdown, at most 10 lines)
 - Line 1: "Restock check: <message>"
 - Then one bullet for each item in "due": name, recommended quantity, unit, status.
-- Last line: "Sourcing job started: <job_id>" if job_id is not null,
+- Last line: "Sourcing job started: <jobId>" if jobId is not null,
   else "No sourcing job started."
 
 RULES
