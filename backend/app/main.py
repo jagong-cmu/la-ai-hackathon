@@ -56,6 +56,10 @@ DEFAULT_CATEGORY = "packaging_disposables"
 TERMINAL_JOB_STATES = {"at_payment", "partial_handoff", "rejected", "failed"}
 
 
+def _plural(unit: str) -> str:
+    return unit + ("es" if unit.endswith(("s", "x", "ch", "sh")) else "s")  # box -> boxes
+
+
 def due_supplies(view: PlannerView) -> list[SupplyPlan]:
     """The supplies to order now or soon. /planner/check and the draft list use the same rule."""
     return [p for p in view.supplies if p.status != "ok" and p.recommended_qty > 0]
@@ -192,7 +196,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             order = stable_hash(sorted((p.item_id, p.recommended_qty) for p in due))[:12]
             created = await s.orchestrator.create_job(await s.draft(), f"planner-{date.today().isoformat()}-{order}")
             job_id = created.job_id
-        names = ", ".join(f"{p.name} ({p.recommended_qty} {p.unit}s)" for p in due)
+        names = ", ".join(f"{p.name} ({p.recommended_qty} {_plural(p.unit)})" for p in due)
         return PlannerCheck(due=due, job_id=job_id, message=f"Order soon: {names}.")
 
     @app.post("/planner/owner-messages", response_model=ForecastAdjustment)

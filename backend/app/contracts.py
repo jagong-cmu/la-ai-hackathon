@@ -226,6 +226,7 @@ class NormalizedOption(Model):
     flags: list[str] = []
     eligible: bool
     risk_penalty: float = 0.0  # ranking only, never part of a price (Thresholds.risk_penalty)
+    url: str | None = None  # the product page; a lane opens it to add the item to the cart
 
 
 class CartLine(Model):

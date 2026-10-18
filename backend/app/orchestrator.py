@@ -372,7 +372,7 @@ class Orchestrator:
                     await self._lane_state(rt, lr, LaneState.idle, "no_eligible_items")
                     await self._replan(rt, f"offers:{sid}")
                     return
-                lines = [CartLine(item_id=o.item_id, sku=o.sku, pack_quantity=o.packs_needed, unit_price=o.pack_price)
+                lines = [CartLine(item_id=o.item_id, sku=o.sku, pack_quantity=o.packs_needed, unit_price=o.pack_price, url=o.url)
                          for o in sorted(options, key=lambda o: o.item_id)]
                 await self._lane_state(rt, lr, LaneState.carting)
                 with span("lane.set_cart", f"set_cart {sid}", supplier=sid):
