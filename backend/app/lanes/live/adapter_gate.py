@@ -52,7 +52,8 @@ def make_lane(name: str, supplier: SupplierRef, cfg: LiveLaneSettings):
     return ShopifyAdapterLane(supplier, WEES_EXPRESS, cfg)
 
 
-async def run(name: str, headless: bool, checkout: bool, cloud: bool = False, warm: bool = False) -> int:
+async def run(name: str, headless: bool, checkout: bool, cloud: bool = False, warm: bool = False,
+              quote: bool = False) -> int:
     cfg = LiveLaneSettings(browser_mode="cloud" if cloud else "local", browser_headless=headless).model_copy(
         update={"openrouter_api_key": None})  # no agent fallback: the gate tests the adapter alone
     tmp = Path(tempfile.mkdtemp(prefix=f"gate-{name}-"))
@@ -102,7 +103,16 @@ async def run(name: str, headless: bool, checkout: bool, cloud: bool = False, wa
             report(cart.verification_status in ("verified", "estimated"),
                    f"cart status={cart.verification_status} subtotal={c and c.subtotal} shipping={c and c.shipping} "
                    f"total={c and c.total} reason={cart.reason} ({time.monotonic() - t1:.0f}s)")
-            if checkout:
+            if quote:
+                t2 = time.monotonic()
+                verified, handoff = await lane.quote(ctx, settings.checkout_contact, lines)
+                v = verified.costs if verified else None
+                report(verified is not None and verified.verification_status == "verified",
+                       f"checkout quote status={verified and verified.verification_status} subtotal={v and v.subtotal} "
+                       f"shipping={v and v.shipping} tax={v and v.tax} total={v and v.total} "
+                       f"reason={verified.reason if verified else handoff.reason} ({time.monotonic() - t2:.0f}s)")
+                report(handoff.status == "at_payment", f"stopped at payment: {handoff.status}")
+            elif checkout:
                 t2 = time.monotonic()
                 handoff = await lane.checkout(ctx, settings.checkout_contact)
                 report(handoff.status == "at_payment",
@@ -122,10 +132,11 @@ def main() -> None:
     parser.add_argument("--checkout", action="store_true", help="also open checkout, where the guard stops")
     parser.add_argument("--cloud", action="store_true", help="use the Browser Use cloud browser (BROWSER_USE_API_KEY)")
     parser.add_argument("--warm", action="store_true", help="start the browser before timing (as prewarm does)")
+    parser.add_argument("--quote", action="store_true", help="checkout to payment and read the real total there")
     args = parser.parse_args()
     sys.stdout.reconfigure(line_buffering=True)
     sys.exit(asyncio.run(run(args.site, headless=not args.headed, checkout=args.checkout, cloud=args.cloud,
-                             warm=args.warm)))
+                             warm=args.warm, quote=args.quote)))
 
 
 if __name__ == "__main__":

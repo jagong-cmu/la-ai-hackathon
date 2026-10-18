@@ -54,6 +54,37 @@ log = logging.getLogger(__name__)
 PRICE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)")
 
 
+# Checkout forms want the state's name ("California"), not its code.
+US_STATES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California", "CO": "Colorado",
+    "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia", "FL": "Florida", "GA": "Georgia",
+    "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+    "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts",
+    "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri", "MT": "Montana",
+    "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico",
+    "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+    "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota",
+    "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia", "WA": "Washington",
+    "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+}
+
+
+def pair_labels(text: str) -> str:
+    """Put each amount on the line of its label: "Shipping\n$26.85" -> "Shipping $26.85".
+    money_candidates() reads a label from the amount's own line."""
+    out: list[str] = []
+    pending: list[str] = []
+    for line in (t.strip() for t in text.splitlines()):
+        if not line:
+            continue
+        if PRICE.search(line):
+            out.append(" ".join([*pending, line]))
+            pending = []
+        else:
+            pending.append(line)
+    return "\n".join(out)
+
+
 class AdapterStepError(Exception):
     """A scripted step did not work on this page (selector missing, unexpected layout)."""
 
@@ -122,6 +153,9 @@ class PlaywrightAdapterLane:
     # localStorage) lost a line when two adds raced. Turn on only for a server-side cart checked
     # live; add_to_cart must then not need the tab in front (see click(js=True)).
     parallel_cart_adds: bool = False
+    # The verify phase takes this site through checkout to read the real total (quote()). Off for
+    # a site whose checkout cannot be used before approval (a captcha, a strict guest form).
+    quote_at_checkout: bool = True
 
     def __init__(self, supplier: SupplierRef, cfg: LiveLaneSettings | None = None):
         self.supplier = supplier
@@ -131,6 +165,8 @@ class PlaywrightAdapterLane:
         self._agent: Any = None
         self._shots = 0
         self._cart_touched = False  # a new lane's browser has an empty cart: no need to check it
+        self._want_quote = False  # set by quote(): read the payment page's order summary
+        self._quote_text: str | None = None
 
     # ---- site steps (override) ----------------------------------------------------
 
@@ -177,6 +213,10 @@ class PlaywrightAdapterLane:
         """Click the button to the next checkout step. Return False when there is none."""
         raise NotImplementedError
 
+    def checkout_url(self) -> str | None:
+        """A URL that opens checkout for the current cart. None: load the cart and use checkout_entry()."""
+        return None
+
     def open_url(self) -> str | None:
         """The page open() loads. None: start the browser only; search loads the first page."""
         return self.supplier.url
@@ -194,6 +234,22 @@ class PlaywrightAdapterLane:
     async def add_lines(self, page: Page, lines: list[CartLine]) -> bool:
         """Add several cart lines at once (one request). False: add them one product page each."""
         return False
+
+    async def checkout_summary(self, page: Page) -> str:
+        """The order summary on the payment page: subtotal, shipping, tax, total. Default: the
+        page text from the first "Subtotal" through the first "Total" line, labels paired."""
+        lines = pair_labels((await self.browser.snapshot(page)).visible_text).splitlines()
+        start = next((i for i, t in enumerate(lines) if t.lower().startswith("subtotal")), None)
+        if start is None:
+            return ""
+        end = next((i for i in range(start, len(lines)) if re.match(r"(order |grand )?total\b", lines[i], re.I)),
+                   len(lines) - 1)
+        return "\n".join(lines[start:end + 1])
+
+    async def fill_contact_on_payment_page(self, page: Page, contact: CheckoutContact) -> None:
+        """One-page checkouts only: type the shipping contact on the page that also holds the
+        card fields, so the summary shows shipping and tax. Never a card field, never a click."""
+        raise AdapterStepError("this site has no contact fields on its payment page")
 
     async def cart_summary(self, page: Page, skus: list[str]) -> str:
         """The order summary text that J7 reads. Default: `cart_totals_selector`, else the page
@@ -441,12 +497,18 @@ class PlaywrightAdapterLane:
             return await agent.checkout(ctx, contact)
 
     async def _checkout(self, ctx: LaneContext, contact: CheckoutContact) -> CheckoutHandoff:
-        page = await self.goto(self.cart_url())
-        await self.checkout_entry(page)
-        page = await self.browser.page()
+        if (direct := self.checkout_url()) is not None:
+            page = await self.goto(direct)  # one load instead of cart page + checkout click
+        else:
+            page = await self.goto(self.cart_url())
+            await self.checkout_entry(page)
+            page = await self.browser.page()
         await self.settle(page)
         verdict = await self.after_nav(page, allow_stop=True)
         if verdict.stop and self.single_page_checkout and verdict.reason in ("dom_card_field", "payment_step"):
+            if self._want_quote:
+                await self.fill_contact_on_payment_page(page, contact)
+                self._quote_text = await self.checkout_summary(page)
             shot = await self.shot("payment_step", page)
             return CheckoutHandoff(supplier_id=self.supplier.id, status="at_payment", live_url=ctx.live_url,
                                    screenshot_url=shot)
@@ -472,10 +534,38 @@ class PlaywrightAdapterLane:
         text = (await self.browser.snapshot(page)).visible_text
         self.browser.write_evidence(ctx, "payment_step.txt", text)
         if verdict.stop and verdict.reason in ("dom_card_field", "payment_step"):
+            if self._want_quote:  # reading is not acting: the guard stops clicks and typing only
+                self._quote_text = await self.checkout_summary(page)
             return CheckoutHandoff(supplier_id=self.supplier.id, status="at_payment", live_url=ctx.live_url,
                                    screenshot_url=shot)
         reason = f"early_stop:{verdict.reason}" if verdict.stop else "payment_step_not_reached"
         return CheckoutHandoff(supplier_id=self.supplier.id, status="failed", reason=reason, screenshot_url=shot)
+
+    async def quote(
+        self, ctx: LaneContext, contact: CheckoutContact, lines: list[CartLine]
+    ) -> tuple[VerifiedCart | None, CheckoutHandoff]:
+        """Take the cart (already set to `lines`) through checkout to the payment page, read the
+        real order summary there, and stop. The cart is `verified` when the page shows the
+        subtotal, shipping and total and they add up. The browser stays at payment: the handoff."""
+        self.ctx = ctx
+        self._want_quote, self._quote_text = True, None
+        try:
+            handoff = await self.checkout(ctx, contact)
+        finally:
+            self._want_quote = False
+        text = self._quote_text
+        if handoff.status != "at_payment" or not text:
+            return None, handoff
+        self.browser.write_evidence(ctx, f"checkout_summary_{self._shots:03d}.txt", text)
+        candidates = money_candidates(text)
+        picks, confs = await j7_totals(ctx.decider, candidates, job_id=ctx.job_id)
+        cart = build_verified_cart(
+            self.supplier.id, lines, candidates, picks, confs, minimum_order_value=self.minimum_order_value,
+            session_id=ctx.session_id, screenshot_url=handoff.screenshot_url,
+        )
+        await ctx.emit("checkout_quote", {"status": cart.verification_status,
+                                          "total": cart.costs.total if cart.costs else None})
+        return cart, handoff
 
     async def close(self, ctx: LaneContext) -> None:
         await self.browser.close()
