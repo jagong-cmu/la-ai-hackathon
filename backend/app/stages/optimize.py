@@ -76,12 +76,20 @@ def supplier_pricing(
             c for c in carts.values()
             if c.supplier_id == sid and c.verification_status == "verified" and c.costs
         ]
+        # An estimated cart (no total on the page) still shows real shipping, such as a ZIP
+        # freight quote. Use it when no verified cart exists; its tax was not shown, so not the rate.
+        shown = [c for c in carts.values() if c.supplier_id == sid and c.verification_status == "estimated"
+                 and c.costs and "shipping_not_shown" not in (c.reason or "")]
         if verified:
             ref = max(verified, key=lambda c: len(c.cart_items))
             assert ref.costs is not None
             p.reference_shipping = ref.costs.shipping
             if ref.costs.subtotal > 0:
                 p.tax_rate = ref.costs.tax / ref.costs.subtotal
+        elif shown:
+            ref = max(shown, key=lambda c: len(c.cart_items))
+            assert ref.costs is not None
+            p.reference_shipping = ref.costs.shipping
         pricing[sid] = p
     return pricing
 
@@ -112,6 +120,16 @@ def price_cart(
         c = verified.costs
         return PlanCart(cart_key=key, supplier_id=supplier_id, lines=lines, subtotal=c.subtotal,
                         shipping=c.shipping, tax=c.tax + c.other_fees, total=c.total, status="verified")
+    if verified is not None and verified.verification_status == "estimated" and verified.costs:
+        # The site's own subtotal and shipping; tax was not shown, so code estimates it.
+        c = verified.costs
+        hidden_shipping = "shipping_not_shown" in (verified.reason or "")
+        shipping = base_shipping(pricing) if hidden_shipping else c.shipping
+        tax = round(c.tax or c.subtotal * (pricing.tax_rate or 0.0), 2)
+        return PlanCart(cart_key=key, supplier_id=supplier_id, lines=lines, subtotal=c.subtotal,
+                        shipping=shipping, tax=tax + c.other_fees,
+                        total=round(c.subtotal + shipping + tax + c.other_fees, 2),
+                        status="estimated", shipping_is_estimate=hidden_shipping)
     if pricing.quoted:
         total = round(subtotal + pricing.quoted_delivery_fee, 2)
         return PlanCart(cart_key=key, supplier_id=supplier_id, lines=lines, subtotal=subtotal,

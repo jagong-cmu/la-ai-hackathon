@@ -5,6 +5,7 @@
     {"id": "katom", "name": "KaTom Restaurant Supply", "url": "https://www.katom.com", "adapter": "katom"},
     {"id": "uline", "name": "Uline", "url": "https://www.uline.com", "adapter": "uline"},
     {"id": "restaurantware", "name": "Restaurantware", "url": "https://www.restaurantware.com", "adapter": "restaurantware"},
-    {"id": "wasserstrom", "name": "Wasserstrom", "url": "https://www.wasserstrom.com", "adapter": "wasserstrom"}
+    {"id": "wasserstrom", "name": "Wasserstrom", "url": "https://www.wasserstrom.com", "adapter": "wasserstrom"},
+    {"id": "wees_express", "name": "Wees Express", "url": "https://www.wees-express.com", "adapter": "wees_express"}
   ]
 }

@@ -1448,7 +1448,7 @@ export interface components {
              * @default failed
              * @enum {string}
              */
-            verificationStatus: "verified" | "quoted" | "price_changed" | "out_of_stock" | "blocked" | "failed";
+            verificationStatus: "verified" | "estimated" | "quoted" | "price_changed" | "out_of_stock" | "blocked" | "failed";
             /** Reason */
             reason?: string | null;
             /**
