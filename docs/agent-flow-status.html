@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Supplier Agent Flow Status</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: the same vertical pipeline as the agent flow page; every node carries a build-status chip, a summary strip opens the page, and a next-steps list closes it. */
+/* Layout: summary strip first, then demo readiness, blockers and checkpoints, then every component by pipeline stage, then the task list. Same tokens as the agent flow pages. */
 :root {
   --bg: #f6f7f9; --surface: #ffffff; --fg: #111418; --muted: #5a6370; --line: #d5dae1; --hub: #111418; --hub-fg: #ffffff;
-  --creao: #6b3df5; --jev: #0b8a6b; --step5: #d9480f; --bu: #1c6fd8; --photon: #c2187a; --eleven: #222222; --code: #59626e; --visa: #b8860b;
+  --creao: #6b3df5; --jev: #0b8a6b; --step5: #d9480f; --bu: #1c6fd8; --photon: #c2187a; --eleven: #222222; --code: #59626e; --visa: #b8860b; --sentry: #6c5fc7;
   --stop: #d61f2c; --stop-bg: #fdecee;
   --s-live: #0f7b3e; --s-live-bg: #e3f5ea; --s-built: #1f5fb8; --s-built-bg: #e6eefa;
   --s-part: #9a5b00; --s-part-bg: #fdf1dc; --s-todo: #6b7280; --s-todo-bg: #eef0f3;
@@ -20,36 +20,37 @@
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #0f1216; --surface: #181c22; --fg: #eef1f5; --muted: #9aa4b1; --line: #2c333d; --hub: #eef1f5; --hub-fg: #0f1216;
-  --creao: #a78bfa; --jev: #34d1a6; --step5: #ff8a4c; --bu: #6aa8ff; --photon: #f472b6; --eleven: #d8dde4; --code: #a3adb9; --visa: #e3b341;
+  --creao: #a78bfa; --jev: #34d1a6; --step5: #ff8a4c; --bu: #6aa8ff; --photon: #f472b6; --eleven: #d8dde4; --code: #a3adb9; --visa: #e3b341; --sentry: #a99cf5;
   --stop: #ff6b74; --stop-bg: #3a1a1e;
   --s-live: #4fd88a; --s-live-bg: #12301f; --s-built: #7fb2ff; --s-built-bg: #172540;
   --s-part: #f2b453; --s-part-bg: #352610; --s-todo: #a3adb9; --s-todo-bg: #23282f; color-scheme: dark; } }
 :root[data-theme="dark"] {
   --bg: #0f1216; --surface: #181c22; --fg: #eef1f5; --muted: #9aa4b1; --line: #2c333d; --hub: #eef1f5; --hub-fg: #0f1216;
-  --creao: #a78bfa; --jev: #34d1a6; --step5: #ff8a4c; --bu: #6aa8ff; --photon: #f472b6; --eleven: #d8dde4; --code: #a3adb9; --visa: #e3b341;
+  --creao: #a78bfa; --jev: #34d1a6; --step5: #ff8a4c; --bu: #6aa8ff; --photon: #f472b6; --eleven: #d8dde4; --code: #a3adb9; --visa: #e3b341; --sentry: #a99cf5;
   --stop: #ff6b74; --stop-bg: #3a1a1e;
   --s-live: #4fd88a; --s-live-bg: #12301f; --s-built: #7fb2ff; --s-built-bg: #172540;
   --s-part: #f2b453; --s-part-bg: #352610; --s-todo: #a3adb9; --s-todo-bg: #23282f; color-scheme: dark; }
-
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
 .wrap { max-width: 1120px; margin: 0 auto; padding-block: 40px 64px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.02em; margin: 0 0 6px; text-wrap: balance; }
-.lede { color: var(--muted); max-width: 68ch; margin: 0 0 20px; }
-h2 { font-family: var(--f-display); font-weight: 700; font-size: 20px; margin: 0; text-wrap: balance; }
-.mono { font-family: var(--f-mono); font-size: 12.5px; }
-code { font-family: var(--f-mono); font-size: 12px; }
-
+h2 { font-family: var(--f-display); font-weight: 700; font-size: 21px; margin: 0 0 4px; text-wrap: balance; }
+h3 { font-family: var(--f-display); font-weight: 700; font-size: 16px; margin: 0; }
+.lede { color: var(--muted); max-width: 70ch; margin: 0 0 20px; }
+.sec { margin-top: 40px; }
+.sec > .lede { margin: 2px 0 14px; font-size: 14px; }
+code, .mono { font-family: var(--f-mono); font-size: 12px; }
 /* summary */
-.summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .sum { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; border-top: 4px solid var(--sc); }
-.sum .n { font-family: var(--f-display); font-weight: 800; font-size: 28px; line-height: 1; color: var(--sc); font-variant-numeric: tabular-nums; }
+.sum .n { font-family: var(--f-display); font-weight: 800; font-size: 30px; line-height: 1; color: var(--sc); font-variant-numeric: tabular-nums; }
 .sum .l { font-weight: 600; margin-top: 6px; }
 .sum p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
-.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 13.5px; margin: 0 0 28px; }
+.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 0 0 8px; background: var(--s-todo-bg); }
+.bar span { display: block; background: var(--sc); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 13.5px; margin: 0; }
 .facts b { color: var(--fg); font-weight: 600; }
-
 /* status chips */
 .st { display: inline-flex; align-items: center; gap: 5px; font-family: var(--f-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.04em;
   text-transform: uppercase; padding: 2px 7px; border-radius: 999px; color: var(--sc); background: var(--sbg); white-space: nowrap; }
@@ -58,211 +59,279 @@ code { font-family: var(--f-mono); font-size: 12px; }
 .built { --sc: var(--s-built); --sbg: var(--s-built-bg); }
 .part { --sc: var(--s-part); --sbg: var(--s-part-bg); }
 .todo { --sc: var(--s-todo); --sbg: var(--s-todo-bg); }
-
-/* legend */
-.legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
-.tag { display: inline-flex; align-items: center; gap: 6px; font-family: var(--f-mono); font-size: 11.5px; font-weight: 500;
-  letter-spacing: 0.02em; padding: 3px 8px; border-radius: 4px; border: 1.5px solid var(--c); color: var(--c); background: var(--surface); white-space: nowrap; }
-.tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
-.creao { --c: var(--creao); } .jev { --c: var(--jev); } .step5 { --c: var(--step5); } .bu { --c: var(--bu); }
-.photon { --c: var(--photon); } .eleven { --c: var(--eleven); } .code { --c: var(--code); } .visa { --c: var(--visa); }
-
+.crit { --sc: var(--stop); --sbg: var(--stop-bg); }
+/* tables */
+.tbl { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font-family: var(--f-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td.k { font-weight: 600; white-space: nowrap; }
+td .sub { color: var(--muted); font-size: 13px; display: block; margin-top: 2px; }
+/* blockers */
+.blockers { display: grid; gap: 10px; counter-reset: b; }
+.blk { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--sc); border-radius: 6px; padding: 12px 14px;
+  display: grid; grid-template-columns: 30px 1fr; gap: 2px 10px; }
+.blk::before { counter-increment: b; content: counter(b); grid-row: span 3; font-family: var(--f-display); font-weight: 800; font-size: 20px; color: var(--sc); }
+.blk .t { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.blk .t b { font-size: 15px; }
+.blk p { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; min-width: 0; }
+.blk p strong { color: var(--fg); font-weight: 600; }
 /* stages */
-.stage { display: grid; grid-template-columns: 56px 1fr; gap: 0 16px; }
-.rail { display: flex; flex-direction: column; align-items: center; }
-.num { width: 40px; height: 40px; border-radius: 50%; background: var(--hub); color: var(--hub-fg); font-family: var(--f-display);
-  font-weight: 800; display: grid; place-items: center; font-size: 17px; flex: none; }
-.rail .stem { flex: 1; width: 2px; background: var(--line); margin-top: 6px; min-height: 24px; }
-.stage:last-of-type .stem { display: none; }
-.body { padding-bottom: 32px; min-width: 0; }
-.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 6px 0 12px; }
-.head .when { color: var(--muted); }
-
-.row { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
+.stage { margin-top: 18px; }
+.stage-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
+.stage-h .when { color: var(--muted); font-size: 13.5px; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .node { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--c, var(--code)); border-radius: 6px;
-  padding: 10px 12px; min-width: 0; flex: 1 1 200px; display: flex; flex-direction: column; }
+  padding: 10px 12px; min-width: 0; display: flex; flex-direction: column; }
 .node .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .node b { display: block; font-weight: 600; font-size: 14.5px; }
 .node p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
-.node .why { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); color: var(--fg); font-size: 12.5px; }
-.node .tags { margin-top: auto; padding-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-.node.is-todo { border-style: dashed; border-left-style: solid; opacity: 0.85; }
-.arrow { align-self: center; color: var(--muted); font-size: 18px; flex: none; }
-
-.hub { background: var(--hub); color: var(--hub-fg); border-radius: 8px; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; margin-bottom: 12px; }
-.hub b { font-family: var(--f-display); font-size: 16px; }
-.hub span { opacity: 0.75; font-size: 13.5px; flex: 1 1 300px; }
-
-.lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.lane { border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.lane h3 { margin: 0 0 2px; font-family: var(--f-display); font-size: 15px; font-weight: 700; }
-.lane .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 4px; }
-.lane .node { flex: none; }
-.down { text-align: center; color: var(--muted); line-height: 1; font-size: 14px; }
-.stopnode { --c: var(--stop); background: var(--stop-bg); border-color: var(--stop); }
-.stopnode b { color: var(--stop); }
-
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; margin-top: 8px; }
-.panel + .panel { margin-top: 16px; }
-.panel .lede { margin: 6px 0 14px; font-size: 14px; }
-.loop { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.next { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 8px; }
-.next li { padding-left: 4px; }
-.next li b { font-weight: 600; }
-.next .who { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); }
-
-@media (max-width: 860px) { .lanes, .loop { grid-template-columns: 1fr; } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 520px) {
-  .stage { grid-template-columns: 40px 1fr; gap: 0 10px; }
-  .num { width: 32px; height: 32px; font-size: 14px; }
-  .arrow { display: none; }
-}
+.node .new { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); color: var(--fg); font-size: 12.5px; }
+.node.is-todo { border-style: dashed; border-left-style: solid; }
+.creao { --c: var(--creao); } .jev { --c: var(--jev); } .step5 { --c: var(--step5); } .bu { --c: var(--bu); }
+.photon { --c: var(--photon); } .eleven { --c: var(--eleven); } .code { --c: var(--code); } .visa { --c: var(--visa); } .sentry { --c: var(--sentry); }
+/* tasks */
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.panel ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+.panel .who { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.changes { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+.foot { margin-top: 40px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 14px; }
+@media (max-width: 860px) { .grid, .cols { grid-template-columns: 1fr; } .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
 </head>
 <body class="auto">
 
 <div class="wrap">
   <h1>Supplier Agent Flow Status</h1>
-  <p class="lede">Each step of one restock job, with its build status on Sat 17 Oct 2026, evening. Fixture mode runs the full flow end to end. Step 5 now runs live through StepFun, and the browser agent lane passed the H3 gate. The real supplier sites and the CREAO agents are the main open work.</p>
+  <p class="lede">The build status of each agent and component on Sat 17 Oct 2026 at 16:41 (commit <code>643537a</code> + uncommitted work). The full flow runs end to end in fixture mode. The distributor call and the Step 5 calls run live, and the browser agent lane passed the H3 gate on the test site. Real supplier sites, CREAO agents and a public URL are the main open work.</p>
 
   <div class="summary">
     <div class="sum live"><div class="n">5</div><div class="l">Live</div><p>Tested with real services and keys.</p></div>
     <div class="sum built"><div class="n">14</div><div class="l">Built</div><p>Code and tests done. Runs in fixture mode.</p></div>
-    <div class="sum part"><div class="n">5</div><div class="l">Partial</div><p>Started. A key, a site or a screen is missing.</p></div>
-    <div class="sum todo"><div class="n">2</div><div class="l">Not started</div><p>Only notes or a spec line.</p></div>
+    <div class="sum part"><div class="n">7</div><div class="l">Partial</div><p>Started. A key, a site or a screen is missing.</p></div>
+    <div class="sum todo"><div class="n">3</div><div class="l">Not started</div><p>Only notes or a spec line.</p></div>
+  </div>
+  <div class="bar" role="img" aria-label="5 live, 14 built, 7 partial, 3 not started, of 29 components">
+    <span class="live" style="width:17.2%"></span><span class="built" style="width:48.3%"></span><span class="part" style="width:24.1%"></span>
   </div>
   <div class="facts">
     <span><b>135 / 135</b> backend tests pass</span>
-    <span><b>RUN_MODE</b> fixture</span>
-    <span>Keys set: <b>Jev, StepFun, Photon, ElevenLabs, CREAO</b></span>
-    <span>Keys empty: <b>Browser Use cloud, CREAO app ID, public URL, owner phone</b></span>
+    <span><b>13 / 13</b> Photon service tests pass</span>
+    <span><b>Web</b> type check passes</span>
+    <span><b>Keys set:</b> Jev, StepFun, Photon, ElevenLabs, CREAO</span>
+    <span><b>Keys empty:</b> Browser Use, CREAO app ID, public URL, restock token, owner phone, checkout contact, Sentry</span>
   </div>
 
-  <div class="legend" aria-label="Legend">
-    <span class="tag creao">CREAO agents</span>
-    <span class="tag jev">Jev (TypeSafe)</span>
-    <span class="tag step5">StepFun (Step 5, Step 3.7 Flash)</span>
-    <span class="tag bu">Browser Use + Playwright</span>
-    <span class="tag photon">Photon</span>
-    <span class="tag eleven">ElevenLabs</span>
-    <span class="tag code">Backend code</span>
-    <span class="tag visa">Visa (simulated)</span>
-  </div>
+  <section class="sec">
+    <h2>Demo readiness</h2>
+    <p class="lede">The 6 steps of the 3-minute demo script (spec §11), and what each step uses now.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Demo step</th><th>Status</th><th>What runs now</th><th>What is missing for a live demo</th></tr></thead>
+      <tbody>
+        <tr><td class="k">0:00 Insights</td><td><span class="st built">Built</span></td><td>Spend from the company-001 books. Supply bills are synthetic and disclosed.</td><td>Nothing. Fixture data is the plan for this step.</td></tr>
+        <tr><td class="k">0:20 List</td><td><span class="st part">Partial</span></td><td>The list is prefilled with the planner's quantities. Suppliers come from the fixture list.</td><td>The CREAO discovery agent and <code>CREAO_APP_ID</code>.</td></tr>
+        <tr><td class="k">0:30 Working</td><td><span class="st part">Partial</span></td><td>Lanes run on fixture suppliers and on one local test site. The LLM-agent lane gets to checkout on the test site.</td><td>3 real supplier sites with adapters. A faster agent lane. The Browser Use key for the live view.</td></tr>
+        <tr><td class="k">1:20 The call</td><td><span class="st live">Live</span></td><td>Real SMS, a real ElevenLabs call over Photon SIP, J9 live re-ranking and a live transcript.</td><td>A full rehearsal inside a live job.</td></tr>
+        <tr><td class="k">2:10 Results</td><td><span class="st built">Built</span></td><td>Plans, spending rules badges, savings and warnings. The results screen calls the API.</td><td>A run on the real UI (H6) and the frontend polish.</td></tr>
+        <tr><td class="k">2:35 Approve</td><td><span class="st part">Partial</span></td><td>Cards are minted, and checkout stops at payment on the test site.</td><td>Real-site checkout and the team checkout contact fields.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
 
-  <!-- 1 -->
-  <section class="stage">
-    <div class="rail"><div class="num">1</div><div class="stem"></div></div>
-    <div class="body">
-      <div class="head"><h2>Trigger</h2><span class="when mono">daily 06:00, or the owner opens screen 0</span></div>
-      <div class="row">
-        <div class="node creao is-todo"><div class="top"><b>Daily Restock Check</b><span class="st todo">Not started</span></div><p>Scheduled CREAO agent. Calls <code>POST /planner/check?autostart=true</code>.</p><p class="why">Only the setup steps in <code>agents/creao/README.md</code>. It needs <code>PUBLIC_BASE_URL</code> (a tunnel) to reach the backend.</p><div class="tags"><span class="tag creao">CREAO</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node code"><div class="top"><b>Restock planner</b><span class="st built">Built</span></div><p>Forecasts sales, finds the supplies due now, sets the quantities. Backtest in <code>eval/run_eval.py</code>.</p><div class="tags"><span class="tag code">code</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node code"><div class="top"><b>Shopping list + J1</b><span class="st built">Built</span></div><p>Prefilled from past bills. J1 puts each bill line in a category.</p><div class="tags"><span class="tag code">code</span><span class="tag jev">J1</span></div></div>
+  <section class="sec">
+    <h2>Blockers</h2>
+    <p class="lede">In the order of their effect on the demo. Each one stops a demo step or a prize track.</p>
+    <div class="blockers">
+      <div class="blk crit"><div class="t"><b>No real supplier sites</b><span class="st crit">Critical</span><span class="mono">agents team</span></div>
+        <p>Only <code>example_site.py</code> exists, on a local test site. The spec put the site choice at H0 and one real lane at H10.</p>
+        <p><strong>Unblock:</strong> run the site preflight, choose 3 sites, and copy <code>example_site.py</code> for each.</p></div>
+      <div class="blk crit"><div class="t"><b>No public URL</b><span class="st crit">Critical</span><span class="mono">backend</span></div>
+        <p><code>PUBLIC_BASE_URL</code> and <code>RESTOCK_TOKEN</code> are empty. Without a tunnel, CREAO cannot call the backend, so the daily restock check and CREAO callbacks cannot run.</p>
+        <p><strong>Unblock:</strong> start the tunnel, set both values, and rerun the preflight.</p></div>
+      <div class="blk crit"><div class="t"><b>CREAO agents not made</b><span class="st crit">Critical</span><span class="mono">backend</span></div>
+        <p>"Depth on CREAO" is 25% of the CREAO track score. The Discovery and Daily Restock Check agents exist only as setup steps. Scheduled runs need the Pro Plus plan.</p>
+        <p><strong>Unblock:</strong> make both agents from <code>agents/creao/README.md</code> and set <code>CREAO_APP_ID</code>.</p></div>
+      <div class="blk part"><div class="t"><b>Agent lane is slow, and the cloud browser is off</b><span class="st part">High</span><span class="mono">agents team</span></div>
+        <p>On the test site, search and cart took 185 s together (92 s + 93 s), and the job deadline is 150 s. The lane searches only 1 item to fit. Step 5 failed the gate, so the lane uses Step 3.7 Flash. <code>BROWSER_USE_API_KEY</code> is empty, so the cloud browser and its live view cannot run. The lane changes are not committed.</p>
+        <p><strong>Unblock:</strong> commit the lane work, set the Browser Use key, and time the lane on one real site.</p></div>
+      <div class="blk part"><div class="t"><b>Empty contact and owner fields</b><span class="st part">Medium</span><span class="mono">backend</span></div>
+        <p>The <code>CHECKOUT_CONTACT__*</code> fields and <code>OWNER_PHONE</code> are empty. Guest checkout cannot fill the shipping step, and J12 cannot get real owner texts.</p>
+        <p><strong>Unblock:</strong> fill them with the team-controlled contact and the Photon number.</p></div>
+      <div class="blk part"><div class="t"><b>Sentry not connected</b><span class="st part">Medium</span><span class="mono">backend + frontend</span></div>
+        <p>The code calls <code>init_sentry</code>, but <code>SENTRY_DSN</code> and <code>NEXT_PUBLIC_SENTRY_DSN</code> are empty. The Sentry track needs Replay, Tracing and AI monitoring.</p>
+        <p><strong>Unblock:</strong> make the Sentry project and set both DSN values.</p></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>Timeline checkpoints</h2>
+    <p class="lede">Spec §12. A checkpoint is done only when every part of it is done.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Hour</th><th>Checkpoint</th><th>Status</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="k">H0–1</td><td>Name, site preflight, 3 sites, tunnel, frozen contracts, fixture flow on stubs</td><td><span class="st part">Partial</span></td><td>Contracts and the fixture flow are done. The sites, the tunnel and the product name are open.</td></tr>
+        <tr><td class="k">H3</td><td>Step 5 drives the agent to a guest cart on one real site</td><td><span class="st part">Partial</span></td><td>Passed on the test site with Step 3.7 Flash, not Step 5. No real site yet.</td></tr>
+        <tr><td class="k">H4</td><td>Jev key, rate limits, p50 latency</td><td><span class="st live">Done</span></td><td>The key is set and J9 runs live. The live eval run measures latency now.</td></tr>
+        <tr><td class="k">H6</td><td>Fixture flow on the real UI, unit tests green</td><td><span class="st part">Partial</span></td><td>Tests pass, and the screens call the API. The UI run waits for the Paper designs.</td></tr>
+        <tr><td class="k">H10</td><td>One real lane to J7 verified, and one real call makes a quote</td><td><span class="st part">Partial</span></td><td>The real call is done. The real lane is not.</td></tr>
+        <tr><td class="k">H14</td><td>One full real run under 150 s, and the cut order</td><td><span class="st todo">Not started</span></td><td>Needs H3 and H10 first.</td></tr>
+        <tr><td class="k">H16–18</td><td>Failure drills, feature freeze, replay log, backup video</td><td><span class="st todo">Not started</span></td><td>The replay route and the preflight exist.</td></tr>
+        <tr><td class="k">H18–24</td><td>Intuit eval, Devpost, CREAO run link, StepFun section, 3 rehearsals</td><td><span class="st part">Partial</span></td><td>The eval kit is done. A full run with live Jev and Step 5 runs now.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="sec">
+    <h2>Every component</h2>
+    <p class="lede">Grouped by the step of one restock job. The color on the left edge shows the service.</p>
+
+    <div class="stage">
+      <div class="stage-h"><h3>1 · Trigger and plan</h3><span class="when">daily, or when the owner opens screen 0</span></div>
+      <div class="grid">
+        <div class="node creao is-todo"><div class="top"><b>Daily Restock Check agent</b><span class="st todo">Not started</span></div>
+          <p>A scheduled CREAO run that calls <code>POST /planner/check?autostart=true</code>. Needs the tunnel, the token and the Pro Plus plan.</p>
+          <p class="new">New: the route now starts one job per day and order, and recovers after a restart.</p></div>
+        <div class="node code"><div class="top"><b>Restock planner</b><span class="st built">Built</span></div>
+          <p>Damped-trend forecast, order-up-to rule, owner adjustments. No trained ML model, by design: one year of data.</p>
+          <p class="new">New: conformal ranges for launch weeks. Backtest coverage 84% → 92%.</p></div>
+        <div class="node jev"><div class="top"><b>Shopping list + J1</b><span class="st built">Built</span></div>
+          <p>Prefilled from past bills, with the planner's quantities. J1 puts each bill line in a category.</p></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-h"><h3>2 · Find suppliers</h3><span class="when">cached by category + ZIP</span></div>
+      <div class="grid">
+        <div class="node creao"><div class="top"><b>Supplier Discovery agent</b><span class="st part">Partial</span></div>
+          <p>The backend client, polling and parser are done and tested. The CREAO agent is not made. The backend uses the fixture list.</p></div>
+        <div class="node jev"><div class="top"><b>J3 filter</b><span class="st built">Built</span></div>
+          <p>Does it sell the category, show prices without login, and ship to businesses?</p></div>
+        <div class="node code"><div class="top"><b>Pick lanes</b><span class="st built">Built</span></div>
+          <p>Up to 3 adapter lanes and 1 LLM-agent lane.</p></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-h"><h3>3 · Compare suppliers</h3><span class="when">deadline 150 s</span></div>
+      <div class="grid">
+        <div class="node code"><div class="top"><b>Orchestrator</b><span class="st built">Built</span></div>
+          <p>Starts the lanes in parallel, keeps the budgets and the deadline, and re-ranks on every event.</p></div>
+        <div class="node step5"><div class="top"><b>Search specs (Step 5)</b><span class="st live">Live</span></div>
+          <p>Query, must-haves and pack sizes. About 12 s each, because Step 5 reasons first.</p></div>
+        <div class="node bu"><div class="top"><b>Site adapters × 3</b><span class="st part">Partial</span></div>
+          <p>Only <code>example_site</code> on a local test site. No real-site adapter.</p></div>
+        <div class="node bu"><div class="top"><b>LLM-agent lane</b><span class="st built">Built</span></div>
+          <p><code>browser_use.Agent</code> on Step 3.7 Flash. Passed the H3 gate on the test site: search 92 s, cart 93 s, checkout 35 s. 1 item only. Not run on a real site.</p></div>
+        <div class="node jev"><div class="top"><b>J4 rank · J5 match · J7 totals</b><span class="st built">Built</span></div>
+          <p>Code checks subtotal + shipping + tax = total.</p>
+          <p class="new">New: plans with a doubtful J5 match rank lower.</p></div>
+        <div class="node jev"><div class="top"><b>Payment guard (J6)</b><span class="st built">Built</span></div>
+          <p>A DOM card-field check and J6 page state after each page. If unsure, it stops.</p></div>
+        <div class="node photon"><div class="top"><b>Distributor SMS + J8</b><span class="st live">Live</span></div>
+          <p>Real SMS through the Photon service. Step 5 writes it, and J8 reads each reply.</p></div>
+        <div class="node eleven"><div class="top"><b>Voice call</b><span class="st live">Live</span></div>
+          <p>An ElevenLabs agent over the Photon SIP trunk. Call first is the default.</p></div>
+        <div class="node jev"><div class="top"><b>J9 live price + transcript</b><span class="st live">Live</span></div>
+          <p>Acts on call offers when the item matches.</p>
+          <p class="new">New: a live call transcript page through an ElevenLabs webhook tool.</p></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-h"><h3>4 · Optimize and rank</h3><span class="when">on every cart or quote event</span></div>
+      <div class="grid">
+        <div class="node code"><div class="top"><b>Optimizer</b><span class="st built">Built</span></div>
+          <p>Item-to-supplier splits, subset carts and quoted mixes.</p>
+          <p class="new">New: a MILP solver (PuLP) for large searches.</p></div>
+        <div class="node visa"><div class="top"><b>Spending rules</b><span class="st built">Built</span></div>
+          <p>A pass or fail badge on each plan before approval.</p></div>
+        <div class="node step5"><div class="top"><b>Summary + J10 terms</b><span class="st live">Live</span></div>
+          <p>The Step 5 summary works live. J10 flags risky quote terms.</p></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-h"><h3>5 · Approve and hand off</h3><span class="when">owner action</span></div>
+      <div class="grid">
+        <div class="node code"><div class="top"><b>Web app</b><span class="st part">Partial</span></div>
+          <p>7 Next.js screens call the API and stream job events. The type check passes. On hold until the team applies the Paper designs. Then H6.</p></div>
+        <div class="node visa"><div class="top"><b>Simulated card</b><span class="st built">Built</span></div>
+          <p>One per supplier. Merchant-locked. It stays in the backend.</p></div>
+        <div class="node bu"><div class="top"><b>Checkout</b><span class="st part">Partial</span></div>
+          <p>Works on the test site. Needs the real-site adapters and the checkout contact fields.</p></div>
+        <div class="node code"><div class="top"><b>Stop at payment</b><span class="st built">Built</span></div>
+          <p>Code stops the lane. No agent can submit a payment.</p></div>
+        <div class="node code"><div class="top"><b>Automatic approval</b><span class="st todo">Not started</span></div>
+          <p>Optional. Would approve the cheapest verified plan under a limit. The payment stop stays.</p></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-h"><h3>Planner loop, evaluation and operations</h3><span class="when">weekly, and on each owner text</span></div>
+      <div class="grid">
+        <div class="node jev"><div class="top"><b>J11 miss cause</b><span class="st built">Built</span></div>
+          <p>One-time event, lost customer, shortage and more. Code applies the rule for each cause.</p></div>
+        <div class="node jev"><div class="top"><b>J12 owner text</b><span class="st part">Partial</span></div>
+          <p>The parser is built and tested. <code>OWNER_PHONE</code> is empty, so no real owner SMS yet.</p></div>
+        <div class="node code"><div class="top"><b>Intuit eval report</b><span class="st part">Partial</span></div>
+          <p>The last report had keyword rules only. A full run with live Jev and Step 5 runs now.</p></div>
+        <div class="node sentry"><div class="top"><b>Sentry</b><span class="st part">Partial</span></div>
+          <p>The code is in place. Both DSN values are empty.</p></div>
+        <div class="node jev is-todo"><div class="top"><b>J13 bill check</b><span class="st todo">Not started</span></div>
+          <p>Stretch goal: match a new bill with our order.</p></div>
+        <div class="node code"><div class="top"><b>Preflight + replay</b><span class="st built">Built</span></div>
+          <p>Checks each service and switches to a fallback. Replays a past job for the backup demo.</p></div>
       </div>
     </div>
   </section>
 
-  <!-- 2 -->
-  <section class="stage">
-    <div class="rail"><div class="num">2</div><div class="stem"></div></div>
-    <div class="body">
-      <div class="head"><h2>Supplier discovery</h2><span class="when mono">cached by category + ZIP</span></div>
-      <div class="row">
-        <div class="node creao"><div class="top"><b>Supplier Discovery agent</b><span class="st part">Partial</span></div><p>Backend client, polling and parser are done and tested.</p><p class="why">The CREAO agent is not made yet (<code>CREAO_APP_ID</code> is empty). The backend uses the fixture supplier list.</p><div class="tags"><span class="tag creao">CREAO</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node jev"><div class="top"><b>J3 filter</b><span class="st built">Built</span></div><p>Sells the category? Prices without login? Ships to businesses?</p><div class="tags"><span class="tag jev">Jev</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node code"><div class="top"><b>Pick lanes</b><span class="st built">Built</span></div><p>Up to 3 adapter lanes + 1 LLM-agent lane.</p><div class="tags"><span class="tag code">code</span></div></div>
-      </div>
+  <section class="sec">
+    <h2>Major tasks that remain</h2>
+    <p class="lede">The blockers above come first. These tasks follow, in order inside each group.</p>
+    <div class="cols">
+      <div class="panel"><span class="who">Agents team</span><h3>Real lanes</h3><ul>
+        <li>Choose 3 sites and write 3 adapters, with golden tests.</li>
+        <li>Make the agent lane fit the 150 s deadline, and confirm the live view URL.</li>
+        <li>One real lane to J7 verified (H10), then a full real run under 150 s (H14).</li>
+      </ul></div>
+      <div class="panel"><span class="who">Backend</span><h3>Connect the services</h3><ul>
+        <li>Tunnel, <code>PUBLIC_BASE_URL</code>, <code>RESTOCK_TOKEN</code>, CREAO agents.</li>
+        <li>Commit the work in this worktree: the planner fixes, the conformal ranges, and the other session's StepFun and lane changes.</li>
+        <li>Check the live eval results and add them to the Intuit submission.</li>
+        <li>Optional: a text to the owner when quotes are ready.</li>
+      </ul></div>
+      <div class="panel"><span class="who">Frontend</span><h3>Real UI</h3><ul>
+        <li>Apply the Paper designs to screens 0–4 (on hold now).</li>
+        <li>Run the fixture flow on the real UI (H6).</li>
+        <li>Show the live call transcript on the Working screen.</li>
+      </ul></div>
+      <div class="panel"><span class="who">Whole team</span><h3>Submission</h3><ul>
+        <li>Choose the product name.</li>
+        <li>Failure drills, feature freeze, replay log and backup video (H16–18).</li>
+        <li>Devpost, CREAO run link and agent ID, StepFun section, track extras.</li>
+        <li>Rehearse the 3-minute demo 3 times with the preflight.</li>
+      </ul></div>
     </div>
   </section>
 
-  <!-- 3 -->
-  <section class="stage">
-    <div class="rail"><div class="num">3</div><div class="stem"></div></div>
-    <div class="body">
-      <div class="head"><h2>Compare suppliers</h2><span class="when mono">T0 → deadline T0 + 150 s</span></div>
-      <div class="hub"><b>Orchestrator</b><span>Starts the lanes in parallel, keeps budgets and the deadline, re-ranks on every event.</span><span class="st built" style="--sbg: transparent">Built</span></div>
-      <div class="lanes">
-        <div class="lane">
-          <h3>Specs</h3><p class="sub">one per item, in parallel</p>
-          <div class="node step5"><div class="top"><b>Write search spec</b><span class="st live">Live</span></div><p>Query, must-haves, pack sizes. About 12 s, because Step 5 reasons first.</p><div class="tags"><span class="tag step5">Step 5</span></div></div>
-        </div>
-        <div class="lane">
-          <h3>Supplier lanes × 4</h3><p class="sub">one browser session per supplier</p>
-          <div class="node bu"><div class="top"><b>Site adapters × 3</b><span class="st part">Partial</span></div><p>Only <code>example_site</code>, on a local test site.</p><p class="why">The team has not chosen the 3 real sites (H0 preflight). No real-site adapter yet.</p><div class="tags"><span class="tag bu">Playwright</span></div></div>
-          <div class="node bu"><div class="top"><b>LLM-agent lane</b><span class="st built">Built</span></div><p><code>browser_use.Agent</code> on Step 3.7 Flash. H3 gate passed on the test site: search 92 s, cart 93 s, checkout 35 s.</p><p class="why">Searches 1 item (largest past spend) to fit the deadline. Step 5 failed the gate (about 100 s a step). Not yet run on a real site.</p><div class="tags"><span class="tag bu">Browser Use</span><span class="tag step5">Step 3.7 Flash</span></div></div>
-          <div class="down">↓</div>
-          <div class="node jev"><div class="top"><b>J4 rank · J5 match · J7 totals</b><span class="st built">Built</span></div><p>Code checks subtotal + shipping + tax = total.</p><div class="tags"><span class="tag jev">Jev</span><span class="tag code">code</span></div></div>
-          <div class="node stopnode"><div class="top"><b>Payment guard</b><span class="st built">Built</span></div><p>DOM card-field check + J6 page state after every page. Unsure → stop.</p><div class="tags"><span class="tag jev">J6</span></div></div>
-        </div>
-        <div class="lane">
-          <h3>Distributor</h3><p class="sub">one thread: text → call → text</p>
-          <div class="node photon"><div class="top"><b>SMS request + J8</b><span class="st live">Live</span></div><p>Real SMS over the Photon 2.0 service. Step 5 writes it. J8 reads each reply.</p><div class="tags"><span class="tag photon">Photon</span><span class="tag jev">J8</span></div></div>
-          <div class="down">↓</div>
-          <div class="node eleven"><div class="top"><b>Voice call</b><span class="st live">Live</span></div><p>ElevenLabs agent over the Photon SIP trunk. A relay-test call ran.</p><div class="tags"><span class="tag eleven">ElevenLabs</span><span class="tag photon">SIP</span></div></div>
-          <div class="down">↓ each transcript line</div>
-          <div class="node jev"><div class="top"><b>J9 live price + recap</b><span class="st live">Live</span></div><p>Acts on <code>offer_for</code>. A regression test uses the real call answers.</p><div class="tags"><span class="tag jev">Jev</span></div></div>
-        </div>
-      </div>
-    </div>
+  <section class="sec">
+    <h2>Changes since the last status page</h2>
+    <p class="lede">Since version 1 of this page, at commit <code>fd01f7f</code> (15:20).</p>
+    <ul class="changes">
+      <li>MILP solver (PuLP) for large optimizer searches, and a ranking penalty for doubtful J5 matches.</li>
+      <li>A live call transcript through an ElevenLabs webhook tool.</li>
+      <li>The daily planner check now starts one job per day and order. A job that a restart stopped no longer blocks its key.</li>
+      <li>The planner check and the draft list now use the same "due" rule.</li>
+      <li>Conformal ranges for a product's first 6 forecast weeks. Plain backtest coverage went from 84% to 92%, with the target at 90%.</li>
+      <li>Step 5 runs live through StepFun directly. Search specs, SMS drafts and the summary use it.</li>
+      <li>The LLM-agent lane passed the H3 gate on the test site with Step 3.7 Flash.</li>
+    </ul>
   </section>
 
-  <!-- 4 -->
-  <section class="stage">
-    <div class="rail"><div class="num">4</div><div class="stem"></div></div>
-    <div class="body">
-      <div class="head"><h2>Optimize and rank</h2><span class="when mono">on every cart or quote event</span></div>
-      <div class="row">
-        <div class="node code"><div class="top"><b>Optimizer</b><span class="st built">Built</span></div><p>All item-to-supplier splits. Subset carts for the top plans, quoted mixes too.</p><div class="tags"><span class="tag code">code</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node visa"><div class="top"><b>Spending rules</b><span class="st built">Built</span></div><p>Pass or fail badge on each plan before approval.</p><div class="tags"><span class="tag visa">Visa rules</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node step5"><div class="top"><b>Summary + J10 terms</b><span class="st live">Live</span></div><p>The Step 5 summary works live. J10 flags risky quote terms.</p><div class="tags"><span class="tag step5">Step 5</span><span class="tag jev">J10</span></div></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 5 -->
-  <section class="stage">
-    <div class="rail"><div class="num">5</div><div class="stem"></div></div>
-    <div class="body">
-      <div class="head"><h2>Approve and hand off</h2><span class="when mono">owner action</span></div>
-      <div class="row">
-        <div class="node code"><div class="top"><b>Web app</b><span class="st part">Partial</span></div><p>Next.js screens exist: list, job, results, checkout, planner, admin. Live job events are connected.</p><p class="why">Plain skeleton. The Paper designs are not applied. Two events (<code>call_scope</code>, <code>lane_fallback</code>) have no handler.</p><div class="tags"><span class="tag code">UI</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node visa"><div class="top"><b>Simulated card</b><span class="st built">Built</span></div><p>One per supplier. Merchant-locked. Stays in the backend.</p><div class="tags"><span class="tag visa">Visa</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node bu"><div class="top"><b>Checkout</b><span class="st part">Partial</span></div><p>Works on the test site.</p><p class="why">Needs the real-site adapters and the full team contact (name, email, phone, address).</p><div class="tags"><span class="tag bu">Browser Use</span></div></div>
-        <div class="arrow">→</div>
-        <div class="node stopnode"><div class="top"><b>Stop at payment</b><span class="st built">Built</span></div><p>Code stops the lane. The owner sees the live view.</p><div class="tags"><span class="tag code">code</span></div></div>
-      </div>
-    </div>
-  </section>
-
-  <div class="panel">
-    <h2>Planner feedback loop</h2>
-    <p class="lede">Weekly, and on every owner text. This decision log is the Intuit evaluation data.</p>
-    <div class="loop">
-      <div class="node code"><div class="top"><b>Forecast miss</b><span class="st built">Built</span></div><p>Code compares sales with the forecast and lists the facts.</p></div>
-      <div class="node jev"><div class="top"><b>J11 cause</b><span class="st built">Built</span></div><p>One-time event, lost customer, shortage, and more.</p><div class="tags"><span class="tag jev">Jev</span></div></div>
-      <div class="node jev"><div class="top"><b>J12 owner text</b><span class="st part">Partial</span></div><p>Parser is built and tested.</p><p class="why"><code>OWNER_PHONE</code> is empty, so no real owner SMS yet.</p><div class="tags"><span class="tag jev">Jev</span><span class="tag photon">Photon</span></div></div>
-      <div class="node code is-todo"><div class="top"><b>J13 bill check</b><span class="st todo">Not started</span></div><p>Stretch goal: match a new bill with our order.</p></div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h2>Next steps, in order</h2>
-    <ol class="next">
-      <li><b>Choose the 3 real sites and copy <code>example_site.py</code> for each.</b> Then run the agent lane on one real site. <span class="who">agents team</span></li>
-      <li><b>Make the two CREAO agents.</b> Set <code>CREAO_APP_ID</code> and a tunnel for <code>PUBLIC_BASE_URL</code>. <span class="who">CREAO owner</span></li>
-      <li><b>Fill <code>OWNER_PHONE</code> and the checkout contact fields.</b> <span class="who">backend</span></li>
-      <li><b>Set <code>BROWSER_USE_API_KEY</code> for the demo.</b> The cloud browser gives the owner a live view. <span class="who">backend</span></li>
-      <li><b>Apply the Paper designs, then run H6</b> (fixture flow on the real UI). On hold for now. <span class="who">frontend</span></li>
-    </ol>
-  </div>
+  <p class="foot">Sources: git history, <code>.env</code> key names (values not read), <code>uv run pytest</code>, <code>npm test</code> in <code>services/photon</code>, <code>tsc --noEmit</code> in <code>web</code>, and spec §11–12. "Live" means that a person ran it with real services. The counts include 29 components. The Sentry, automatic approval, eval report and preflight cards are new in this version.</p>
 </div>
+
 </body>
 </html>
