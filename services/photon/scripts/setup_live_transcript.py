@@ -8,7 +8,8 @@ reply. The service forwards both lines to the backend as `transcript_line` with 
 What this script does (safe to run again, for example when the tunnel URL changes):
 1. Makes ELEVENLABS_TOOL_SECRET in .env if it is missing, and saves PHOTON_PUBLIC_URL.
 2. Creates the `log_live_turn` workspace tool, or updates its URL and secret.
-3. Adds the tool to the agent, and adds the "# Live log" rules to the end of its prompt once.
+3. Adds the tool to the agent, adds the "# Live log" rules to the end of its prompt once, and sets
+   the turn-taking that stops repeated lines (TURN below).
 
 Reads the repo-root .env and never prints secrets. Run from the repo root:
     python3 services/photon/scripts/setup_live_transcript.py https://<photon-tunnel-host>
@@ -36,6 +37,15 @@ PROMPT_RULES = f"""
   - `supplier_said`: what the person just said, copied word for word. Do not shorten, correct or summarize it.
   - `agent_reply`: the exact words that you will say now.
 - Never mention the tool or the log aloud."""
+# Turn-taking that keeps the agent from saying a line twice (real call, Oct 17): a speculative turn
+# can start a second reply (and a second tool call) for one supplier turn; a fragment such as "Uh-"
+# ended the supplier's turn early; a backchannel such as "Yeah." cut the agent off mid-line.
+TURN = {
+    "speculative_turn": False,
+    "turn_eagerness": "patient",
+    "interruption_ignore_terms": ["yeah", "yes", "yep", "okay", "ok", "uh huh", "mhm", "mm-hmm",
+                                  "right", "sure", "uh", "um", "got it"],
+}
 
 
 def read_env() -> dict[str, str]:
@@ -141,11 +151,15 @@ def main() -> None:
     # Thinking makes each turn (and so each tool call) slower; this agent needs no reasoning.
     call("PATCH", f"{api}/v1/convai/agents/{agent_id}", key,
          {"conversation_config": {"agent": {"prompt": {"prompt": text, "tool_ids": tool_ids,
-                                                       "thinking_budget": 0}}}})
+                                                       "thinking_budget": 0}},
+                                  "turn": TURN}})
 
-    after = call("GET", f"{api}/v1/convai/agents/{agent_id}", key)["conversation_config"]["agent"]["prompt"]
+    config = call("GET", f"{api}/v1/convai/agents/{agent_id}", key)["conversation_config"]
+    after, turn = config["agent"]["prompt"], config.get("turn", {})
     ok = tool_id in (after.get("tool_ids") or []) and after["prompt"].endswith(PROMPT_RULES.strip())
+    turn_ok = all(turn.get(k) == v for k, v in TURN.items())
     print(f"Agent {agent_id}: tool attached and live-log rules current: {'yes' if ok else 'NO, check the dashboard'}. "
+          f"Turn-taking current: {'yes' if turn_ok else 'NO, check the dashboard'}. "
           f"LLM {after.get('llm')}, thinking budget {after.get('thinking_budget')}.")
 
 
