@@ -1003,3 +1003,26 @@ async def planner_survives_restart(ctx: Ctx) -> None:
     sup = lambda v: {(s["itemId"], s.get("recommendedQty")) for s in v.get("supplies", [])}  # noqa: E731
     if sup(before) != sup(after):
         ctx.fail(f"supply recommendations changed across a restart: {sup(before) ^ sup(after)}")
+
+
+@scenario("nothing_to_buy", "job", profile=("default", "sms_first"))
+async def nothing_to_buy(ctx: Ctx) -> None:
+    """Only a blocked supplier and no past prices: no plan, no call anchor. A clear reason, no crash."""
+    body = await draft(ctx)
+    body["suppliers"] = [s for s in body["suppliers"] if s["id"] == "charlie"] or body["suppliers"][:1]
+    for it in body["items"]:
+        it["pastUnitPrice"] = None
+    jid = (await create(ctx, body)).json()["jobId"]
+    view = await wait_state(ctx, jid, {"results_ready", "failed"})
+    if view["state"] != "results_ready":
+        ctx.fail(f"{jid}: {view['state']}")
+        return
+    res = view["results"]
+    if res.get("recommendedPlanId") or not res.get("noRecommendationReason"):
+        ctx.fail(f"{jid}: expected no recommendation with a reason, got {res.get('recommendedPlanId')}")
+    evs = await events(ctx, jid)
+    types = [e["type"] for e in evs]
+    if body.get("distributor") and "call_skipped" not in types and "call_started" in types:
+        ctx.fail(f"{jid}: the call started with nothing to anchor it")
+    await full_check(ctx, jid)
+    await approve(ctx, jid, {"action": "reject"}, expect=200)
