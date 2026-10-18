@@ -19,20 +19,25 @@ Checkout is one page with the payment fields on it, so the guard stops on that p
 
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, quote_plus, urlparse
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 
 from app.config import CheckoutContact
 from app.contracts import CartLine, SupplierRef
 from app.lanes.live.adapter_base import (
+    US_STATES,
     AdapterStepError,
     CartRow,
     PlaywrightAdapterLane,
     ProductPage,
     ResultCard,
+    _refuse_card_field,
+    pair_labels,
 )
 from app.lanes.live.config import LiveLaneSettings
 
@@ -55,6 +60,14 @@ RESULTS_JS = """() => {
   return [...seen.values()].filter(r => r.title.length > 3).slice(0, 12);
 }"""
 JSON_JS = "url => fetch(url, {headers: {Accept: 'application/json'}}).then(r => r.ok ? r.json() : null)"
+# Shopify's PCI card iframes (number, expiry, CVV) on the checkout page (seen 2026-10-17).
+CARD_IFRAME = "iframe[src*='checkout.pci.shopifyinc.com'], iframe[name^='card-fields']"
+# The order summary is an accessible table: Subtotal, Shipping, Taxes, Total rows (seen 2026-10-18).
+SUMMARY_JS = """() => {
+  const tables = [...document.querySelectorAll('[role=table]')]
+    .filter(el => el.checkVisibility() && el.innerText.includes('Subtotal') && el.innerText.includes('Total'));
+  return tables.length ? tables[tables.length - 1].innerText : '';
+}"""
 POST_JS = """([url, body]) => fetch(url, {method: 'POST', body: JSON.stringify(body),
   headers: {'Content-Type': 'application/json', Accept: 'application/json'}}).then(r => r.status)"""
 TAGS = re.compile(r"<[^>]+>")
@@ -212,11 +225,58 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
 
     # ---- checkout ----------------------------------------------------------------
 
+    def checkout_url(self) -> str:
+        return f"{self._base()}/checkout"  # Shopify opens checkout for the current cart
+
     async def checkout_entry(self, page: Page) -> None:
         await self.click(page, "[name=checkout]", wait_nav=True)
 
+    async def settle(self, page: Page, timeout_ms: int = 8000) -> None:
+        # The checkout keeps a connection open, so it never reaches network idle: the base wait
+        # always took the full 8 s. The card iframes are what the guard must see; wait for them.
+        # If they do not come, the guard does not stop and the lane fails safe at fill_contact().
+        with contextlib.suppress(PlaywrightError):
+            await page.wait_for_selector(CARD_IFRAME, state="attached", timeout=timeout_ms)
+
     async def fill_contact(self, page: Page, contact: CheckoutContact) -> list[str]:
         raise AdapterStepError("one-page checkout: the guard stops on the first checkout page")
+
+    async def fill_contact_on_payment_page(self, page: Page, contact: CheckoutContact) -> None:
+        """Type the team contact into the shipping fields of the one-page checkout so the order
+        summary adds shipping and tax. The guard already stopped this page (card fields), so the
+        rules are narrower than fill(): only fields whose autocomplete says shipping or email,
+        the card-field refusal still runs, and nothing is clicked or submitted."""
+        first, _, last = contact.name.partition(" ")
+        values = {"email": contact.email, "firstName": first, "lastName": last or first,
+                  "address1": contact.address1, "city": contact.city, "postalCode": contact.zip}
+        for name, value in values.items():
+            loc = page.locator(f"input[name={name}]").first
+            if await loc.count() == 0:
+                raise AdapterStepError(f"no checkout field {name}")
+            autocomplete = (await loc.get_attribute("autocomplete") or "").lower()
+            if "shipping" not in autocomplete and "email" not in autocomplete:
+                raise AdapterStepError(f"refused: {name} is not a shipping field ({autocomplete!r})")
+            await _refuse_card_field(loc)
+            await loc.fill(value)
+        zone = page.locator("select[name=zone]")
+        if await zone.count():  # selecting an option is not a click on the page
+            await zone.first.select_option(label=US_STATES.get(contact.state.upper(), contact.state))
+        # Shipping rates and tax arrive a few seconds after the address.
+        for _ in range(20):
+            await page.wait_for_timeout(500)
+            text = await self.checkout_summary(page)
+            # A Shipping row with its own amount. While rates load the row is empty and its label
+            # joins the next one ("Shipping Total USD $119.02"), which must not count.
+            if re.search(r"^Shipping(?!.*Total)[^\n]*\$\d", text, re.M):
+                return
+        raise AdapterStepError("shipping did not appear in the checkout summary")
+
+    async def checkout_summary(self, page: Page) -> str:
+        text = await page.evaluate(SUMMARY_JS)
+        if "Subtotal" not in text:
+            return ""
+        # Drop the table's header cells ("Item", "Value") so they do not join the Subtotal line.
+        return pair_labels(text[text.index("Subtotal"):])
 
     async def next_checkout_step(self, page: Page) -> bool:
         return False

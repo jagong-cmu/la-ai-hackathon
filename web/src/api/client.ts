@@ -22,6 +22,7 @@ export type PlannerCheck = Schemas["PlannerCheck"];
 export type PreflightReport = Schemas["PreflightReport"];
 export type JobCreated = Schemas["JobCreated"];
 export type ModeChange = Schemas["ModeChange"];
+export type SpendingRules = Schemas["SpendingRules"];
 
 /** One SSE event (docs/DATA_FLOW.md §8). Not in OpenAPI because it is streamed. */
 export interface JobEvent {
@@ -124,11 +125,32 @@ export const api = {
   /** POST /jobs. A new Idempotency-Key per call unless one is passed (pass the same key to retry safely). */
   createJob: (req: ShoppingRequest, idempotencyKey: string = crypto.randomUUID()) =>
     request<JobCreated>("POST", "/jobs", { body: req, headers: { "Idempotency-Key": idempotencyKey } }),
+  jobs: (limit = 50) => request<JobView[]>("GET", "/jobs", { query: { limit } }),
+  rules: () => request<SpendingRules>("GET", "/rules"),
+  /** Plain-text evidence (fixture screenshots, call transcripts) served by the backend. */
+  evidenceText: async (path: string) => {
+    const res = await fetch(apiUrl(path)!, { cache: "no-store" });
+    if (!res.ok) throw new ApiError(res.status, res.statusText);
+    return res.text();
+  },
+  /** The events so far, without following the stream (SSE frames parsed here). */
+  eventsOnce: async (jobId: string): Promise<JobEvent[]> => {
+    const res = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(jobId)}/events?follow=false`, { cache: "no-store" });
+    if (!res.ok) throw new ApiError(res.status, res.statusText);
+    const out: JobEvent[] = [];
+    for (const frame of (await res.text()).split("\n\n")) {
+      const data = frame.split("\n").filter((l) => l.startsWith("data: ")).map((l) => l.slice(6)).join("\n");
+      if (data) out.push(JSON.parse(data) as JobEvent);
+    }
+    return out;
+  },
   job: (jobId: string) => request<JobView>("GET", `/jobs/${encodeURIComponent(jobId)}`),
   approve: (jobId: string, decision: ApprovalDecision) =>
     request<JobView>("POST", `/jobs/${encodeURIComponent(jobId)}/approve`, { body: decision }),
   eventsUrl: (jobId: string) => `${API_BASE_URL}/jobs/${encodeURIComponent(jobId)}/events`,
 
+  health: () => request<{ ok: boolean; runMode: string; modes: Record<string, string> }>("GET", "/health"),
+  decisions: (token: string) => request<Record<string, unknown>[]>("GET", "/admin/decisions", { headers: admin(token) }),
   preflight: (apply = false) => request<PreflightReport>("GET", "/health/preflight", { query: { apply } }),
   getModes: (token: string) => request<Record<string, string>>("GET", "/admin/mode", { headers: admin(token) }),
   setMode: (token: string, change: ModeChange) =>
