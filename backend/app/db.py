@@ -120,6 +120,14 @@ class Database:
             ).fetchone()
         return JobView.model_validate_json(row["snapshot"]) if row else None
 
+    def list_jobs(self, limit: int = 50) -> list[JobView]:
+        """The newest jobs first, for the Orders screen."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT snapshot FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [JobView.model_validate_json(r["snapshot"]) for r in rows]
+
     # ------------------------------------------------------------ events
 
     def append_event(self, job_id: str, type_: str, ts: str, lane_id: str | None, data: dict) -> int:
