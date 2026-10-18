@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -54,6 +54,18 @@ class SupplierRef(Model):
     url: str
     adapter: str | None = None  # None = unknown site, the lane uses the LLM agent
     origin: Literal["creao", "cache", "manual", "fixture"] = "manual"
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _web_url(cls, value: Any) -> Any:
+        # A live lane opens this URL, and POST /jobs is public: only http(s). CREAO may omit the scheme.
+        if isinstance(value, str):
+            value = value.strip()
+            if "://" not in value and not value.lower().startswith(("javascript:", "data:", "file:")):
+                value = "https://" + value
+            if not re.match(r"https?://[^/\s]+", value, re.I):
+                raise ValueError("url must be an http or https address")
+        return value
 
 
 class DistributorRef(Model):
@@ -179,9 +191,9 @@ class Product(Model):
     jev: JevListing | None = None
 
 
-def evidence_segment(value: str) -> str:
-    """A safe folder name for an id from a request (supplier, distributor): no "/", no "..".
-    The evidence files and their /evidence/... URLs both use it."""
+def path_segment(value: str) -> str:
+    """A safe file or folder name for an id from a request (supplier, distributor, item): no "/",
+    no "..". Evidence files, their /evidence/... URLs and fixture paths use it."""
     return re.sub(r"[^A-Za-z0-9._-]", "_", value).lstrip(".") or "_"
 
 

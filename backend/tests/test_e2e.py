@@ -460,10 +460,10 @@ def test_negative_past_price_or_cadence_is_refused(client):
 def test_evidence_stays_in_the_evidence_folder(settings):
     """Soak S-012: the request's distributor and supplier ids are path parts of the evidence files.
     distributor.id='../../../escaped' wrote escaped/call.txt outside var/evidence (POST /jobs is public)."""
-    from app.contracts import evidence_segment
+    from app.contracts import path_segment
 
-    assert evidence_segment("../../x") not in ("..", "") and "/" not in evidence_segment("../../x")
-    assert evidence_segment("vend-syn-larkmoor") == "vend-syn-larkmoor"  # normal ids keep their name
+    assert path_segment("../../x") not in ("..", "") and "/" not in path_segment("../../x")
+    assert path_segment("vend-syn-larkmoor") == "vend-syn-larkmoor"  # normal ids keep their name
     root = settings.var_dir.parent
     with TestClient(create_app(settings)) as c:
         d = c.get("/shopping-list/draft").json()
@@ -490,3 +490,36 @@ def test_lane_evidence_names_stay_in_the_lane_folder(settings, decider, tmp_path
     path, url = ctx.evidence("listing_../../../../escaped.json")
     assert ctx.evidence_dir.resolve() in path.resolve().parents
     assert ".." not in url.split("/")
+
+
+def test_supplier_url_must_be_web(client):
+    """Soak S-013 (security): POST /jobs is public, and a live lane opens supplier.url. file:// or
+    javascript: URLs were accepted. A URL with no scheme (CREAO gives www.example.com) gets https://."""
+    from app.contracts import SupplierRef
+
+    assert SupplierRef(id="k", name="K", url="www.katom.com").url == "https://www.katom.com"
+    draft = client.get("/shopping-list/draft").json()
+    for url in ("file:///etc/passwd", "javascript:alert(1)", "chrome://settings", "ftp://x.example/"):
+        body = json.loads(json.dumps(draft))
+        body["suppliers"][0]["url"] = url
+        r = client.post("/jobs", json=body, headers={"Idempotency-Key": f"test-url-{abs(hash(url))}"})
+        assert r.status_code == 422, url
+
+
+def test_fixture_lane_path_ignores_traversal():
+    from app.lanes.fixture import FIXTURES_DIR, fixture_path
+
+    assert (FIXTURES_DIR / "suppliers") in fixture_path("../discovery").parents
+    assert not fixture_path("../discovery").exists()
+
+
+def test_discovery_skips_a_candidate_with_a_bad_url():
+    from app.contracts import DiscoveryResult, SupplierCandidate
+    from app.discovery import selected_suppliers
+
+    found = DiscoveryResult(category="c", zip_code="1", distributor=None, source="creao", candidates=[
+        SupplierCandidate(id="ok", name="OK", url="www.ok.example", selected=True),
+        SupplierCandidate(id="bad", name="Bad", url="javascript:alert(1)", selected=True),
+        SupplierCandidate(id="none", name="None", url="", selected=True),
+    ])
+    assert [(s.id, s.url) for s in selected_suppliers(found)] == [("ok", "https://www.ok.example")]

@@ -30,7 +30,7 @@ from app.contracts import (
     SupplierOffers,
     SupplierRef,
     VerifiedCart,
-    evidence_segment,
+    path_segment,
 )
 from app.decide import Decider
 from app.guard import check_page
@@ -78,7 +78,7 @@ class LaneContext:
 
     def evidence(self, name: str) -> tuple[Path, str]:
         # Ids in the request (supplier, item) are part of these paths, so keep each part inside.
-        sid, name = evidence_segment(self.supplier.id), evidence_segment(name)
+        sid, name = path_segment(self.supplier.id), path_segment(name)
         folder = self.evidence_dir / self.job_id / sid
         folder.mkdir(parents=True, exist_ok=True)
         return folder / name, f"/evidence/{self.job_id}/{sid}/{name}"

@@ -30,18 +30,22 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from datetime import datetime
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from app.config import FIXTURES_DIR, RuntimeModes, Settings
 from app.contracts import DiscoveryResult, DistributorRef, SupplierCandidate, SupplierRef, utcnow
 from app.db import Database, stable_hash
 from app.decide import Decider
 from app.judgments import j3_supplier
+
+log = logging.getLogger(__name__)
 
 MAX_ADAPTER_LANES = 3
 MAX_AGENT_LANES = 1
@@ -398,7 +402,13 @@ def selected_suppliers(result: DiscoveryResult) -> list[SupplierRef]:
             return "fixture" if c.adapter == "fixture" else "manual"
         return {"creao": "creao", "fixture": "fixture"}.get(result.source, "cache")
 
-    return [
-        SupplierRef(id=c.id, name=c.name, url=c.url, adapter=c.adapter, origin=origin(c))  # type: ignore[arg-type]
-        for c in result.candidates if c.selected
-    ]
+    refs = []
+    for c in result.candidates:
+        if not c.selected:
+            continue
+        try:
+            refs.append(SupplierRef(id=c.id, name=c.name, url=c.url, adapter=c.adapter,
+                                    origin=origin(c)))  # type: ignore[arg-type]
+        except ValidationError:
+            log.warning("discovery: skipped %s, its url is not a web address: %r", c.id, c.url)
+    return refs
