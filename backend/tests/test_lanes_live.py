@@ -150,7 +150,7 @@ async def test_agent_lane_judges_pages_the_agent_skipped(settings, decider, tmp_
 def test_live_setup_never_breaks_import():
     from app.lanes import live_setup
 
-    assert set(live_setup.LIVE_LANES) == {"example_site", "webstaurant", "wees_express", "llm_agent"}
+    assert set(live_setup.LIVE_LANES) == {"example_site", "webstaurant", "wees_express", "llm_agent", "hosted_agent"}
 
 
 # ---------------------------------------------------------------- end to end: example adapter
