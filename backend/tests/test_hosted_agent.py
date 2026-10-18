@@ -419,3 +419,25 @@ async def test_a_failed_search_runs_once_more_with_high_reasoning(settings, deci
     assert fake.bodies[1]["modelParams"]["reasoning"]["effort"] == "low"
     assert fake.bodies[2]["modelParams"]["reasoning"]["effort"] == "high"
     assert any(kind == "hosted_retry" for kind, _ in events)
+
+
+async def test_j5_sees_the_stock_state_that_the_agent_read(settings, decider, tmp_path, monkeypatch):
+    from app.lanes.live import hosted_agent
+
+    seen: list[str] = []
+    real = hosted_agent.j5_listing
+
+    async def spy(d, spec, title, text, job_id=None):
+        seen.append(text)
+        return await real(d, spec, title, text, job_id=job_id)
+
+    monkeypatch.setattr(hosted_agent, "j5_listing", spy)
+    fake = FakeBrowserUse([OPEN, {"listings": [
+        {"item_id": "gloves", "title": "Nitrile gloves, large, 100 per box", "sku": "G-100",
+         "product_url": "https://www.acme-supply.com/p/g-100", "pack_price_cents": 1250, "in_stock": True,
+         "listing_text": "Box of 100 gloves.", "match_status": "exact"}], "final_page": CART_PAGE}])
+    lane = make_lane(fake)
+    ctx, _ = make_ctx(settings, decider, tmp_path)
+    await lane.open(ctx)
+    await lane.search(ctx, ITEMS)
+    assert seen and "Availability on the page: in stock" in seen[0]
