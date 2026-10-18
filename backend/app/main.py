@@ -116,6 +116,7 @@ class AppState:
             item.quantity = plan[item.id].recommended_qty
         if due:
             request.items = due
+        self._prewarm(request)
         return request
 
     def warm_up(self) -> None:
@@ -131,11 +132,30 @@ class AppState:
         except Exception as exc:  # a failed warm-up only means the first request builds it
             capture(exc)
 
+    def _prewarm(self, request: ShoppingRequest) -> None:
+        """Start the adapter lanes' browsers while the owner reviews the list (live browsers only)."""
+        if self.modes.get("browser") != "live":
+            return
+        from app.lanes.registry import registered
+
+        adapters = set(registered()["adapters"])  # type: ignore[arg-type]
+        suppliers = [s for s in request.suppliers if s.adapter in adapters]
+        if not suppliers:
+            return
+        with contextlib.suppress(ImportError):  # the browser extra is optional
+            from app.lanes.live.warm import prewarm
+
+            asyncio.get_running_loop().create_task(prewarm(suppliers))
+
     async def aclose(self) -> None:
         if self._warm is not None and not self._warm.done():
             self._warm.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._warm
+        with contextlib.suppress(ImportError):
+            from app.lanes.live.warm import close_all
+
+            await close_all()
         await self.orchestrator.shutdown()
         await self.jev.aclose()
         await self.llm.aclose()

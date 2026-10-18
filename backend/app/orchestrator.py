@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
-from app.config import RuntimeModes, Settings
+from app.config import CheckoutContact, RuntimeModes, Settings
 from app.contracts import (
     ApprovalDecision,
     CartLine,
@@ -27,6 +27,7 @@ from app.contracts import (
     LaneState,
     LaneStatus,
     Plan,
+    PlanCart,
     SearchSpec,
     ShoppingItem,
     ShoppingRequest,
@@ -56,7 +57,7 @@ T = TypeVar("T")
 # Sentry span status for each result, so a failed step shows as an error in Sentry and not only as a slow span.
 OFFERS_STATUS = {"ok": "ok", "partial": "ok", "not_found": "not_found", "blocked": "permission_denied",
                  "failed": "internal_error"}
-CART_STATUS = {"verified": "ok", "quoted": "ok", "price_changed": "ok", "out_of_stock": "not_found",
+CART_STATUS = {"verified": "ok", "estimated": "ok", "quoted": "ok", "price_changed": "ok", "out_of_stock": "not_found",
                "blocked": "permission_denied", "failed": "internal_error"}
 LANE_STATUS = {LaneState.cart_ready: "ok", LaneState.at_payment: "ok", LaneState.idle: "not_found",
                LaneState.blocked: "permission_denied", LaneState.failed: "internal_error"}
@@ -83,6 +84,11 @@ class LaneRuntime:
     lane: SupplierLane | None = None
     ctx: LaneContext | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Set by the verify phase: the lane went through checkout to payment for this cart and read
+    # the real total there; approval reuses that payment page instead of redoing checkout.
+    quote_key: str | None = None
+    quote_handoff: CheckoutHandoff | None = None
+    cart_key: str | None = None  # the cart the lane's browser holds now
 
     @property
     def is_agent(self) -> bool:
@@ -373,6 +379,10 @@ class Orchestrator:
         return ranked[: self.settings.agent_lane_max_items]
 
     def _budget(self, lr: LaneRuntime, base: float) -> float:
+        # A lane can set its own factor: a hosted agent run takes minutes, not seconds.
+        own = getattr(lr.lane, "budget_factor", None)
+        if isinstance(own, (int, float)) and own > 0:
+            return base * own
         return base * (self.settings.lane_agent_budget_factor if lr.is_agent else 1.0)
 
     async def _timed(self, fn: Callable[[], Awaitable[T]], budget: float, retries: int = 1) -> T:
@@ -436,6 +446,7 @@ class Orchestrator:
                                              self._budget(lr, self.settings.lane_cart_budget_s))
                     outcome(s, CART_STATUS[cart.verification_status], **cart_data(cart))
                 rt.carts[cart.cart_key] = cart
+                lr.cart_key = cart.cart_key
                 await self.bus.emit(rt.job_id, "supplier_cart_ready", {
                     "cartKey": cart.cart_key, "total": cart.costs.total if cart.costs else None,
                     "totalsCheck": cart.totals_check, "status": cart.verification_status,
@@ -460,9 +471,67 @@ class Orchestrator:
         slow = [t for lr, t in lane_tasks if lr.is_agent]
         await asyncio.gather(*fast, return_exceptions=True)
         await self._subset_phase(rt)
+        await self._verify_phase(rt)
         if slow:
             await asyncio.gather(*slow, return_exceptions=True)
             await self._subset_phase(rt)
+            await self._verify_phase(rt)
+
+    async def _verify_phase(self, rt: JobRuntime, rounds: int = 2) -> None:
+        """Check the best plan's web carts against the real checkout total: each lane sets the
+        cart, goes through guest checkout to the payment page, reads the order summary there
+        (subtotal, shipping, tax, total) and stops. A verified total can change the ranking, so a
+        new best plan gets one more round. Lanes that cannot quote keep their cart estimates."""
+        contact = self.settings.checkout_contact
+        if "NOT SET" in contact.address1:
+            return  # never send placeholder data to a real store
+        tried: set[str] = set()
+        for _ in range(rounds):
+            best = self._best_web_plan(rt)
+            if best is None:
+                return
+            todo = [c for c in best.carts if c.status != "verified" and c.cart_key not in tried
+                    and (lr := rt.lanes.get(c.supplier_id)) is not None and hasattr(lr.lane, "quote")
+                    and getattr(lr.lane, "quote_at_checkout", True)
+                    and lr.ctx is not None and lr.status.state is LaneState.cart_ready]
+            if not todo:
+                return
+            tried.update(c.cart_key for c in todo)
+            await asyncio.gather(*(forked(self._quote_cart(rt, c, contact)) for c in todo))
+            await self._replan(rt, "verify")
+
+    async def _quote_cart(self, rt: JobRuntime, plan_cart: PlanCart, contact: CheckoutContact) -> None:
+        sid = plan_cart.supplier_id
+        lr = rt.lanes[sid]
+        lane, ctx = lr.lane, lr.ctx
+        assert lane is not None and ctx is not None
+        try:
+            async with lr.lock:
+                await self._lane_state(rt, lr, LaneState.checkout, "verifying_total")
+                with span("lane.quote", f"checkout quote {sid}", supplier=sid) as s:
+                    if lr.cart_key != plan_cart.cart_key:  # the browser holds another cart: set this one
+                        await self._timed(lambda: lane.set_cart(ctx, plan_cart.lines),
+                                          self._budget(lr, self.settings.lane_subset_budget_s), retries=0)
+                        lr.cart_key = plan_cart.cart_key
+                    cart, handoff = await self._timed(lambda: lane.quote(ctx, contact, plan_cart.lines),
+                                                      self._budget(lr, self.settings.lane_cart_budget_s), retries=0)
+                    outcome(s, CART_STATUS[cart.verification_status] if cart else "not_found",
+                            **(cart_data(cart) if cart else {}))
+                if cart is not None:
+                    rt.carts[cart.cart_key] = cart
+                    await self.bus.emit(rt.job_id, "cart_verified", {
+                        "cartKey": cart.cart_key, "total": cart.costs.total if cart.costs else None,
+                        "shipping": cart.costs.shipping if cart.costs else None,
+                        "tax": cart.costs.tax if cart.costs else None, "status": cart.verification_status,
+                        "screenshotUrl": cart.screenshot_url}, lr.status.lane_id)
+                if handoff.status == "at_payment" and cart is not None:
+                    lr.quote_key, lr.quote_handoff = cart.cart_key, handoff
+                await self._lane_state(rt, lr, LaneState.cart_ready)
+        except TimeoutError:
+            await self._lane_state(rt, lr, LaneState.cart_ready, "verify_timeout")
+        except Exception as exc:  # a failed check keeps the estimate; the job goes on
+            capture(exc)
+            await self._lane_state(rt, lr, LaneState.cart_ready, "verify_failed")
 
     async def _subset_phase(self, rt: JobRuntime) -> None:
         by_supplier: dict[str, list[list[CartLine]]] = {}
@@ -484,6 +553,7 @@ class Orchestrator:
                                                      self._budget(lr, self.settings.lane_subset_budget_s), retries=0)
                             outcome(s, CART_STATUS[cart.verification_status], **cart_data(cart))
                         rt.carts[cart.cart_key] = cart
+                        lr.cart_key = cart.cart_key
                         await self.bus.emit(rt.job_id, "subset_total", {
                             "cartKey": cart.cart_key, "total": cart.costs.total if cart.costs else None,
                             "status": cart.verification_status}, lr.status.lane_id)
@@ -608,8 +678,16 @@ class Orchestrator:
             if lr is None or lr.lane is None or lr.ctx is None or lr.status.state in (LaneState.failed, LaneState.blocked):
                 return CheckoutHandoff(supplier_id=sid, status="failed", reason="lane_unavailable")
             lane, ctx = lr.lane, lr.ctx
+            if lr.quote_handoff is not None and lr.quote_key == cart_plan.cart_key:
+                # The verify phase already stopped this lane at payment with exactly this cart.
+                handoff = lr.quote_handoff.model_copy(update={"card_id": card.card_id if card else None,
+                                                             "live_url": lr.quote_handoff.live_url or ctx.live_url})
+                await self._lane_state(rt, lr, LaneState.at_payment)
+                return handoff
             try:
                 async with lr.lock:
+                    lr.quote_key = lr.quote_handoff = None  # the browser leaves that payment page
+                    lr.cart_key = cart_plan.cart_key
                     await self._lane_state(rt, lr, LaneState.checkout)
                     with span("lane.set_cart", f"checkout set_cart {sid}", supplier=sid):
                         await self._timed(lambda: lane.set_cart(ctx, cart_plan.lines),

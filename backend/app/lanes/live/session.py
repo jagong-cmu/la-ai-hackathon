@@ -15,13 +15,14 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import shutil
 import socket
 import tempfile
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
+from playwright.async_api import Browser, BrowserContext, Page, Playwright, Route, async_playwright
 
 from app.contracts import PageInput, PageSnapshot
 from app.lanes.live.config import LiveLaneSettings
@@ -32,6 +33,19 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Runs in the page. Returns visible text and every form field with the attributes the guard reads.
+# Ad, analytics and session-replay hosts seen on the supplier sites (2026-10-17). Never a site's
+# own pages or its bot-protection scripts: blocking those can break the page or trip the check.
+TRACKERS = re.compile(
+    r"https?://[^/]*("
+    r"doubleclick\.net|google-analytics\.com|googletagmanager\.com|googleadservices\.com|"
+    r"facebook\.(com|net)|connect\.facebook|clarity\.ms|pinterest\.com|ads\.linkedin\.com|"
+    r"px\.ads\.linkedin|customer\.io|gist\.build|hotjar\.com|tiktok\.com|bing\.com|bat\.bing|"
+    r"criteo\.(com|net)|taboola\.com|outbrain\.com|snapchat\.com|klaviyo\.com|attn\.tv|"
+    r"stash\.webstaurantstore\.com"
+    r")[/:]",
+    re.I,
+)
+
 SNAPSHOT_JS = r"""
 () => {
   const visible = (el) => {
@@ -130,7 +144,24 @@ class LaneBrowser:
         assert self.cdp_url
         self._browser = await self._pw.chromium.connect_over_cdp(self.cdp_url)
         self._context = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
+        await self._block_requests(self._context)
         self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+
+    async def _block_requests(self, context: BrowserContext) -> None:
+        kinds = {"font", "media"} if self.cfg.block_media else set()
+        if self.cfg.block_images:
+            kinds.add("image")
+        if not kinds and not self.cfg.block_trackers:
+            return
+
+        async def handle(route: Route) -> None:
+            req = route.request
+            if req.resource_type in kinds or (self.cfg.block_trackers and TRACKERS.search(req.url)):
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await context.route("**/*", handle)
 
     async def _start_local(self) -> None:
         assert self._pw is not None
@@ -234,12 +265,21 @@ class LaneBrowser:
         self._page = pages[-1] if pages else await self.context.new_page()
         return self._page
 
-    async def goto(self, url: str) -> Page:
-        page = await self.page()
+    async def goto(self, url: str, page: Page | None = None, settle_ms: int | None = None) -> Page:
+        """Load url in page (default: the lane's page). After DOMContentLoaded, wait up to
+        settle_ms (default cfg.nav_settle_ms) for network idle; 0 skips that wait for steps that
+        wait for their own elements."""
+        page = page or await self.page()
         await page.goto(url, wait_until="domcontentloaded")
-        with contextlib.suppress(Exception):
-            await page.wait_for_load_state("networkidle", timeout=3000)
+        settle = self.cfg.nav_settle_ms if settle_ms is None else settle_ms
+        if settle > 0:
+            with contextlib.suppress(Exception):
+                await page.wait_for_load_state("networkidle", timeout=settle)
         return page
+
+    async def new_tab(self) -> Page:
+        """Another tab in the same browser context: same cookies, so the same cart."""
+        return await self.context.new_page()
 
     async def snapshot(self, page: Page | None = None) -> PageSnapshot:
         page = page or await self.page()
@@ -265,11 +305,14 @@ class LaneBrowser:
         return _clean_text(await loc.first.inner_text(), self.cfg.snapshot_text_chars)
 
     async def screenshot(self, ctx: LaneContext, name: str, page: Page | None = None) -> str | None:
-        """Write a PNG to the lane's evidence folder and emit it. Returns the public URL."""
+        """Write a PNG (or a JPEG for a .jpg name) to the lane's evidence folder and emit it.
+        Returns the public URL. A JPEG is a fraction of a PNG's size: from the cloud browser a PNG
+        took about 1.4 s (2026-10-18)."""
         page = page or await self.page()
         path, rel = ctx.evidence(name)
+        jpeg = {"type": "jpeg", "quality": 70} if name.endswith(".jpg") else {}
         try:
-            await page.screenshot(path=str(path), full_page=False, timeout=10000)
+            await page.screenshot(path=str(path), full_page=False, timeout=10000, **jpeg)
         except Exception as exc:  # evidence must never break the lane
             log.warning("screenshot failed: %s", exc)
             return None
