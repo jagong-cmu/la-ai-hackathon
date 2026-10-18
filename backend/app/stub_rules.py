@@ -40,7 +40,8 @@ def j1_triage(state: dict, questions: dict) -> dict:
 
 PAGE_RULES = [
     ("payment_step", re.compile(r"card number|payment method|cvv|security code|pay now", re.I)),
-    ("bot_check", re.compile(r"captcha|verify you are human|unusual traffic", re.I)),
+    # "This form is protected by reCAPTCHA" is a footer notice on normal forms, not a challenge.
+    ("bot_check", re.compile(r"(?<!protected by re)captcha|verify you are human|unusual traffic", re.I)),
     ("login_wall", re.compile(r"sign in to continue|log in to see prices|create an account to", re.I)),
     ("shipping_step", re.compile(r"shipping address|delivery address|ship to", re.I)),
     ("cart", re.compile(r"your cart|shopping cart|subtotal", re.I)),

@@ -13,7 +13,7 @@ from app.contracts import (
 )
 from app.stages.cards import mint_cards
 from app.stages.normalize import normalize
-from app.stages.optimize import optimize
+from app.stages.optimize import optimize, supplier_pricing
 from app.stages.rank import recommend, savings
 from app.stages.rules import check_plan, derive_rules
 
@@ -159,3 +159,20 @@ def test_agent_lane_searches_only_the_largest_spend_items():
     agent = Orchestrator._lane_items(orch, rt, SimpleNamespace(is_agent=True))
     assert [i.id for i in agent] == ["boxes"]
     assert Orchestrator._lane_items(orch, rt, SimpleNamespace(is_agent=False)) == items
+
+
+def test_estimated_cart_freight_flows_into_plans():
+    # The cart page showed a subtotal and a $13.83 ZIP freight quote, but no total.
+    a = SupplierOffers(supplier_id="a", products=[product("g", "AG", 100, 40.0), product("b", "AB", 100, 30.0)])
+    full = [CartLine(item_id="b", sku="AB", pack_quantity=1, unit_price=30.0),
+            CartLine(item_id="g", sku="AG", pack_quantity=2, unit_price=40.0)]
+    carts = {cart_key("a", full): VerifiedCart(
+        cart_key="", supplier_id="a", verification_status="estimated", reason="tax_not_shown; total_not_shown",
+        cart_items=[], costs=Costs(subtotal=110.0, shipping=13.83, tax=0.0, total=123.83))}
+    res = optimize(ITEMS, normalize(ITEMS, [a], TH), {"a": a}, carts, {"a": "A"})
+
+    whole = next(p for p in res.plans if p.kind == "single_supplier")
+    assert whole.status == "estimated" and whole.total == 123.83
+    assert whole.carts[0].shipping == 13.83 and not whole.carts[0].shipping_is_estimate
+    # A smaller cart from the same site uses the shown freight, not the $8 default.
+    assert supplier_pricing({"a": a}, carts)["a"].reference_shipping == 13.83
