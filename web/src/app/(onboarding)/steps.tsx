@@ -1,5 +1,5 @@
 "use client";
-// Shared pieces of the onboarding: the progress bars, staged entrances, decode text and the odometer.
+// Shared pieces of the onboarding: the progress bars, staged entrances and the odometer.
 import { useEffect, useState } from "react";
 
 const reduced = () => typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -14,7 +14,6 @@ export function Steps({ at }: { at: number }) {
       {STEPS.map((s, i) => (
         <li key={s} className={i < at ? "done" : i === at ? "now" : undefined} aria-current={i === at ? "step" : undefined}>
           <i />
-          <span>{s}</span>
         </li>
       ))}
     </ol>
@@ -46,44 +45,6 @@ export function Claim({ text, start = 0 }: { text: string; start?: number }) {
         </span>
       ))}
     </h1>
-  );
-}
-
-const GLYPHS = "░▒▓/\\|_-=+<>0123456789";
-
-/** Text that decodes in: each character cycles through glyphs, then settles left to right
- *  (18ms apart, 500ms in all). Runs once on mount. Screen readers get the text at once. */
-export function Decode({ text }: { text: string }) {
-  const [shown, setShown] = useState(() => (reduced() ? text : ""));
-  useEffect(() => {
-    if (reduced()) {
-      setShown(text);
-      return;
-    }
-    let raf = 0;
-    const t0 = performance.now();
-    const tick = (now: number) => {
-      const t = now - t0;
-      let out = "";
-      let done = true;
-      for (let i = 0; i < text.length; i++) {
-        const settle = 140 + i * 18;
-        if (t >= settle || text[i] === " ") out += text[i];
-        else {
-          done = false;
-          out += t < i * 6 ? " " : GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
-        }
-      }
-      setShown(out);
-      if (!done) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [text]);
-  return (
-    <span aria-label={text}>
-      <span aria-hidden="true">{shown}</span>
-    </span>
   );
 }
 

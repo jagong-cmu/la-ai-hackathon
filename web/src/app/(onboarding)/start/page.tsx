@@ -5,14 +5,10 @@ import { useRef, useState } from "react";
 import { api, errorText, money, type PlannerView, type ShoppingRequest, type SpendInsights } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
 import { day, each, int, itemShort } from "@/lib/format";
-import { Claim, Decode, exitPause, In, Steps } from "../steps";
+import { Claim, exitPause, In, Steps } from "../steps";
 
 type Books = { insights: SpendInsights; planner: PlannerView | null; draft: ShoppingRequest };
-type Line = { at: string; text: string };
 
-// The data loads in well under a second; each log line stays long enough to read.
-const pause = () => new Promise((r) => setTimeout(r, 450));
-const clock = () => new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: false });
 const plural = (unit: string, n: number) =>
   n === 1 || unit.endsWith("s") ? unit : /(x|ch|sh)$/.test(unit) ? `${unit}es` : `${unit}s`;
 
@@ -24,62 +20,34 @@ const Check = () => (
 
 function Connect({ onDone }: { onDone: (b: Books) => void }) {
   const [phase, setPhase] = useState<"idle" | "loading" | "leaving">("idle");
-  const [lines, setLines] = useState<Line[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const log = (text: string) => setLines((l) => [...l, { at: clock(), text }]);
 
   async function connect() {
     setPhase("loading");
     setError(null);
-    setLines([{ at: clock(), text: "Connected to QuickBooks" }]);
     try {
-      const plannerP = api.planner().catch(() => null);
-      const draftP = api.shoppingDraft();
-      const insights = await api.insights();
-      await pause();
-      log(`Read ${int(insights.supplyOrders)} supply bills · ${money(insights.supplySpend)}`);
-      await pause();
-      log(`${insights.items.length} supplies · ${insights.items.map((i) => itemShort(i.billItemName).toLowerCase()).slice(0, 3).join(", ")}`);
-      const [planner, draft] = await Promise.all([plannerP, draftP]);
-      await pause();
-      const due = planner?.supplies.filter((s) => s.status !== "ok" && s.recommendedQty > 0) ?? [];
-      const first = due.map((s) => s.runOutDate).filter(Boolean).sort()[0];
-      log(planner ? `${due.length} run low · first on ${day(first)}` : "Forecast not ready");
-      await pause();
-      await pause();
+      const [insights, planner, draft] = await Promise.all([api.insights(), api.planner().catch(() => null), api.shoppingDraft()]);
       setPhase("leaving");
       await exitPause();
       onDone({ insights, planner, draft });
     } catch (e) {
       setError(errorText(e));
       setPhase("idle");
-      setLines([]);
     }
   }
 
+  const busy = phase !== "idle";
   return (
     <main className={`ob-stage${phase === "leaving" ? " ob-out" : ""}`}>
       <In i={0}><Steps at={0} /></In>
       <Claim text="Connect your books" start={100} />
       <In i={4} as="p" className="ob-sub">Your supply bills set the prices to beat.</In>
-      {phase === "idle" ? (
-        <In i={5} className="ob-row">
-          <button className="btn btn-primary has-icon" onClick={connect}>Connect QuickBooks <ArrowRight /></button>
-          <button className="btn btn-on-black" onClick={connect}>Connect other books</button>
-        </In>
-      ) : (
-        <ul className="ob-log" aria-live="polite">
-          {lines.map((l) => (
-            <li key={l.text}>
-              <time className="ob-in">{l.at}</time>
-              <span className="ob-in"><Decode text={l.text} /></span>
-            </li>
-          ))}
-          {phase === "loading" && (
-            <li className="wait"><time className="ob-in">{clock()}</time><span className="ob-in"><i className="ripple" aria-hidden="true" />Reading</span></li>
-          )}
-        </ul>
-      )}
+      <In i={5} className="ob-row">
+        <button className="btn btn-primary has-icon" onClick={connect} disabled={busy} aria-live="polite">
+          {busy ? "Reading your bills" : "Connect QuickBooks"} <ArrowRight />
+        </button>
+        <button className="btn btn-on-black" onClick={connect} disabled={busy}>Connect other books</button>
+      </In>
       {error && <p className="alert" role="alert">{error}</p>}
     </main>
   );
@@ -127,7 +95,7 @@ function Choose({ books }: { books: Books }) {
       <In i={0}><Steps at={1} /></In>
       <Claim text="Pick what to price" start={100} />
       <In i={4} as="p" className="ob-sub">
-        {sites} websites{books.draft.distributor ? " and one call" : ""} · amounts from your sales
+        {int(books.insights.supplyOrders)} bills read · {sites} websites{books.draft.distributor ? " and one call" : ""}
       </In>
       <In i={5} className="ob-device">
         <div className="ob-screen">

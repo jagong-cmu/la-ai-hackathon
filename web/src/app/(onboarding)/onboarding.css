@@ -3,8 +3,8 @@
 .ob { min-height: 100dvh; background: var(--color-black); color: var(--color-white); display: flex; flex-direction: column; }
 .ob-top { max-width: 1160px; width: 100%; margin: 0 auto; height: 76px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; }
 .ob-mark { font-weight: 700; font-size: 22px; line-height: 28px; letter-spacing: -0.02em; color: var(--color-white); text-decoration: none; }
-.ob-skip { font-size: 13px; line-height: 16px; color: var(--color-faint); text-decoration: none; transition-property: color; transition-duration: 150ms; transition-timing-function: ease-out; }
-@media (hover: hover) { .ob-skip:hover { color: var(--color-white); } }
+.ob-skip { font-weight: 500; font-size: 15px; line-height: 20px; color: var(--color-white); text-decoration: none; transition-property: color; transition-duration: 150ms; transition-timing-function: ease-out; }
+@media (hover: hover) { .ob-skip:hover { color: var(--color-mint); } }
 .ob-skip:focus-visible, .ob-mark:focus-visible { outline: 2px solid var(--color-mint); outline-offset: 2px; }
 
 .ob-stage { flex: 1; width: 100%; max-width: 1040px; margin: 0 auto; padding: 32px 16px 96px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
@@ -16,22 +16,12 @@
 .ob-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
 /* Progress: four thin bars, the fill scales in when a step completes */
-.ob-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 64px); gap: 6px; }
-.ob-steps li { display: flex; flex-direction: column; gap: 8px; font-size: 12px; line-height: 16px; color: var(--color-muted); }
+.ob-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 40px); gap: 6px; }
+.ob-steps li { display: flex; flex-direction: column; }
 .ob-steps i { position: relative; height: 2px; border-radius: 1px; background: var(--color-raised-dark); overflow: hidden; }
 .ob-steps i::after { content: ""; position: absolute; inset: 0; border-radius: 1px; background: var(--color-white); transform: scaleX(0); transform-origin: left; transition-property: transform; transition-duration: 300ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); }
 .ob-steps li.done i::after { transform: scaleX(1); }
 .ob-steps li.now i::after { transform: scaleX(1); background: var(--color-mint); }
-.ob-steps li.done { color: var(--color-faint); }
-.ob-steps li.now { color: var(--color-white); font-weight: 500; }
-
-/* The landing's event log: mono time, then the fact */
-.ob-log { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 28px; font-size: 15px; line-height: 20px; min-height: 120px; align-content: start; }
-.ob-log li { display: contents; }
-.ob-log time { font-family: var(--font-mono); font-size: 13px; color: var(--color-muted); }
-.ob-log span { font-family: var(--font-mono); font-size: 14px; color: var(--color-faint); }
-.ob-log li:last-child span { color: var(--color-white); }
-.ob-log .wait span { color: var(--color-muted); display: inline-flex; align-items: center; gap: 10px; }
 
 /* Device: outer r28 = inner r16 + padding 12 */
 .ob-device { width: 100%; padding: 12px; border-radius: var(--radius-device); background: var(--color-raised-dark); border: 1px solid transparent; box-shadow: var(--shadow-ring-dark); }
@@ -94,12 +84,6 @@
 .ob-best b { transition-property: color; transition-duration: 150ms; transition-timing-function: ease-out; }
 .ob-best.bump b { color: var(--color-mint); }
 .ob-device.grid .tiles > .ob-in > * { flex: 1; min-width: 0; }
-
-/* Live ripple: a ring leaves the dot every 1.6s (a running state, so a loop) */
-.ripple { position: relative; width: 6px; height: 6px; border-radius: 3px; background: var(--color-mint); flex-shrink: 0; }
-.ripple::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--color-mint); opacity: 0; }
-@media (prefers-reduced-motion: no-preference) { .ripple::after { animation: ob-ripple 1.6s cubic-bezier(0.2, 0, 0, 1) infinite; } }
-@keyframes ob-ripple { from { opacity: 0.8; transform: scale(1); } to { opacity: 0; transform: scale(3.2); } }
 
 /* Odometer: one 0-9 strip per digit, clipped to one line; the strip slides to the digit */
 .roll { display: inline-flex; font-variant-numeric: tabular-nums; }
