@@ -41,9 +41,19 @@ def test_sum_check_consistent_and_mismatch():
     assert cart.verification_status == "failed"
 
 
-def test_missing_total_is_not_verified():
+def test_missing_total_is_estimated_not_verified():
+    # A real cart page with a subtotal and a ZIP freight quote but no total (tax at checkout).
+    lines = [CartLine(item_id="a", sku="S1", pack_quantity=2, unit_price=43.99)]
+    cands = [MoneyCandidate(label="Cart Subtotal", value=87.98), MoneyCandidate(label="Ground", value=13.83)]
+    cart = build_verified_cart("x", lines, cands, {"subtotal": 0, "shipping": 1, "total": None}, {})
+    assert cart.verification_status == "estimated"
+    assert cart.totals_check == "not_checked"
+    assert cart.costs is not None and (cart.costs.shipping, cart.costs.total) == (13.83, 101.81)
+    assert "total_not_shown" in cart.reason and "tax_not_shown" in cart.reason
+
+
+def test_missing_subtotal_still_fails():
     lines = [CartLine(item_id="a", sku="S1", pack_quantity=1, unit_price=5.0)]
-    cands = [MoneyCandidate(label="Subtotal", value=5.0)]
-    cart = build_verified_cart("x", lines, cands, {"subtotal": 0, "total": None}, {})
-    assert cart.verification_status == "failed"
-    assert cart.costs is None
+    cands = [MoneyCandidate(label="Total", value=5.0)]
+    cart = build_verified_cart("x", lines, cands, {"subtotal": None, "total": 0}, {})
+    assert cart.verification_status == "failed" and cart.costs is None
