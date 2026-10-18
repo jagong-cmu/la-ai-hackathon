@@ -76,7 +76,8 @@ class LiveDistributorConfig(BaseSettings):
 
 # ---------------------------------------------------------------- code helpers (no Jev here)
 
-SPOKEN_MONEY = re.compile(r"(?<![\w$.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(?:dollars|bucks|usd)\b", re.I)
+SPOKEN_MONEY = re.compile(r"(?<![\w$.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(?:dollars|bucks|usd)\b"
+                          r"(?:\s+and\s+(\d{1,2})\s*cents?\b)?", re.I)  # "395 dollars and 20 cents" is one amount
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 # "No free delivery" and "not free shipping" are not free.
 FREE_DELIVERY = re.compile(r"(?<!no )(?<!not )free (?:delivery|shipping)|deliver(?:ed|y)? (?:is |for )?free"
@@ -98,6 +99,8 @@ def normalize_spoken_money(text: str) -> str:
     """'395 dollars' -> '$395' and '50 cents' -> '$0.50', so that the '$' parsers find them."""
 
     def repl(m: re.Match[str]) -> str:
+        if m.group(3):
+            return f"${m.group(1)}.{int(m.group(3)):02d}"
         cents = f".{m.group(2)}" if m.group(2) else ""
         return f"${m.group(1)}{cents}"
 

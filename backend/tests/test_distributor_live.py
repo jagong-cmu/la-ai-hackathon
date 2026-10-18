@@ -476,3 +476,13 @@ def test_delivery_fee_reads_thousands_and_a_negated_free():
     assert delivery_fee("Sorry, not free shipping. Shipping is $9.50") == 9.5
     assert delivery_fee("Free delivery on Thursday") == 0.0
     assert delivery_fee("Delivery is $35") == 35.0
+
+
+def test_spoken_dollars_and_cents_are_one_amount():
+    """Soak S-024: '395 dollars and 20 cents' became '$395 and $0.20', so the call quote read $395."""
+    from app.distributor.live import normalize_spoken_money
+
+    assert normalize_spoken_money("I can do 395 dollars and 20 cents") == "I can do $395.20"
+    assert normalize_spoken_money("1,250 dollars and 5 cents delivered") == "$1,250.05 delivered"
+    assert normalize_spoken_money("395 dollars, and 50 cents for the bags") == "$395, and $0.50 for the bags"
+    assert normalize_spoken_money("12.50 dollars") == "$12.50"
