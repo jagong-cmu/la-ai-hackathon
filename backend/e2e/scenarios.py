@@ -457,6 +457,10 @@ async def bad_requests(ctx: Ctx) -> None:
         "no_zip": lambda b: b.pop("zipCode"),
         "item_missing_name": lambda b: b["items"][0].pop("name"),
         "supplier_bad_origin": lambda b: b["suppliers"][0].update(origin="hacker"),
+        "supplier_file_url": lambda b: b["suppliers"][0].update(url="file:///etc/passwd"),  # S-013
+        "supplier_js_url": lambda b: b["suppliers"][0].update(url="javascript:alert(1)"),
+        "qty_overflow": lambda b: b["items"][0].update(quantity=10**25),  # S-014
+        "negative_past_price": lambda b: b["items"][0].update(pastUnitPrice=-3),  # S-011
     }
     for name, fn in bad.items():
         r = await create(ctx, _mut(body, fn), expect={422})
@@ -486,7 +490,6 @@ async def odd_but_valid_requests(ctx: Ctx) -> None:
                                                      "unit": "each"}),
         "accept_quoted_default": lambda b: b.update(acceptQuotedDefault=True),
         "zero_past_price": lambda b: b["items"][0].update(pastUnitPrice=0),
-        "negative_past_price": lambda b: b["items"][0].update(pastUnitPrice=-3),
         "long_name": lambda b: b["items"][0].update(name="glove " * 2000),
         "zip_weird": lambda b: b.update(zipCode="'; DROP TABLE jobs;--"),
         "empty_ids": lambda b: (b["items"][0].update(id=""), b["suppliers"][0].update(id="")),
@@ -548,6 +551,11 @@ async def sse_resume(ctx: Ctx) -> None:
         if big:
             ctx.fail(f"{jid}: after=huge returned {len(big)} events")
     await ctx.req("GET", f"/jobs/{jid}/events", params={"after": -1, "follow": "false"}, expect=422)
+    await ctx.req("GET", f"/jobs/{jid}/events", params={"after": "9" * 25, "follow": "false"}, expect=422)
+    r = await ctx.req("GET", f"/jobs/{jid}/events", params={"follow": "false"}, headers={"Last-Event-ID": "9" * 25},
+                      expect=200)
+    if not r.text.startswith("retry:"):
+        ctx.fail(f"{jid}: a huge Last-Event-ID broke the stream: {r.text[:80]!r}")
     await ctx.req("GET", f"/jobs/{jid}/events", params={"follow": "false"}, headers={"Last-Event-ID": "abc"},
                   expect=200)
     check_events(ctx, jid, stored, view["state"])
