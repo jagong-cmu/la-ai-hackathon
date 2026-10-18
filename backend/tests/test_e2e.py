@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 
 import pytest
@@ -137,6 +139,15 @@ def test_webhook_secret_and_dedupe(client):
     h = {"X-Webhook-Secret": "dev-webhook"}
     assert client.post("/webhooks/photon", json={"eventId": "e1"}, headers=h).json() == {"routed": False}
     assert client.post("/webhooks/photon", json={"eventId": "e1"}, headers=h).json() == {"duplicate": True}
+
+
+def test_webhook_bad_bodies_are_400_not_500(client):
+    """Soak S-004: a body that is not a JSON object, or a jobId that is not a string, raised (500)."""
+    h = {"X-Webhook-Secret": "dev-webhook", "Content-Type": "application/json"}
+    for raw in (b"{not json", b"[1, 2]", b'"text"', b"null", b"\xff\xfe"):
+        assert client.post("/webhooks/photon", content=raw, headers=h).status_code == 400, raw
+    r = client.post("/webhooks/photon", json={"jobId": ["a"], "eventId": {"x": 1}}, headers=h)
+    assert r.status_code == 200 and r.json() == {"routed": False}
 
 
 def test_preflight_runs_in_fixture_mode(client):
@@ -310,6 +321,259 @@ def test_lane_state_carries_the_live_view_as_soon_as_open_sets_it(settings, monk
         types = [e["type"] for e in lane]
         live = [i for i, e in enumerate(lane) if e["type"] == "lane_state" and e["data"].get("liveUrl")]
         assert live and live[0] < types.index("offers_ready"), lane_id
+
+
+def test_draft_with_no_selected_supplier_is_a_503_not_a_crash(client, monkeypatch):
+    """Live 2026-10-18 (SUPPLIER-AGENT-API-8): discovery selected no supplier, and the draft raised
+    a ShoppingRequest ValidationError (500). The owner and the daily check need the reason instead."""
+    discovery = client.app.state.s.discovery
+    real = discovery.discover
+
+    async def none_selected(*args, **kwargs):
+        found = await real(*args, **kwargs)
+        for c in found.candidates:
+            c.selected = False
+            c.reason = c.reason or "cannot run in this browser mode"
+        return found
+
+    monkeypatch.setattr(discovery, "discover", none_selected)
+    r = client.get("/shopping-list/draft")
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert detail["code"] == "no_suppliers" and detail["text"]
+    assert detail["candidates"] and all(c["reason"] for c in detail["candidates"])
+    check = client.post("/planner/check", params={"autostart": "true"})
+    assert check.status_code in (200, 503)  # never a 500
+
+
+def test_following_a_replay_streams_every_event(client, settings, monkeypatch):
+    """A replay copies its source's final view at once, so the events route closed the live stream
+    after the events emitted so far (soak S-003). A follower must get the whole playback."""
+    draft = client.get("/shopping-list/draft").json()
+    src = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-replay-01"}).json()["jobId"]
+    wait_for(client, src, {"results_ready"})
+    client.post(f"/jobs/{src}/approve", json={"action": "reject"})
+    wait_for(client, src, {"rejected"})
+    source_events = _all_events(client, src)
+    # The reason comes before the terminal job_state, which a follower's stream ends on.
+    assert [e["type"] for e in source_events[-2:]] == ["rejected", "job_state"]
+
+    bus = client.app.state.s.bus
+    real_emit = bus.emit
+
+    async def slow_emit(job_id, *args, **kwargs):
+        if job_id != src:
+            await asyncio.sleep(0.01)  # stretch the playback so the follower joins while it runs
+        return await real_emit(job_id, *args, **kwargs)
+
+    monkeypatch.setattr(bus, "emit", slow_emit)
+    token = {"X-Admin-Token": settings.admin_token.get_secret_value()}
+    rid = client.post(f"/admin/replay/{src}", params={"speed": 1000}, headers=token).json()["jobId"]
+    replayed = _all_events(client, rid)
+    assert [e["type"] for e in replayed] == ["replay_started"] + [e["type"] for e in source_events]
+
+
+def test_reused_idempotency_key_with_another_body_is_422(client):
+    """Soak S-005: the same key with a changed body silently returned the first job."""
+    draft = client.get("/shopping-list/draft").json()
+    first = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-reuse-01"}).json()["jobId"]
+    assert client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-reuse-01"}).json()["jobId"] == first
+    draft["items"][0]["quantity"] += 1
+    r = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-reuse-01"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "idempotency_key_reused"
+    wait_for(client, first, {"results_ready"})
+
+
+def test_jobs_left_unfinished_by_a_restart_fail_at_start(settings):
+    """Soak S-006: after a restart, a gathering or results_ready job had no process. Its event stream
+    never ended and approve gave 404, so a watcher waited forever. Start fails them with a reason."""
+    from app.contracts import JobState, JobView, ShoppingRequest
+    from app.db import Database
+
+    with TestClient(create_app(settings)) as c:
+        request = ShoppingRequest.model_validate(c.get("/shopping-list/draft").json())
+    db = Database(settings.db_path)
+    for jid, state in (("job_orphan0001", JobState.gathering), ("job_orphan0002", JobState.results_ready)):
+        db.save_job(JobView(job_id=jid, state=state, request=request), idempotency_key=f"key-{jid}")
+    db.close()
+
+    with TestClient(create_app(settings)) as c:
+        for jid in ("job_orphan0001", "job_orphan0002"):
+            assert c.get(f"/jobs/{jid}").json()["state"] == "failed"
+            events = _all_events(c, jid)  # the live stream ends
+            assert [e["type"] for e in events[-2:]] == ["job_failed", "job_state"]
+            assert "restart" in events[-2]["data"]["error"]
+        body = request.model_dump(mode="json", by_alias=True)
+        again = c.post("/jobs", json=body, headers={"Idempotency-Key": "key-job_orphan0001"}).json()["jobId"]
+        assert again != "job_orphan0001"  # the key starts a new job
+        wait_for(c, again, {"results_ready"})
+
+
+def test_late_update_does_not_replace_results_after_approval(settings, monkeypatch):
+    """Soak S-007: _late() checks for an approval, then awaits the summary (Step 5 takes ~12 s live),
+    then sets view.results. An approval during that wait got results_updated after it."""
+    import threading
+
+    fast = settings.model_copy(update={"job_deadline_s": 0.9})  # alpha/bravo verified, delta still searching
+    with TestClient(create_app(fast)) as client:
+        orch = client.app.state.s.orchestrator
+        real = orch.llm.summarize
+        late_started, release = threading.Event(), asyncio.Event()
+        calls = []
+
+        async def summarize(facts):
+            calls.append(1)
+            if len(calls) == 2:  # the late update's summary
+                late_started.set()
+                await release.wait()
+            return await real(facts)
+
+        monkeypatch.setattr(orch.llm, "summarize", summarize)
+        draft = client.get("/shopping-list/draft").json()
+        job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-late-01"}).json()["jobId"]
+        first = wait_for(client, job_id, {"results_ready"})
+        plan_id = first["results"]["recommendedPlanId"]
+        assert plan_id and first["results"]["deadlineHit"]
+        assert late_started.wait(10)
+        assert client.post(f"/jobs/{job_id}/approve", json={"action": "approve", "planId": plan_id}).status_code == 200
+        client.portal.call(release.set)
+        view = wait_for(client, job_id, {"at_payment", "partial_handoff"})
+        time.sleep(0.2)
+        view = client.get(f"/jobs/{job_id}").json()
+        assert plan_id in [p["planId"] for p in view["results"]["plans"]]
+        types = [line[7:] for line in client.get(f"/jobs/{job_id}/events?follow=false").text.splitlines()
+                 if line.startswith("event: ")]
+        assert "results_updated" not in types[types.index("approved"):]
+
+
+def test_negative_past_price_or_cadence_is_refused(client):
+    """Soak S-011: a negative pastUnitPrice was accepted. call_anchor() then anchored the distributor
+    call on a negative price ("we paid about $-..."), and a negative cadence gave negative savings."""
+    draft = client.get("/shopping-list/draft").json()
+    for field, value in (("pastUnitPrice", -3), ("orderCadenceDays", -7)):
+        body = json.loads(json.dumps(draft))
+        body["items"][0][field] = value
+        r = client.post("/jobs", json=body, headers={"Idempotency-Key": f"test-neg-{field}"})
+        assert r.status_code == 422, (field, r.status_code)
+
+
+def test_evidence_stays_in_the_evidence_folder(settings):
+    """Soak S-012: the request's distributor and supplier ids are path parts of the evidence files.
+    distributor.id='../../../escaped' wrote escaped/call.txt outside var/evidence (POST /jobs is public)."""
+    from app.contracts import path_segment
+
+    assert path_segment("../../x") not in ("..", "") and "/" not in path_segment("../../x")
+    assert path_segment("vend-syn-larkmoor") == "vend-syn-larkmoor"  # normal ids keep their name
+    root = settings.var_dir.parent
+    with TestClient(create_app(settings)) as c:
+        d = c.get("/shopping-list/draft").json()
+        d["distributor"]["id"] = "../../../escaped"
+        d["suppliers"][0]["id"] = "../../../escaped-lane"
+        d["items"][0]["id"] = "../../../../escaped-item"
+        jid = c.post("/jobs", json=d, headers={"Idempotency-Key": "test-trav-01"}).json()["jobId"]
+        view = wait_for(c, jid, {"results_ready"})
+        evidence = settings.evidence_dir.resolve()
+        outside = [p for p in root.rglob("*escaped*") if evidence not in p.resolve().parents]
+        assert not outside, outside
+        lanes = {lane["supplierId"]: lane for lane in view["lanes"]}
+        assert lanes["bravo"]["state"] == "cart_ready", lanes["bravo"]  # an odd item id does not break a lane
+        urls = [o["evidence"]["transcriptUrl"] for o in view["offers"] if o["evidence"].get("transcriptUrl")]
+        assert urls and all(c.get(u).status_code == 200 for u in urls)  # the served path still works
+
+
+def test_lane_evidence_names_stay_in_the_lane_folder(settings, decider, tmp_path):
+    """S-012: lanes name files after request item ids (listing_{item.id}.json)."""
+    from app.contracts import SupplierRef
+    from tests.test_lanes_live import make_ctx
+
+    ctx, _ = make_ctx(settings, decider, tmp_path, SupplierRef(id="../up", name="X", url="https://x.example"))
+    path, url = ctx.evidence("listing_../../../../escaped.json")
+    assert ctx.evidence_dir.resolve() in path.resolve().parents
+    assert ".." not in url.split("/")
+
+
+def test_supplier_url_must_be_web(client):
+    """Soak S-013 (security): POST /jobs is public, and a live lane opens supplier.url. file:// or
+    javascript: URLs were accepted. A URL with no scheme (CREAO gives www.example.com) gets https://."""
+    from app.contracts import SupplierRef
+
+    assert SupplierRef(id="k", name="K", url="www.katom.com").url == "https://www.katom.com"
+    draft = client.get("/shopping-list/draft").json()
+    for url in ("file:///etc/passwd", "javascript:alert(1)", "chrome://settings", "ftp://x.example/"):
+        body = json.loads(json.dumps(draft))
+        body["suppliers"][0]["url"] = url
+        r = client.post("/jobs", json=body, headers={"Idempotency-Key": f"test-url-{abs(hash(url))}"})
+        assert r.status_code == 422, url
+
+
+def test_fixture_lane_path_ignores_traversal():
+    from app.lanes.fixture import FIXTURES_DIR, fixture_path
+
+    assert (FIXTURES_DIR / "suppliers") in fixture_path("../discovery").parents
+    assert not fixture_path("../discovery").exists()
+
+
+def test_discovery_skips_a_candidate_with_a_bad_url():
+    from app.contracts import DiscoveryResult, SupplierCandidate
+    from app.discovery import selected_suppliers
+
+    found = DiscoveryResult(category="c", zip_code="1", distributor=None, source="creao", candidates=[
+        SupplierCandidate(id="ok", name="OK", url="www.ok.example", selected=True),
+        SupplierCandidate(id="bad", name="Bad", url="javascript:alert(1)", selected=True),
+        SupplierCandidate(id="none", name="None", url="", selected=True),
+    ])
+    assert [(s.id, s.url) for s in selected_suppliers(found)] == [("ok", "https://www.ok.example")]
+
+
+def test_huge_numbers_are_refused_not_overflowed(client):
+    """Soak S-014: after=10**25 (or Last-Event-ID) overflowed SQLite's 64-bit integer and broke the
+    stream (200 with an empty body). quantity=10**25 gave totals like 8.799999999999999e+24."""
+    draft = client.get("/shopping-list/draft").json()
+    job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-big-0001"}).json()["jobId"]
+    wait_for(client, job_id, {"results_ready"})
+    big = "9" * 25
+    assert client.get(f"/jobs/{job_id}/events", params={"follow": "false", "after": big}).status_code == 422
+    r = client.get(f"/jobs/{job_id}/events", params={"follow": "false"}, headers={"Last-Event-ID": big})
+    assert r.status_code == 200 and r.text.startswith("retry:")  # an id past the end: no events, a clean stream
+    body = json.loads(json.dumps(draft))
+    body["items"][0]["quantity"] = 10**25
+    assert client.post("/jobs", json=body, headers={"Idempotency-Key": "test-big-0002"}).status_code == 422
+
+
+def test_a_stored_job_that_breaks_a_newer_rule_does_not_stop_the_server(settings):
+    """Soak S-018: S-011 made pastUnitPrice ge=0. A job stored before that (-3.0) made the start fail
+    ('Application startup failed') in fail_orphans(), and GET /jobs failed too."""
+    from app.contracts import JobState, JobView, ShoppingRequest
+    from app.db import Database
+
+    with TestClient(create_app(settings)) as c:
+        request = ShoppingRequest.model_validate(c.get("/shopping-list/draft").json())
+    db = Database(settings.db_path)
+    for jid, state in (("job_legacy0001", JobState.gathering), ("job_legacy0002", JobState.rejected)):
+        snap = json.loads(JobView(job_id=jid, state=state, request=request).model_dump_json(by_alias=True))
+        snap["request"]["items"][0]["pastUnitPrice"] = -3.0  # valid when it was stored
+        db.save_job(JobView(job_id=jid, state=state, request=request))
+        db._conn.execute("UPDATE jobs SET snapshot = ? WHERE job_id = ?", (json.dumps(snap), jid))
+    db.close()
+    with TestClient(create_app(settings)) as c:  # starts
+        assert c.get("/health").status_code == 200
+        assert c.get("/jobs").status_code == 200
+        assert c.get("/jobs/job_legacy0002").status_code == 404  # unreadable now, not a 500
+    db = Database(settings.db_path)
+    assert db._conn.execute("SELECT state FROM jobs WHERE job_id = 'job_legacy0001'").fetchone()[0] == "failed"
+
+
+def test_a_very_long_supplier_id_does_not_crash_the_job(client):
+    """Soak S-019 (found by the fuzzer): a 5,000-character supplier id made fixture_path().exists()
+    raise OSError 'File name too long', and the whole job failed."""
+    from app.contracts import path_segment
+
+    assert len(path_segment("x" * 5000)) <= 80 and path_segment("x" * 5000) != path_segment("x" * 4999)
+    draft = client.get("/shopping-list/draft").json()
+    draft["suppliers"][0]["id"] = "x" * 5000
+    jid = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-long-0001"}).json()["jobId"]
+    view = wait_for(client, jid, {"results_ready", "failed"})
+    assert view["state"] == "results_ready"
 
 
 def test_replay_streams_every_recorded_event(client):

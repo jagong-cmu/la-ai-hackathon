@@ -177,6 +177,19 @@ class Orchestrator:
         self._spawn(in_transaction("job", "restock job", self._run(rt), job_id=job_id))
         return JobCreated(job_id=job_id, state=view.state)
 
+    async def fail_orphans(self) -> int:
+        """At start: fail the jobs that an earlier process left unfinished. Nothing runs them now, so
+        their event stream would never end and approve would 404. Free their keys for a retry."""
+        orphans = [v for v in self.db.unfinished_jobs({s.value for s in FINAL_JOB_STATES})
+                   if v.job_id not in self.jobs and v.replay_of is None]
+        for view in orphans:
+            view.state = JobState.failed
+            self.db.save_job(view)
+            self.db.release_idempotency_key(view.job_id)
+            await self.bus.emit(view.job_id, "job_failed", {"error": "The server restarted; this job no longer runs."})
+            await self.bus.emit(view.job_id, "job_state", {"state": JobState.failed.value})
+        return len(orphans)
+
     def get_view(self, job_id: str) -> JobView | None:
         rt = self.jobs.get(job_id)
         return rt.view if rt else self.db.load_job(job_id)
@@ -204,8 +217,9 @@ class Orchestrator:
                                           "text": f"The job is {rt.view.state.value}, not ready for approval."})
             if decision.action == "reject":
                 rt.view.approval = decision
-                await self._set_job_state(rt, JobState.rejected)
+                # The terminal job_state goes last: a follower's stream ends on it (main.job_events).
                 await self.bus.emit(job_id, "rejected", {"reason": decision.reason})
+                await self._set_job_state(rt, JobState.rejected)
                 self._spawn(self._close_lanes(rt))
                 return rt.view
 
@@ -277,7 +291,7 @@ class Orchestrator:
 
     async def route_webhook(self, provider: str, payload: dict[str, Any]) -> bool:
         job_id = payload.get("jobId")
-        candidates = [self.jobs[job_id]] if job_id in self.jobs else [
+        candidates = [self.jobs[job_id]] if isinstance(job_id, str) and job_id in self.jobs else [
             rt for rt in self.jobs.values() if rt.view.state is JobState.gathering
         ]
         for rt in candidates:
@@ -330,8 +344,8 @@ class Orchestrator:
         except Exception as exc:  # the job must always end in a known state
             capture(exc)
             outcome(current(), "internal_error", **{"job.state": "failed", "job.error": type(exc).__name__})
-            await self._set_job_state(rt, JobState.failed)
             await self.bus.emit(job_id, "job_failed", {"error": f"{type(exc).__name__}: {exc}"})
+            await self._set_job_state(rt, JobState.failed)  # last: a follower's stream ends on it
 
     def _record_job(self, rt: JobRuntime) -> None:
         """Put the job result on its transaction: one row per job in Sentry, to compare runs and releases."""
@@ -676,18 +690,23 @@ class Orchestrator:
             from app.llm import template_summary
 
             results.summary = template_summary(summary_facts(results, results.plans))
-        rt.view.results = results
-        if rt.view.state is JobState.gathering:
-            await self._set_job_state(rt, JobState.results_ready)
-        self._save(rt)
-        best = next((p for p in results.plans if p.plan_id == results.recommended_plan_id), None)
-        await self.bus.emit(rt.job_id, event, {
-            "recommendedPlanId": results.recommended_plan_id,
-            "total": best.total if best else None,
-            "status": results.status,
-            "deadlineHit": results.deadline_hit,
-            "savingsVsPaidBefore": results.savings_vs_paid_before,
-        })
+        # The summary can take seconds; the owner may decide meanwhile. approve() reads the results
+        # under this lock, and a late update must not replace the results that a decision used.
+        async with rt.approve_lock:
+            if event == "results_updated" and rt.view.approval is not None:
+                return
+            rt.view.results = results
+            if rt.view.state is JobState.gathering:
+                await self._set_job_state(rt, JobState.results_ready)
+            self._save(rt)
+            best = next((p for p in results.plans if p.plan_id == results.recommended_plan_id), None)
+            await self.bus.emit(rt.job_id, event, {
+                "recommendedPlanId": results.recommended_plan_id,
+                "total": best.total if best else None,
+                "status": results.status,
+                "deadlineHit": results.deadline_hit,
+                "savingsVsPaidBefore": results.savings_vs_paid_before,
+            })
 
     async def _late(self, rt: JobRuntime, pending: set[asyncio.Task]) -> None:
         await asyncio.wait(pending)

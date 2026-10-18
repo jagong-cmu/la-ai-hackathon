@@ -57,6 +57,10 @@ def normalize_option(
             eligible = False
             flags.append("out_of_stock")
 
+    if product.pack_price <= 0:  # "$0.00 - see price in cart": not an offer
+        eligible = False
+        flags.append("price_missing")
+
     if not units or units <= 0:
         eligible = False
         flags.append("pack_unknown")

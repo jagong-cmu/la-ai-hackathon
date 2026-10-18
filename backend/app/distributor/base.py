@@ -80,10 +80,17 @@ def allocate_total(total: float, weights: dict[str, float]) -> dict[str, float]:
     """Split a quoted total across items in proportion to their web line costs (code, not a model).
     The last item takes the rounding remainder, so the parts add up to the total exactly."""
     ids = list(weights)
-    base = sum(weights.values()) or float(len(ids))
+    if not ids:
+        return {}
+    # An item with no web cost takes the mean known weight; the base sums the same weights, so no
+    # share is larger than the total and the remainder is never negative.
+    known = [w for w in weights.values() if w and w > 0]
+    fill = sum(known) / len(known) if known else 1.0
+    w = {i: weights[i] if weights[i] and weights[i] > 0 else fill for i in ids}
+    base = sum(w.values())
     parts: dict[str, float] = {}
     for item_id in ids[:-1]:
-        parts[item_id] = round(total * (weights[item_id] or 1.0) / base, 2)
+        parts[item_id] = round(total * w[item_id] / base, 2)
     parts[ids[-1]] = round(total - sum(parts.values()), 2)
     return parts
 

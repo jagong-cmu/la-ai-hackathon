@@ -68,6 +68,36 @@ async def test_dom_card_fields_stop_without_a_model(decider, settings, inputs):
     assert v.stop and v.reason == "dom_card_field"
 
 
+# Soak S-008: real card-field names that the DOM layer missed.
+CARD_NAMES = ["cc_number", "cardnum", "card_num", "cvv2", "cvc2", "csc", "card_csc", "exp_month", "expYear",
+              "cc-exp-date", "ccNumber", "card-security-code"]
+NOT_CARD = ["shipping_phone", "order_number", "promo_code", "email", "zip", "description", "giftMessage",
+            "company", "quantity", "expedite_shipping"]
+
+
+@pytest.mark.parametrize("name", CARD_NAMES)
+async def test_dom_layer_finds_card_field_names(decider, settings, name):
+    decider.jev = FakeJev(error=True)
+    v = await check_page(decider, PageSnapshot(url="u", visible_text="", inputs=[PageInput(name=name)]),
+                         settings.thresholds)
+    assert v.stop and v.reason == "dom_card_field", name
+
+
+@pytest.mark.parametrize("autocomplete", ["billing cc-number", "section-pay cc-csc", "CC-EXP"])
+async def test_dom_layer_reads_each_autocomplete_token(decider, settings, autocomplete):
+    decider.jev = FakeJev(error=True)
+    page = PageSnapshot(url="u", visible_text="", inputs=[PageInput(name="f1", autocomplete=autocomplete)])
+    v = await check_page(decider, page, settings.thresholds)
+    assert v.stop and v.reason == "dom_card_field", autocomplete
+
+
+@pytest.mark.parametrize("name", NOT_CARD)
+def test_dom_layer_leaves_other_fields(name):
+    from app.guard import is_card_field
+
+    assert not is_card_field(name=name)
+
+
 async def test_guard_stops_on_low_payment_probability(decider, settings):
     decider.jev = FakeJev(page_answer(0.25, "cart"))  # threshold 0.2
     v = await check_page(decider, PageSnapshot(url="u", visible_text="Your cart"), settings.thresholds)

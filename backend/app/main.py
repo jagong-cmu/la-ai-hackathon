@@ -66,6 +66,9 @@ def due_supplies(view: PlannerView) -> list[SupplyPlan]:
     return [p for p in view.supplies if p.status != "ok" and p.recommended_qty > 0]
 
 
+MAX_SEQ = 2**62  # event seqs are SQLite integers (64-bit); a larger "after" would overflow
+
+
 class ModeChange(BaseModel):
     dependency: str
     mode: Mode
@@ -109,7 +112,16 @@ class AppState:
         insights = await self.insights()
         found = await self.discovery.discover(category, self.settings.demo_zip, self.distributor(),
                                               items=[i.bill_item_name for i in insights.items])
-        request = draft_request(insights, selected_suppliers(found), self.distributor(), self.settings.demo_zip)
+        suppliers = selected_suppliers(found)
+        if not suppliers:
+            # A request needs a supplier. Say why none was picked (no lane can run them in this
+            # browser mode, discovery found none...) instead of a ShoppingRequest ValidationError.
+            raise HTTPException(503, {
+                "code": "no_suppliers",
+                "text": f"No supplier can be searched now ({len(found.candidates)} found by {found.source}).",
+                "candidates": [{"id": c.id, "name": c.name, "reason": c.reason} for c in found.candidates],
+            })
+        request = draft_request(insights, suppliers, self.distributor(), self.settings.demo_zip)
         plan = {p.item_id: p for p in due_supplies(await self.planner.view())}
         due = [i for i in request.items if i.id in plan]
         for item in due:
@@ -169,6 +181,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.s = AppState(settings)
+        await app.state.s.orchestrator.fail_orphans()
         app.state.s.warm_up()
         yield
         await app.state.s.aclose()
@@ -269,6 +282,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                          s: AppState = Depends(state)) -> JobCreated:
         if not 8 <= len(idempotency_key) <= 128:
             raise HTTPException(422, "Idempotency-Key must be 8 to 128 characters")
+        sent = stable_hash(body.model_dump(mode="json", by_alias=True))
+        if s.db.claim_request_hash(idempotency_key, sent) != sent:
+            raise HTTPException(422, {"code": "idempotency_key_reused",
+                                      "text": "This Idempotency-Key was sent before with another request."})
         return await s.orchestrator.create_job(body, idempotency_key)
 
     @app.get("/jobs", response_model=list[JobView])
@@ -297,13 +314,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return rules
 
     @app.get("/jobs/{job_id}/events")
-    async def job_events(job_id: str, request: Request, after: int = Query(0, ge=0),
+    async def job_events(job_id: str, request: Request, after: int = Query(0, ge=0, le=MAX_SEQ),
                          follow: bool = Query(True, description="false: send the events so far, then close"),
                          last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
                          s: AppState = Depends(state)) -> StreamingResponse:
         if s.orchestrator.get_view(job_id) is None:
             raise HTTPException(404, "job not found")
-        start = int(last_event_id) if last_event_id and last_event_id.isdigit() else after
+        start = min(int(last_event_id), MAX_SEQ) if last_event_id and last_event_id.isdigit() else after
 
         def frame(event) -> str:
             return f"id: {event.seq}\nevent: {event.type}\ndata: {event.model_dump_json(by_alias=True)}\n\n"
@@ -371,7 +388,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "unknown provider")
         if not hmac.compare_digest(x_webhook_secret, settings.webhook_secret.get_secret_value()):
             raise HTTPException(401, "bad webhook secret")
-        payload = json.loads(await request.body() or b"{}")
+        try:
+            payload = json.loads(await request.body() or b"{}")
+        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+            raise HTTPException(400, "body must be JSON") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(400, "body must be a JSON object")
         event_id = str(payload.get("eventId") or payload.get("id") or "")
         if event_id and not s.db.first_time_webhook(provider, event_id):
             return JSONResponse({"duplicate": True})

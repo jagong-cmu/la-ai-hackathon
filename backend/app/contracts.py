@@ -6,11 +6,13 @@ JSON Schema that the frontend turns into TypeScript types.
 
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -39,10 +41,10 @@ class SearchSpec(Model):
 class ShoppingItem(Model):
     id: str
     name: str
-    quantity: int = Field(gt=0)
+    quantity: int = Field(gt=0, le=1_000_000_000)  # keeps every money value exact to the cent
     unit: str
-    past_unit_price: float | None = None
-    order_cadence_days: float | None = None
+    past_unit_price: float | None = Field(default=None, ge=0)  # anchors the distributor call
+    order_cadence_days: float | None = Field(default=None, ge=0)
     source_bill_ids: list[str] = []
     spec: SearchSpec | None = None
 
@@ -53,6 +55,18 @@ class SupplierRef(Model):
     url: str
     adapter: str | None = None  # None = unknown site, the lane uses the LLM agent
     origin: Literal["creao", "cache", "manual", "fixture"] = "manual"
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _web_url(cls, value: Any) -> Any:
+        # A live lane opens this URL, and POST /jobs is public: only http(s). CREAO may omit the scheme.
+        if isinstance(value, str):
+            value = value.strip()
+            if "://" not in value and not value.lower().startswith(("javascript:", "data:", "file:")):
+                value = "https://" + value
+            if not re.match(r"https?://[^/\s]+", value, re.I):
+                raise ValueError("url must be an http or https address")
+        return value
 
 
 class DistributorRef(Model):
@@ -176,6 +190,15 @@ class Product(Model):
     pack_price: float
     units_per_pack: int | None = None
     jev: JevListing | None = None
+
+
+def path_segment(value: str) -> str:
+    """A safe file or folder name for an id from a request (supplier, distributor, item): no "/",
+    no "..". Evidence files, their /evidence/... URLs and fixture paths use it."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", value).lstrip(".") or "_"
+    if len(safe) > 80:  # a file name has at most 255 bytes; keep long ids distinct with a hash
+        safe = safe[:64] + "-" + hashlib.sha256(value.encode()).hexdigest()[:12]
+    return safe
 
 
 class Evidence(Model):

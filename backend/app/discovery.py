@@ -30,18 +30,29 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from datetime import datetime
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from app.config import FIXTURES_DIR, RuntimeModes, Settings
-from app.contracts import DiscoveryResult, DistributorRef, SupplierCandidate, SupplierRef, utcnow
+from app.contracts import (
+    DiscoveryResult,
+    DistributorRef,
+    SupplierCandidate,
+    SupplierRef,
+    path_segment,
+    utcnow,
+)
 from app.db import Database, stable_hash
 from app.decide import Decider
 from app.judgments import j3_supplier
+
+log = logging.getLogger(__name__)
 
 MAX_ADAPTER_LANES = 3
 MAX_AGENT_LANES = 1
@@ -80,6 +91,17 @@ class CreaoError(Exception):
 
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40]
+
+
+def _text(value: Any) -> str | None:
+    """A model-written field as text: numbers become strings, lists and objects are dropped."""
+    if isinstance(value, bool) or not isinstance(value, str | int | float):
+        return None
+    return str(value).strip() or None
+
+
+def _row_id(row: dict[str, Any]) -> str:
+    return _text(row.get("id")) or _slug(_text(row.get("name")) or row["url"])
 
 
 def _error_code(resp: httpx.Response) -> str:
@@ -197,7 +219,7 @@ def adapter_for_url(url: str) -> str | None:
 
 def _resolve_adapter(row: dict[str, Any], known: set[str]) -> str | None:
     """A row's own adapter, else its domain's; None (LLM agent lane) unless it is registered."""
-    for adapter in (row.get("adapter"), adapter_for_url(row["url"])):
+    for adapter in (_text(row.get("adapter")), adapter_for_url(row["url"])):
         if adapter and adapter in known:
             return adapter
     return None
@@ -211,7 +233,7 @@ def _prices_hidden(row: dict[str, Any]) -> bool:
 
 def _load_seed(category: str, zip_code: str) -> tuple[str | None, list[dict[str, Any]], float | None] | None:
     """A saved real CREAO result: (run id, rows, age in seconds), or None if there is none."""
-    path = CREAO_SEED_DIR / f"{category}-{zip_code}.json"
+    path = CREAO_SEED_DIR / f"{path_segment(category)}-{path_segment(zip_code)}.json"  # query values
     if not path.exists():
         return None
     seed = json.loads(path.read_text())
@@ -277,18 +299,18 @@ class Discovery:
         known = self.known_adapters
         candidates = [
             SupplierCandidate(
-                id=c.get("id") or _slug(c.get("name") or c["url"]),
-                name=c.get("name") or c["url"],
+                id=_row_id(c),
+                name=_text(c.get("name")) or c["url"],
                 url=c["url"],
-                phone=c.get("phone") or None,
-                email=c.get("email") or None,
+                phone=_text(c.get("phone")),
+                email=_text(c.get("email")),
                 adapter=_resolve_adapter(c, known),
                 creao_run_id=run_id,
                 cached_at=utcnow() if source == "creao" else None,
             )
             for c in raw
         ]
-        notes = {c.get("id") or _slug(c.get("name") or c["url"]): c.get("notes") or "" for c in raw}
+        notes = {_row_id(c): _text(c.get("notes")) or "" for c in raw}
         # Code filter before J3: a supplier without public prices cannot be priced by a lane.
         hidden = {cand.id for cand, c in zip(candidates, raw, strict=True) if _prices_hidden(c)}
         judged = [c for c in candidates if c.id not in hidden]
@@ -398,7 +420,13 @@ def selected_suppliers(result: DiscoveryResult) -> list[SupplierRef]:
             return "fixture" if c.adapter == "fixture" else "manual"
         return {"creao": "creao", "fixture": "fixture"}.get(result.source, "cache")
 
-    return [
-        SupplierRef(id=c.id, name=c.name, url=c.url, adapter=c.adapter, origin=origin(c))  # type: ignore[arg-type]
-        for c in result.candidates if c.selected
-    ]
+    refs = []
+    for c in result.candidates:
+        if not c.selected:
+            continue
+        try:
+            refs.append(SupplierRef(id=c.id, name=c.name, url=c.url, adapter=c.adapter,
+                                    origin=origin(c)))  # type: ignore[arg-type]
+        except ValidationError:
+            log.warning("discovery: skipped %s, its url is not a web address: %r", c.id, c.url)
+    return refs

@@ -30,6 +30,7 @@ from app.contracts import (
     SupplierOffers,
     SupplierRef,
     VerifiedCart,
+    path_segment,
 )
 from app.decide import Decider
 from app.guard import check_page
@@ -76,9 +77,11 @@ class LaneContext:
         await asyncio.sleep(max(0.0, seconds * self.settings.fixture_time_scale))
 
     def evidence(self, name: str) -> tuple[Path, str]:
-        folder = self.evidence_dir / self.job_id / self.supplier.id
+        # Ids in the request (supplier, item) are part of these paths, so keep each part inside.
+        sid, name = path_segment(self.supplier.id), path_segment(name)
+        folder = self.evidence_dir / self.job_id / sid
         folder.mkdir(parents=True, exist_ok=True)
-        return folder / name, f"/evidence/{self.job_id}/{self.supplier.id}/{name}"
+        return folder / name, f"/evidence/{self.job_id}/{sid}/{name}"
 
 
 class SupplierLane(Protocol):
