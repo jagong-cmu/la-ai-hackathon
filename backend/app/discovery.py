@@ -10,6 +10,7 @@ CREAO contract (app-scoped API Trigger, docs.creao.ai/pro/api-trigger, checked 2
 - Poll: `GET /api/v1/apps/{appId}/runs/{runId}` until `status` is `completed`, `failed` or
   `cancelled` (other values: `pending`, `running`). The final text is in `result.text`
   (`result.chatText` when the chat reply differs); files are in `result.artifacts`.
+  Live runs put the supplier JSON in `result.chatText`, so the parser tries each field.
   A failed run carries `errorCode`.
 - Errors: JSON envelope `{"error": "ERROR_CODE"}`; 401 = bad or revoked key; 429 = rate
   limited (honor `Retry-After`).
@@ -102,18 +103,33 @@ def _find_json(text: str) -> Any:
     raise CreaoError("no supplier JSON in CREAO output")
 
 
-def _run_output(run: dict[str, Any]) -> Any:
-    """The agent's final output from a polled run (`result.text`, then older shapes)."""
+def _run_outputs(run: dict[str, Any]) -> list[Any]:
+    """Every place a polled run can hold the agent's output, in the order to try them.
+
+    Live runs (checked 2026-10-17) put a short summary JSON in `result.text` and the
+    supplier JSON in `result.chatText`, so one non-empty field is not enough."""
+    outputs: list[Any] = []
     result = run.get("result")
     if isinstance(result, dict):
-        for key in ("text", "chatText", "output"):
-            if result.get(key):
-                return result[key]
+        outputs += [result[key] for key in ("text", "chatText", "output") if result.get(key)]
         if "suppliers" in result:
-            return result
-    if result:
-        return result
-    return run.get("output")
+            outputs.append(result)
+    elif result:
+        outputs.append(result)
+    if run.get("output"):
+        outputs.append(run["output"])
+    return outputs
+
+
+def _parse_run(run: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse the first output field that holds a usable supplier list."""
+    error = CreaoError("empty CREAO output")
+    for output in _run_outputs(run):
+        try:
+            return _parse_creao_output(output)
+        except CreaoError as exc:
+            error = exc
+    raise error
 
 
 def _parse_creao_output(output: Any) -> list[dict[str, Any]]:
@@ -260,7 +276,7 @@ class Discovery:
                 status = _json_body(resp)
                 state = str(status.get("status", "")).lower()
                 if state == TERMINAL_OK:
-                    return run_id, _parse_creao_output(_run_output(status))
+                    return run_id, _parse_run(status)
                 if state in TERMINAL_FAIL:
                     err = status.get("error")
                     code = status.get("errorCode") or (err.get("code") if isinstance(err, dict) else err)
