@@ -538,3 +538,26 @@ def test_huge_numbers_are_refused_not_overflowed(client):
     body = json.loads(json.dumps(draft))
     body["items"][0]["quantity"] = 10**25
     assert client.post("/jobs", json=body, headers={"Idempotency-Key": "test-big-0002"}).status_code == 422
+
+
+def test_a_stored_job_that_breaks_a_newer_rule_does_not_stop_the_server(settings):
+    """Soak S-018: S-011 made pastUnitPrice ge=0. A job stored before that (-3.0) made the start fail
+    ('Application startup failed') in fail_orphans(), and GET /jobs failed too."""
+    from app.contracts import JobState, JobView, ShoppingRequest
+    from app.db import Database
+
+    with TestClient(create_app(settings)) as c:
+        request = ShoppingRequest.model_validate(c.get("/shopping-list/draft").json())
+    db = Database(settings.db_path)
+    for jid, state in (("job_legacy0001", JobState.gathering), ("job_legacy0002", JobState.rejected)):
+        snap = json.loads(JobView(job_id=jid, state=state, request=request).model_dump_json(by_alias=True))
+        snap["request"]["items"][0]["pastUnitPrice"] = -3.0  # valid when it was stored
+        db.save_job(JobView(job_id=jid, state=state, request=request))
+        db._conn.execute("UPDATE jobs SET snapshot = ? WHERE job_id = ?", (json.dumps(snap), jid))
+    db.close()
+    with TestClient(create_app(settings)) as c:  # starts
+        assert c.get("/health").status_code == 200
+        assert c.get("/jobs").status_code == 200
+        assert c.get("/jobs/job_legacy0002").status_code == 404  # unreadable now, not a 500
+    db = Database(settings.db_path)
+    assert db._conn.execute("SELECT state FROM jobs WHERE job_id = 'job_legacy0001'").fetchone()[0] == "failed"

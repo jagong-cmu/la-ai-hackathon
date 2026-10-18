@@ -9,13 +9,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.contracts import Event, JobView
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS request_hashes (
@@ -76,6 +81,15 @@ def stable_hash(*parts: Any) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _view(job_id: str, snapshot: str) -> JobView | None:
+    """A stored job, or None when its snapshot breaks a rule added since it was saved."""
+    try:
+        return JobView.model_validate_json(snapshot)
+    except ValidationError as exc:
+        log.warning("job %s: stored snapshot does not fit the current contract: %s", job_id, exc)
+        return None
+
+
 class Database:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,24 +144,33 @@ class Database:
             row = self._conn.execute(
                 "SELECT snapshot FROM jobs WHERE job_id = ?", (job_id,)
             ).fetchone()
-        return JobView.model_validate_json(row["snapshot"]) if row else None
+        return _view(job_id, row["snapshot"]) if row else None
 
     def list_jobs(self, limit: int = 50) -> list[JobView]:
         """The newest jobs first, for the Orders screen."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT snapshot FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT job_id, snapshot FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()
-        return [JobView.model_validate_json(r["snapshot"]) for r in rows]
+        return [v for r in rows if (v := _view(r["job_id"], r["snapshot"])) is not None]
 
     def unfinished_jobs(self, final_states: set[str]) -> list[JobView]:
-        """Jobs whose stored state is not final: after a restart, no process runs them."""
+        """Jobs whose stored state is not final: after a restart, no process runs them.
+        A row that no longer loads is marked failed here, so it is not tried at each start."""
         marks = ",".join("?" * len(final_states))
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT snapshot FROM jobs WHERE state NOT IN ({marks})", sorted(final_states)  # noqa: S608
+                f"SELECT job_id, snapshot FROM jobs WHERE state NOT IN ({marks})", sorted(final_states)  # noqa: S608
             ).fetchall()
-        return [JobView.model_validate_json(r["snapshot"]) for r in rows]
+        views = []
+        for r in rows:
+            view = _view(r["job_id"], r["snapshot"])
+            if view is None:
+                with self._lock:
+                    self._conn.execute("UPDATE jobs SET state = 'failed' WHERE job_id = ?", (r["job_id"],))
+            else:
+                views.append(view)
+        return views
 
     # ------------------------------------------------------------ events
 
