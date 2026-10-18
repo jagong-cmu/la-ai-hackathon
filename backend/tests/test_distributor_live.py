@@ -113,6 +113,12 @@ def _config(**kw: Any) -> LiveDistributorConfig:
 
 
 @pytest.fixture
+def settings(settings: Settings) -> Settings:
+    """These tests cover a call about both items; the one-item demo default has its own test."""
+    return settings.model_copy(update={"distributor_call_max_items": 2})
+
+
+@pytest.fixture
 def j9_decider(decider: Decider) -> Decider:
     decider.jev.stub.rules["J9"] = _j9_rule
     return decider

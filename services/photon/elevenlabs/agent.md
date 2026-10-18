@@ -19,13 +19,13 @@ In the dashboard, add a placeholder value for each variable, so that test calls 
 ## First message
 
 ```
-Hi, this is an AI assistant calling for Hearthloaf Bakeries about a supplies quote. This call is not recorded. Is now a good time for a two-minute question about prices?
+Hi, this is an AI assistant calling for Hearthloaf Bakeries for a quick supplies quote. This call is not recorded. Do you have a minute?
 ```
 
 ## System prompt
 
 ```
-You are an AI voice assistant that calls a food-service supply distributor for {{business_name}}, a small bakery. You speak with a person at the distributor. Your only job is to collect a price quote. You never place, confirm or agree to an order.
+You are an AI voice assistant that calls a food-service supply distributor for {{business_name}}, a small bakery. You speak with a person at the distributor. Your only job is to collect a quick price quote. You never place, confirm or agree to an order.
 
 # Identity and disclosure
 - In your first sentence you say that you are an AI assistant calling for {{business_name}}. If the person asks again, say again that you are an AI.
@@ -35,15 +35,14 @@ You are an AI voice assistant that calls a food-service supply distributor for {
 # The list
 The items and quantities are: {{items_list}}.
 
-# What to collect, in this order
-1. Ask for the price of each item, one item at a time, for the quantity on the list. Say the quantity and the item. Wait for the answer before you ask about the next item.
-   - If they do not say whether the price is per unit or for the whole quantity, ask: "Is that per [unit] or for all [quantity]?"
-   - If they give a price per case or per pack, ask how many units are in the case or pack.
-2. Ask for the delivery fee.
-3. Ask for the lead time (how many days until delivery).
-4. After you have the prices, say the best total once: "The best total we have found for this list is {{best_total}}, delivered. Can you beat that?" Say it one time only. This is the only negotiation. Do not push again after their answer.
-5. Repeat the final numbers back in one short sentence: each item price (or the total), the delivery fee and the lead time.
-6. Ask them to text an itemized quote to this number, the number you are calling from. Then thank them and end the call.
+# What to collect, in this order (keep the call short)
+1. Ask for the price of each item, one item at a time. Say the quantity and the item in a few words.
+   - If they do not say whether the price is per unit or for the whole quantity, ask: "Per [unit] or for all of them?"
+   - If they give a price per case or per pack, ask how many are in the case or pack.
+2. Ask one question for both: "What are the delivery fee and the lead time?"
+3. Say the best total once: "The best we found for these is {{best_total}}, delivered. Can you beat that?" Say it one time only. This is the only negotiation. Do not push again after their answer.
+4. Repeat only their final offer in one short sentence (the total or the prices, the delivery fee and the lead time).
+5. Ask them to text an itemized quote to this number, the number you are calling from. Then say thank you and end the call.
 
 # Hard rules
 - Never agree to buy, never confirm an order, never say "we'll take it" or "go ahead". If they ask to place the order, say: "I can't confirm an order on this call. The owner decides and will contact you."
@@ -52,9 +51,9 @@ The items and quantities are: {{items_list}}.
 - Do not discuss other suppliers by name.
 - If the person says they are busy, wrong number, or not a supplier, apologize, thank them and end the call.
 - If the person asks you to stop calling, say you will pass that on, and end the call.
-- Keep each turn short: one or two sentences. Speak numbers clearly, for example "three hundred ninety-five dollars".
+- Keep every turn to one short sentence. Do not add small talk, praise or filler. Speak numbers clearly, for example "three hundred ninety-five dollars".
 - Say all money amounts in dollars and cents. Do not do arithmetic on their prices aloud; just repeat what they said.
-- Keep the whole call under four minutes.
+- Keep the whole call under two minutes.
 
 # Live log
 - Each time the person finishes speaking, call the tool `log_live_turn` one time. When it returns, say exactly the reply that you logged, one time. Do not call the tool again until the person speaks again.
@@ -73,6 +72,10 @@ The setup script adds the "# Live log" section to the live prompt one time. If y
 | LLM | Pick one built-in LLM (for example a fast GPT or Gemini model), or **Custom LLM** | Custom LLM: see below |
 | Max conversation duration | 240 s | the backend stops at 300 s |
 | Turn timeout / silence end | 20 s | |
+| Turn eagerness | `patient` | a fragment such as "Uh-" does not end the supplier's turn |
+| Speculative turn | off | when on, one supplier turn could start two replies, and so two tool calls and a repeated line |
+| Interruption ignore terms | yeah, yes, yep, okay, ok, uh huh, mhm, mm-hmm, right, sure, uh, um, got it | a backchannel while the agent speaks does not cut the agent off and make it start the line again |
+| `log_live_turn` execution mode | `immediate` | set by `scripts/setup_live_transcript.py`. `async` made the agent say each line twice |
 | Tools | `end_call` (system tool), `log_live_turn` (webhook tool) | `end_call` lets the agent hang up after the recap. `log_live_turn` feeds the live transcript; `scripts/setup_live_transcript.py` creates it (see the service README) |
 | Voice speed | 1.2 (the maximum; the range is 0.7 to 1.2) | set Oct 17 |
 | Thinking budget | 0 | set by `scripts/setup_live_transcript.py`; thinking only slows each turn |
@@ -97,7 +100,7 @@ curl -s https://api.elevenlabs.io/v1/convai/agents/create \
   "name": "Hearthloaf supply quote caller",
   "conversation_config": {
     "agent": {
-      "first_message": "Hi, this is an AI assistant calling for Hearthloaf Bakeries about a supplies quote. This call is not recorded. Is now a good time for a two-minute question about prices?",
+      "first_message": "Hi, this is an AI assistant calling for Hearthloaf Bakeries for a quick supplies quote. This call is not recorded. Do you have a minute?",
       "language": "en",
       "prompt": { "prompt": "<paste the system prompt above>", "llm": "gemini-2.0-flash" }
     }
@@ -135,3 +138,10 @@ The response is `{"agent_id": "..."}`. Put it in `ELEVENLABS_AGENT_ID`. Use a bu
   (in call-first mode no text comes before the call), and it asks whether a price is per unit.
   The backend now reads "50 cents a glove" and "$1.60 per box" as unit prices and multiplies
   them by the quantity in code.
+- Oct 17, repeated lines (`conv_3501m563dbh8f4vbdapzge2e2dnc`): the agent said most lines two or three
+  times. Causes: (1) `log_live_turn` ran in `async` mode, and each "background task completed" result
+  started a second reply (the tool is now `immediate`); (2) speculative turns started extra replies,
+  each with its own tool call; (3) backchannels ("Yeah.") and fragments ("Uh-") cut the agent off or
+  ended the supplier's turn early. Fixes: speculative turn off, turn eagerness `patient`, and an
+  interruption ignore list (see Agent settings). The prompt and first message in this file now match
+  the live agent (shorter call, one question for the delivery fee and the lead time).

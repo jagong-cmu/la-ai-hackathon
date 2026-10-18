@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     # sms_first: text a quote request, wait distributor_reply_wait_s, then call if no full quote.
     distributor_flow: Literal["call_first", "sms_first"] = "call_first"
     # The call covers only the N items with the highest line cost in the best plan (short demo call).
-    # The other items stay with the web suppliers. 0 = every item.
-    distributor_call_max_items: int = 2
+    # The other items stay with the web suppliers. 0 = every item. 1 keeps the demo call short.
+    distributor_call_max_items: int = 1
     distributor_reply_wait_s: float = 20
     distributor_call_latest_s: float = 60
     fixture_time_scale: float = 1.0  # 0 makes fixture lanes instant (tests)
