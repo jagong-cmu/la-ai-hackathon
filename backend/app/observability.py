@@ -43,7 +43,12 @@ def span(op: str, name: str, **data: Any) -> Iterator[Any]:
         return
     with sentry_sdk.start_span(op=op, name=name) as s:
         set_data(s, **data)
-        yield s
+        try:
+            yield s
+        except BaseException as exc:
+            # Sentry marks the span as an error; also keep why (a timeout, a blocked site...).
+            set_data(s, **{"error.type": type(exc).__name__, "error.reason": getattr(exc, "reason", None)})
+            raise
 
 
 def set_data(s: Any, **data: Any) -> None:
@@ -53,6 +58,21 @@ def set_data(s: Any, **data: Any) -> None:
     for key, value in data.items():
         if value is not None:
             s.set_data(key, value)
+
+
+def outcome(s: Any, status: str, **data: Any) -> None:
+    """Record how a step ended, so Sentry can group runs by result and not only by time.
+
+    `status` is a Sentry span status: "ok", "internal_error", "deadline_exceeded", "not_found"..."""
+    if s is None:
+        return
+    s.set_status(status)
+    set_data(s, **data)
+
+
+def current() -> Any:
+    """The open span or transaction of this task, or None when Sentry is off."""
+    return sentry_sdk.get_current_span() if _enabled else None
 
 
 def ai_span(system: str, model: str, purpose: str, **data: Any) -> contextlib.AbstractContextManager[Any]:

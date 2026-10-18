@@ -19,6 +19,7 @@ from app.config import Settings
 from app.db import Database, stable_hash
 from app.jev import JevClient, JevError, Question, confidence
 from app.llm import LLMError, Step5Client
+from app.observability import outcome, span
 
 Band = Literal["act", "confirm", "unsure", "safe_default"]
 
@@ -58,6 +59,31 @@ class Decider:
         job_id: str | None = None,
         act: float | None = None,
         confirm: float | None = None,
+    ) -> Decision:
+        # One span per judgment: the model calls are its children, and its result shows which
+        # decisions are unsure or escalate (the cases to add to the eval).
+        with span("decide", f"decide {j_id}", **{"decision.id": j_id, "decision.stakes": stakes.value,
+                                                   "decision.questions": len(questions)}) as s:
+            decision = await self._decide(j_id, state, questions, stakes=stakes, primary=primary,
+                                          safe_default=safe_default, job_id=job_id, act=act, confirm=confirm)
+            outcome(s, "ok" if decision.band in ("act", "confirm") else "unknown", **{
+                "decision.band": decision.band, "decision.confidence": decision.confidence,
+                "decision.escalated": decision.escalated, "decision.source": decision.source,
+                "decision.notes": "; ".join(decision.notes) or None})
+            return decision
+
+    async def _decide(
+        self,
+        j_id: str,
+        state: Any,
+        questions: dict[str, Question],
+        *,
+        stakes: Stakes,
+        primary: list[str] | None,
+        safe_default: dict[str, Any] | None,
+        job_id: str | None,
+        act: float | None,
+        confirm: float | None,
     ) -> Decision:
         th = self.settings.thresholds
         act = th.act_band if act is None else act
