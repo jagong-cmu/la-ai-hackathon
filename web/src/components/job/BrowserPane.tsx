@@ -2,7 +2,7 @@
 // One store's browser agent, drawn as a small browser window. A live view (Browser Use) is
 // embedded when the lane has one; else the last screenshot; else the page the agent is on,
 // drawn from the job data. The agent cursor sits on the element the agent works on.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, apiUrl, money, type JobView } from "@/api/client";
 import { Pointer } from "@/components/Icons";
 import { Status } from "@/components/Status";
@@ -53,6 +53,37 @@ function useEvidenceText(url: string | null) {
     };
   }, [url]);
   return url && !isImage(url) ? text : null;
+}
+
+// The cloud browser's window: its own tab bar and address bar, then a desktop page. The live
+// view lays that window out at the iframe's size, so a small iframe gives full-size chrome and a
+// thumbnail page. Render it at desktop width and scale the whole window down instead.
+const NATIVE_W = 1280;
+
+function LiveFrame({ src, title }: { src: string; title: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setSize({ w: e.contentRect.width, h: e.contentRect.height }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const scale = size ? size.w / NATIVE_W : 1;
+  return (
+    <div ref={box} className="bp-live-box">
+      {size && (
+        <iframe
+          className="bp-live"
+          src={src}
+          title={title}
+          sandbox="allow-scripts allow-same-origin"
+          style={{ width: NATIVE_W, height: size.h / scale, transform: `scale(${scale})` }}
+        />
+      )}
+    </div>
+  );
 }
 
 /** A fixture "screenshot" is the cart page as text: one line per row, amount last. */
@@ -137,7 +168,7 @@ export function BrowserPane({
   let body: React.ReactNode;
   if (lane.liveUrl && live) {
     // A finished lane's cloud browser is closed: show its last page below instead.
-    body = <iframe className="bp-live" src={lane.liveUrl} title={`${name} live browser`} sandbox="allow-scripts allow-same-origin" />;
+    body = <LiveFrame src={lane.liveUrl} title={`${name} live browser`} />;
   } else if (failed) {
     body = (
       <div className="bp-wall">
@@ -190,7 +221,9 @@ export function BrowserPane({
             )}
           </span>
         </div>
-        <div className="bp-body">{body}</div>
+        <div className="bp-body">
+          <div className="bp-view">{body}</div>
+        </div>
       </div>
       <div className="bp-foot">
         <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
