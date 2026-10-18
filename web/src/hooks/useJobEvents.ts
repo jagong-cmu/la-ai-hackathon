@@ -2,6 +2,8 @@
 // Live job state: GET /jobs/{id} for the first state, then EventSource on /jobs/{id}/events.
 // The browser's EventSource resends Last-Event-ID itself when it reconnects, so the
 // backend resumes after the last seq we saw. We also drop any event with seq <= lastSeq.
+// Some proxies (Cloudflare quick tunnels) hold an open stream back until it ends. When the
+// stream sends nothing for STREAM_WAIT_MS, we close it and poll ?follow=false&after=seq.
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { api, TERMINAL_JOB_STATES, type JobEvent, type JobView, type LaneStatus } from "@/api/client";
 
@@ -15,9 +17,13 @@ export const EVENT_TYPES = [
   "quote_received",
   "rules_checked", "card_minted", "handoff_ready",
   "dependency_degraded", "replay_started",
+  "call_scope", "cart_verified", "checkout_quote", "lane_fallback", "hosted_run",
 ] as const;
 
-const REFETCH_ON = new Set(["plans_updated", "offers_ready", "results_ready", "results_updated", "handoff_ready", "job_state", "approved", "rejected"]);
+const STREAM_WAIT_MS = 4000;
+const POLL_MS = 1500;
+
+const REFETCH_ON = new Set(["plans_updated", "offers_ready", "cart_verified", "results_ready", "results_updated", "handoff_ready", "job_state", "approved", "rejected"]);
 
 export interface LaneTile {
   laneId: string;
@@ -119,6 +125,16 @@ function applyEvent(s: JobEventsState, e: JobEvent): JobEventsState {
       case "supplier_cart_ready":
         lane = { ...prev, cartTotal: num(d.total), lastTotal: num(d.total) ?? prev.lastTotal, totalsCheck: str(d.totalsCheck) || undefined };
         break;
+      case "cart_verified":
+        lane = {
+          ...prev,
+          lastTotal: num(d.total) ?? prev.lastTotal,
+          lastScreenshotUrl: str(d.screenshotUrl) || prev.lastScreenshotUrl,
+        };
+        break;
+      case "lane_fallback":
+        lane = { ...prev, mode: str(d.to) || prev.mode };
+        break;
       case "subset_total":
         lane = { ...prev, subsetTotal: num(d.total), lastTotal: num(d.total) ?? prev.lastTotal };
         break;
@@ -210,6 +226,9 @@ export function useJobEvents(jobId: string | undefined) {
   useEffect(() => {
     if (!jobId) return;
     let closed = false;
+    let lastSeq = 0;
+    let gotEvent = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
     void refetch();
     dispatch({ type: "connection", connection: "connecting" });
     const es = new EventSource(api.eventsUrl(jobId));
@@ -219,6 +238,34 @@ export function useJobEvents(jobId: string | undefined) {
       refetchTimer.current = setTimeout(() => void refetch(), 150);
     };
 
+    /** Apply one event. Returns true when the job reached a final state. */
+    const handle = (ev: JobEvent): boolean => {
+      if (ev.seq <= lastSeq) return false;
+      lastSeq = ev.seq;
+      dispatch({ type: "event", event: ev });
+      if (REFETCH_ON.has(ev.type)) scheduleRefetch();
+      return ev.type === "job_state" && TERMINAL_JOB_STATES.has(String(ev.data?.state));
+    };
+
+    const finish = () => {
+      closed = true;
+      es.close();
+      dispatch({ type: "connection", connection: "closed" });
+    };
+
+    const poll = async () => {
+      if (closed) return;
+      try {
+        let done = false;
+        for (const ev of await api.eventsOnce(jobId, lastSeq)) done = handle(ev) || done;
+        dispatch({ type: "connection", connection: "open" });
+        if (done) return finish();
+      } catch {
+        dispatch({ type: "connection", connection: "connecting" });
+      }
+      if (!closed) pollTimer = setTimeout(poll, POLL_MS);
+    };
+
     const onEvent = (msg: MessageEvent<string>) => {
       let ev: JobEvent;
       try {
@@ -226,14 +273,9 @@ export function useJobEvents(jobId: string | undefined) {
       } catch {
         return;
       }
-      dispatch({ type: "event", event: ev });
-      if (REFETCH_ON.has(ev.type)) scheduleRefetch();
-      if (ev.type === "job_state" && TERMINAL_JOB_STATES.has(String(ev.data?.state))) {
-        // Final state: the server closes the stream. Stop the browser from reconnecting.
-        closed = true;
-        es.close();
-        dispatch({ type: "connection", connection: "closed" });
-      }
+      gotEvent = true;
+      // Final state: the server closes the stream. Stop the browser from reconnecting.
+      if (handle(ev)) finish();
     };
 
     for (const t of EVENT_TYPES) es.addEventListener(t, onEvent as EventListener);
@@ -245,9 +287,18 @@ export function useJobEvents(jobId: string | undefined) {
       dispatch({ type: "connection", connection: es.readyState === EventSource.CLOSED ? "error" : "connecting" });
     };
 
+    // No event at all yet: a proxy may hold the stream back. Switch to polling.
+    const waitTimer = setTimeout(() => {
+      if (closed || gotEvent) return;
+      es.close();
+      void poll();
+    }, STREAM_WAIT_MS);
+
     return () => {
       closed = true;
       es.close();
+      clearTimeout(waitTimer);
+      if (pollTimer) clearTimeout(pollTimer);
       if (refetchTimer.current) clearTimeout(refetchTimer.current);
     };
   }, [jobId, refetch]);
