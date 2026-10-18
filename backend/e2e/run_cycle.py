@@ -124,10 +124,13 @@ async def main() -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--port", type=int, default=8100)
     ap.add_argument("--only", default="")
-    ap.add_argument("--scenario-timeout", type=float, default=180)
+    ap.add_argument("--scenario-timeout", type=float, default=None, help="default 180 s, x2.5 at real time")
     ap.add_argument("--time-scale", default="0.1", help="FIXTURE_TIME_SCALE; 1.0 is real time (finds races)")
     ap.add_argument("--profile", default="default", choices=sorted(scenarios.PROFILES))
     args = ap.parse_args()
+    wait_factor = 2.5 if float(args.time_scale) >= 0.5 else 1.0
+    if args.scenario_timeout is None:
+        args.scenario_timeout = 180 * wait_factor
     out: Path = args.out
     out.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240 - CLI setup before the loop matters
     var_dir = out / "var"
@@ -156,7 +159,7 @@ async def main() -> int:
             ctx = Ctx(client=client, base=base, admin_token=env.get("ADMIN_TOKEN", "dev-admin"),
                       webhook_secret=env.get("WEBHOOK_SECRET", "dev-webhook"),
                       restock_token=env.get("RESTOCK_TOKEN"), port=args.port, restart=restart,
-                      profile=args.profile)
+                      profile=args.profile, wait_factor=wait_factor)
             only = {s for s in args.only.split(",") if s} or None
             await run_all(ctx, only, args.scenario_timeout, results)
     finally:

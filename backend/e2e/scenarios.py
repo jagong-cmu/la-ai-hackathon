@@ -43,6 +43,7 @@ class Ctx:
     port: int
     restart: Callable[[], Awaitable[None]] | None = None  # stop and start the server on the same VAR_DIR
     profile: str = "default"
+    wait_factor: float = 1.0  # > 1 at real time: a fixture job then takes ~125 s (the delta lane)
     failures: list[str] = field(default_factory=list)
 
     def fail(self, msg: str) -> None:
@@ -104,6 +105,7 @@ async def create(ctx: Ctx, body: dict, idem: str | None = None, expect: set[int]
 
 
 async def wait_state(ctx: Ctx, job_id: str, states: set[str], timeout: float = 120) -> dict:
+    timeout *= ctx.wait_factor
     end = time.monotonic() + timeout
     view: dict = {}
     while time.monotonic() < end:
