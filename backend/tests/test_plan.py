@@ -176,3 +176,20 @@ def test_estimated_cart_freight_flows_into_plans():
     assert whole.carts[0].shipping == 13.83 and not whole.carts[0].shipping_is_estimate
     # A smaller cart from the same site uses the shown freight, not the $8 default.
     assert supplier_pricing({"a": a}, carts)["a"].reference_shipping == 13.83
+
+
+def test_a_listing_with_no_price_is_not_eligible():
+    """Soak S-016: pack_price 0 (a site's '$0.00 - add to cart to see the price') was eligible with a
+    line cost of 0, so the optimizer ranked it as the cheapest supplier."""
+    from app.contracts import Product, ShoppingItem, SupplierOffers
+    from app.stages.normalize import normalize_option
+
+    item = ShoppingItem(id="g", name="gloves", quantity=100, unit="glove")
+    for price in (0.0, -1.0):
+        product = Product(item_id="g", title="Gloves", sku="G1", pack_price=price, units_per_pack=100)
+        opt = normalize_option(item, SupplierOffers(supplier_id="s"), product, Thresholds())
+        assert not opt.eligible and "price_missing" in opt.flags
+    ok = normalize_option(item, SupplierOffers(supplier_id="s"),
+                          Product(item_id="g", title="Gloves", sku="G1", pack_price=9.5, units_per_pack=100),
+                          Thresholds())
+    assert ok.eligible and ok.line_cost == 9.5

@@ -71,8 +71,13 @@ export function createApp(deps: Deps, state: ServiceState = { jobByPhone: new Ma
 
   app.post("/sms", async (c) => {
     if (!authorized(c.req.header("X-Service-Token"))) return c.json({ error: "unauthorized" }, 401);
-    const body = (await c.req.json().catch(() => ({}))) as { jobId?: string; to?: string; text?: string };
-    const to = normalizePhone(body.to ?? "");
+    const raw = (await c.req.json().catch(() => ({}))) as unknown;
+    const body = (raw && typeof raw === "object" ? raw : {}) as { jobId?: unknown; to?: unknown; text?: unknown };
+    // A JSON number or object here made body.text.slice() throw (500): require strings.
+    if (typeof body.jobId !== "string" || typeof body.to !== "string" || typeof body.text !== "string") {
+      return c.json({ error: "jobId, to and text are required strings" }, 400);
+    }
+    const to = normalizePhone(body.to);
     if (!body.jobId || !to || !body.text) return c.json({ error: "jobId, to and text are required" }, 400);
     if (!allowed(to)) return c.json({ error: "number not in the team allowlist" }, 403);
     try {
@@ -87,14 +92,14 @@ export function createApp(deps: Deps, state: ServiceState = { jobByPhone: new Ma
 
   app.post("/calls", async (c) => {
     if (!authorized(c.req.header("X-Service-Token"))) return c.json({ error: "unauthorized" }, 401);
-    const body = (await c.req.json().catch(() => ({}))) as {
+    const body = ((await c.req.json().catch(() => ({}))) ?? {}) as {
       jobId?: string;
       to?: string;
       openingContext?: OpeningContext;
     };
-    const to = normalizePhone(body.to ?? "");
+    const to = typeof body.to === "string" ? normalizePhone(body.to) : "";
     const ctx = body.openingContext;
-    if (!body.jobId || !to || !ctx || typeof ctx.bestTotal !== "number" || !Array.isArray(ctx.items)) {
+    if (typeof body.jobId !== "string" || !body.jobId || !to || !ctx || typeof ctx.bestTotal !== "number" || !Array.isArray(ctx.items)) {
       return c.json({ error: "jobId, to and openingContext {bestTotal, items} are required" }, 400);
     }
     if (!allowed(to)) return c.json({ error: "number not in the team allowlist" }, 403);

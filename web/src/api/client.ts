@@ -52,6 +52,16 @@ export class ApiError extends Error {
 export function detailText(detail: unknown): string {
   if (detail == null) return "";
   if (typeof detail === "string") return detail;
+  // FastAPI validation errors are a list of {loc, msg}: show "items.1.quantity: Input should be ...".
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d) => {
+        if (!d || typeof d !== "object" || !("msg" in d)) return String(d);
+        const loc = Array.isArray((d as { loc?: unknown }).loc) ? (d as { loc: unknown[] }).loc.slice(1).join(".") : "";
+        return loc ? `${loc}: ${String((d as { msg: unknown }).msg)}` : String((d as { msg: unknown }).msg);
+      })
+      .join("; ");
+  }
   if (typeof detail === "object" && "text" in detail && typeof (detail as { text: unknown }).text === "string") {
     return (detail as { text: string }).text;
   }

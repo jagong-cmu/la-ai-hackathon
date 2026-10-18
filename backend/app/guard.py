@@ -17,7 +17,12 @@ from app.decide import Decider
 from app.judgments import j6_page_state
 
 CARD_AUTOCOMPLETE = {"cc-number", "cc-exp", "cc-exp-month", "cc-exp-year", "cc-csc", "cc-name", "cc-type"}
-CARD_FIELD = re.compile(r"card.?(number|no\b)|\bcvv\b|\bcvc\b|security.?code|cc-?num|expir", re.I)
+# Letters-only lookarounds, so "cc_number", "cvv2" and "card_exp_month" match ("_" and digits are word chars).
+CARD_FIELD = re.compile(
+    r"card.?(number|num|no\b)|(?<![a-z])(cvv|cvc|csc)\d?(?![a-z])|security.?code|cc.?num|expir"
+    r"|(?<![a-z])exp.?(month|year|date|mm|yy)",
+    re.I,
+)
 BLOCKING_STATES = {"login_wall", "bot_check", "out_of_stock"}
 
 
@@ -27,14 +32,16 @@ class GuardStop(Exception):
         self.verdict = verdict
 
 
+def is_card_field(name: str | None = None, id: str | None = None, label: str | None = None,  # noqa: A002
+                  autocomplete: str | None = None) -> bool:
+    # autocomplete holds tokens: "billing cc-number" is a card field too.
+    if CARD_AUTOCOMPLETE & set((autocomplete or "").lower().split()):
+        return True
+    return any(text and CARD_FIELD.search(text) for text in (name, id, label))
+
+
 def dom_card_fields(page: PageSnapshot) -> bool:
-    for field in page.inputs:
-        if (field.autocomplete or "").lower() in CARD_AUTOCOMPLETE:
-            return True
-        for text in (field.name, field.id, field.label):
-            if text and CARD_FIELD.search(text):
-                return True
-    return False
+    return any(is_card_field(f.name, f.id, f.label, f.autocomplete) for f in page.inputs)
 
 
 async def check_page(

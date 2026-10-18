@@ -40,7 +40,7 @@ from app.contracts import (
     SupplierRef,
     VerifiedCart,
 )
-from app.guard import CARD_AUTOCOMPLETE, CARD_FIELD
+from app.guard import is_card_field
 from app.judgments import j4_rerank, j5_listing, j7_totals
 from app.lanes.base import LaneContext, LaneGuardStopped
 from app.lanes.live import guards, warm
@@ -612,9 +612,7 @@ async def _refuse_card_field(loc: Locator) -> None:
         "el => ({name: el.getAttribute('name'), id: el.id, autocomplete: el.getAttribute('autocomplete'),"
         " label: el.labels && el.labels.length ? el.labels[0].innerText : el.getAttribute('aria-label')})"
     )
-    if (attrs.get("autocomplete") or "").lower() in CARD_AUTOCOMPLETE or any(
-        CARD_FIELD.search(attrs.get(k) or "") for k in ("name", "id", "label")
-    ):
+    if is_card_field(attrs.get("name"), attrs.get("id"), attrs.get("label"), attrs.get("autocomplete")):
         raise CardFieldRefused(json.dumps(attrs))
 
 

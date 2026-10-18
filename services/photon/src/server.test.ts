@@ -72,6 +72,19 @@ test("sms only goes to allowlisted team phones; replies are routed to the job", 
   assert.deepEqual(events, [["photon", { eventId: "sms:m9", jobId: "j1", type: "sms_in", text: "Gloves $250", messageId: "m9" }]]);
 });
 
+test("sms with fields that are not strings is a 400, not a crash", async () => {
+  // Soak S-026: text: 5 passed the `!body.text` check and then body.text.slice() threw (500).
+  const { app } = setup(new ScriptedVoice([]));
+  for (const body of [{ jobId: "j1", to: TEAM, text: 5 }, { jobId: "j1", to: 5551234567, text: "hi" },
+    { jobId: { a: 1 }, to: TEAM, text: "hi" }, [1, 2], null]) {
+    assert.equal((await post(app, "/sms", body)).status, 400, JSON.stringify(body));
+  }
+  const ctx = { bestTotal: 100, items: [] };
+  for (const body of [{ jobId: "j1", to: 5551234567, openingContext: ctx }, { jobId: 7, to: TEAM, openingContext: ctx }, null]) {
+    assert.equal((await post(app, "/calls", body)).status, 400, JSON.stringify(body));
+  }
+});
+
 test("a call forwards call_started, live transcript lines and one call_ended", async () => {
   const frames: Conversation[] = [
     { status: "initiated", transcript: [], dynamicVariables: {} },

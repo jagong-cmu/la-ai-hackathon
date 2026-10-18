@@ -168,6 +168,39 @@ def test_more_date_forms():
     assert resolve_date("this weekend", monday) == date(2026, 10, 10)
 
 
+def test_full_dates_and_short_quantities():
+    """Soak S-009: "on 2026-10-30" fell back to the message week (and gave "2026" as a quantity),
+    and "1.5k" gave the quantity 1."""
+    from app.planner.adjust import phrase_quantity
+
+    monday = date(2026, 10, 5)
+    text = "We need 300 extra buns on 2026-10-30, and 1.5k bags by 11/02/2026"
+    found = date_phrases(text)
+    assert {"2026-10-30", "11/02/2026"} <= set(found)
+    assert resolve_date("2026-10-30", monday) == date(2026, 10, 30)
+    assert resolve_date("11/02/2026", monday) == date(2026, 11, 2)
+    assert resolve_date("2026-02-30", monday) is None
+    qty = quantity_phrases(text, found)
+    assert qty == ["300 extra", "1.5k bags"]  # no number from inside a date
+    assert [phrase_quantity(q) for q in qty] == [300.0, 1500.0]
+    assert phrase_quantity("2.5 cases") == 2.5
+
+
+async def test_an_absurd_quantity_needs_confirmation(planner):
+    """Soak S-020: "about 99999999999999999999 extra hamburger buns" was applied, and the daily
+    check then asked to order 1e20 gloves. A quantity far above the product's history needs a yes."""
+    adj = await planner.owner_message("Catering a wedding Saturday, about 99999999999999999999 extra hamburger buns")
+    assert adj.status == "needs_confirmation" and any("history" in n for n in adj.notes)
+    normal = await planner.owner_message("Catering a wedding Saturday, about 300 extra hamburger buns")
+    assert normal.status == "applied"
+
+
+async def test_an_extra_with_no_quantity_needs_confirmation(planner):
+    adj = await planner.owner_message("We need three hundred extra hamburger buns next Friday")
+    assert adj.kind == "one_time_extra" and adj.quantity is None
+    assert adj.status == "needs_confirmation"  # "applied" would add 0 and look done
+
+
 async def test_cancel_takes_back_the_previous_adjustment(planner):
     first = await planner.owner_message("Catering a wedding Saturday, about 300 extra hamburger buns")
     cancel = await planner.owner_message("Forget the wedding, the hamburger bun order is cancelled")

@@ -23,6 +23,7 @@ from app.contracts import (
     SupplierOffers,
     SupplierRef,
     VerifiedCart,
+    path_segment,
 )
 from app.judgments import j5_listing, j7_totals
 from app.lanes.base import LaneBlocked, LaneContext
@@ -32,7 +33,7 @@ from app.stub_rules import FIXTURE_J5
 
 
 def fixture_path(supplier_id: str) -> Path:
-    return FIXTURES_DIR / "suppliers" / f"{supplier_id}.json"
+    return FIXTURES_DIR / "suppliers" / f"{path_segment(supplier_id)}.json"
 
 
 class FixtureLane:

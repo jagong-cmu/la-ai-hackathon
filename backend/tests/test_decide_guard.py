@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 import pytest
 
 from app.contracts import PageInput, PageSnapshot
@@ -68,6 +71,36 @@ async def test_dom_card_fields_stop_without_a_model(decider, settings, inputs):
     assert v.stop and v.reason == "dom_card_field"
 
 
+# Soak S-008: real card-field names that the DOM layer missed.
+CARD_NAMES = ["cc_number", "cardnum", "card_num", "cvv2", "cvc2", "csc", "card_csc", "exp_month", "expYear",
+              "cc-exp-date", "ccNumber", "card-security-code"]
+NOT_CARD = ["shipping_phone", "order_number", "promo_code", "email", "zip", "description", "giftMessage",
+            "company", "quantity", "expedite_shipping"]
+
+
+@pytest.mark.parametrize("name", CARD_NAMES)
+async def test_dom_layer_finds_card_field_names(decider, settings, name):
+    decider.jev = FakeJev(error=True)
+    v = await check_page(decider, PageSnapshot(url="u", visible_text="", inputs=[PageInput(name=name)]),
+                         settings.thresholds)
+    assert v.stop and v.reason == "dom_card_field", name
+
+
+@pytest.mark.parametrize("autocomplete", ["billing cc-number", "section-pay cc-csc", "CC-EXP"])
+async def test_dom_layer_reads_each_autocomplete_token(decider, settings, autocomplete):
+    decider.jev = FakeJev(error=True)
+    page = PageSnapshot(url="u", visible_text="", inputs=[PageInput(name="f1", autocomplete=autocomplete)])
+    v = await check_page(decider, page, settings.thresholds)
+    assert v.stop and v.reason == "dom_card_field", autocomplete
+
+
+@pytest.mark.parametrize("name", NOT_CARD)
+def test_dom_layer_leaves_other_fields(name):
+    from app.guard import is_card_field
+
+    assert not is_card_field(name=name)
+
+
 async def test_guard_stops_on_low_payment_probability(decider, settings):
     decider.jev = FakeJev(page_answer(0.25, "cart"))  # threshold 0.2
     v = await check_page(decider, PageSnapshot(url="u", visible_text="Your cart"), settings.thresholds)
@@ -87,3 +120,20 @@ async def test_stub_guard_detects_bot_check(decider, settings):
     v = await check_page(decider, PageSnapshot(url="u", visible_text="Please verify you are human"),
                          settings.thresholds)
     assert not v.stop and v.blocked == "bot_check"
+
+
+async def test_a_slow_step5_second_opinion_keeps_jevs_answer(decider, monkeypatch):
+    """Live 2026-10-18: Step 5 took 24 s and 18 s on two J5 listings, so the Restaurantware search
+    passed its 45 s budget and the lane failed. Past the limit, Jev's answer stays, marked unsure."""
+    async def slow(state, questions):
+        await asyncio.sleep(5)
+        return {"q": "never"}
+
+    monkeypatch.setattr(decider.settings, "step5_escalation_timeout_s", 0.05)
+    monkeypatch.setattr(decider.llm, "answer_questions", slow)
+    decider.jev = FakeJev({"q": {"type": "noul", "noul": 0.85}})  # confirm band
+    started = time.monotonic()
+    d = await decider.decide("J9", {"x": 1}, {"q": noul("?")})
+    assert time.monotonic() - started < 1
+    assert d.band == "unsure" and not d.escalated and d.answers == d.jev_answers
+    assert "no answer in 0.05 s" in " ".join(d.notes)

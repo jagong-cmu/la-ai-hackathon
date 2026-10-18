@@ -12,8 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from app.contracts import SupplierRef
-from tests.test_lanes_live import needs_browser
+pytest.importorskip("playwright", reason="the site adapters need the browser extra")
+
+from app.contracts import SupplierRef  # noqa: E402
+from tests.test_lanes_live import needs_browser  # noqa: E402
 
 SITES = Path(__file__).parent / "sites"
 WSS = "https://www.webstaurantstore.com"
@@ -247,3 +249,57 @@ def test_tax_rows_for_j7():
                                         "Total USD $269.48")
     plain = "Subtotal $99.18\nShipping $8.00\nTaxes $0.00\nTotal USD $107.18"
     assert tax_shown(plain) and clean_tax_rows(plain) == plain
+
+
+@pytest.fixture
+def broken_fetch_store() -> AsyncIterator[str]:
+    """A local Shopify-like store whose page fetch() always fails, like Wees Express in the cloud
+    browser on 2026-10-18. The JSON URLs themselves answer."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    product = {"title": "Bakery Box 10 x 10 x 5", "description": "<p>White. 100 per case.</p>",
+               "variants": [{"id": 7, "title": "Default Title", "sku": "BB-10", "price": 4599, "available": True}]}
+    pages = {
+        "/cart": ("text/html", "<html><script>window.fetch = () => Promise.reject("
+                               "new TypeError('Failed to fetch'))</script><body>Cart</body></html>"),
+        "/search/suggest.json": ("application/json", json.dumps(
+            {"resources": {"results": {"products": [{"title": product["title"], "handle": "bakery-box",
+                                                     "price": "45.99"}]}}})),
+        "/products/bakery-box.js": ("application/json", json.dumps(product)),
+    }
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            kind, body = pages.get(self.path.split("?")[0], ("text/plain", ""))
+            self.send_response(200 if body else 404)
+            self.send_header("Content-Type", kind)
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+
+
+@needs_browser
+async def test_shopify_reads_json_when_the_page_fetch_fails(broken_fetch_store):
+    from playwright.async_api import async_playwright
+
+    from app.lanes.live.shopify import WEES_EXPRESS, ShopifyAdapterLane
+
+    lane = ShopifyAdapterLane(SupplierRef(id="w", name="W", url=f"{broken_fetch_store}/"), WEES_EXPRESS)
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch()
+        page = await browser.new_page()
+        await page.goto(f"{broken_fetch_store}/cart")
+        cards = await lane.search_cards(page, "white bakery box")
+        assert [c.url for c in cards] == [f"{broken_fetch_store}/products/bakery-box"]
+        listing = await lane.card_listing(page, cards[0])
+        await browser.close()
+    assert listing is not None and listing.sku == "BB-10" and listing.price == 45.99

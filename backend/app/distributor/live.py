@@ -76,10 +76,14 @@ class LiveDistributorConfig(BaseSettings):
 
 # ---------------------------------------------------------------- code helpers (no Jev here)
 
-SPOKEN_MONEY = re.compile(r"(?<![\w$.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(?:dollars|bucks|usd)\b", re.I)
+SPOKEN_MONEY = re.compile(r"(?<![\w$.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(?:dollars|bucks|usd)\b"
+                          r"(?:\s+and\s+(\d{1,2})\s*cents?\b)?", re.I)  # "395 dollars and 20 cents" is one amount
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-FREE_DELIVERY = re.compile(r"free (?:delivery|shipping)|deliver(?:ed|y)? (?:is |for )?free|no delivery (?:fee|charge)", re.I)
-DELIVERY_FEE = re.compile(r"(?:delivery|shipping|freight)[^$.]{0,30}(\$\s?\d+(?:\.\d{1,2})?)", re.I)
+# "No free delivery" and "not free shipping" are not free.
+FREE_DELIVERY = re.compile(r"(?<!no )(?<!not )free (?:delivery|shipping)|deliver(?:ed|y)? (?:is |for )?free"
+                           r"|no delivery (?:fee|charge)", re.I)
+DELIVERY_FEE = re.compile(r"(?:delivery|shipping|freight)[^$.]{0,30}(\$\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)",
+                          re.I)
 LEAD_DAYS = re.compile(r"\b(\d{1,2}|one|two|three|four|five|six|seven)\s+(?:business\s+)?days?\b", re.I)
 WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
 
@@ -95,6 +99,8 @@ def normalize_spoken_money(text: str) -> str:
     """'395 dollars' -> '$395' and '50 cents' -> '$0.50', so that the '$' parsers find them."""
 
     def repl(m: re.Match[str]) -> str:
+        if m.group(3):
+            return f"${m.group(1)}.{int(m.group(3)):02d}"
         cents = f".{m.group(2)}" if m.group(2) else ""
         return f"${m.group(1)}{cents}"
 
@@ -154,7 +160,7 @@ def delivery_fee(text: str) -> float | None:
     if FREE_DELIVERY.search(text):
         return 0.0
     m = DELIVERY_FEE.search(normalize_spoken_money(text))
-    return float(m.group(1).replace("$", "").strip()) if m else None
+    return float(m.group(1).replace("$", "").replace(",", "").strip()) if m else None
 
 
 def lead_time_days(text: str, today: dt.date | None = None) -> int | None:
@@ -303,7 +309,8 @@ class LiveDistributor:
     async def _handle_sms_reply(self, ctx: DistributorContext, event: dict[str, Any]) -> tuple[str, SupplierOffers | None]:
         text = str(event.get("text") or "")
         names = {i.id: i.name for i in ctx.items}
-        money = money_candidates(normalize_spoken_money(text))
+        # Prices only: a "Free delivery" line is a $0.00 candidate, which is no item price.
+        money = [m for m in money_candidates(normalize_spoken_money(text)) if m.value > 0]
         decision = await j8_reply(ctx.decider, text, names, money, job_id=ctx.job_id)
         intent = _choice(decision.answers, "intent") or "unrelated"
         await ctx.emit("reply_received", {"channel": "sms", "intent": intent, "text": text})

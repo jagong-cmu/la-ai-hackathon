@@ -37,7 +37,9 @@ def resolve_costs(
         tax = 0.0
         flags.append("tax_not_shown")
     # Small positive leftovers can be real fees; we only accept them when a label says so.
-    fee_labels = [c for c in candidates if "fee" in c.label.lower()]
+    # A row already picked as shipping or tax ("Delivery fee", "Taxes and fees") is not counted again.
+    picked = {i for i in picks.values() if i is not None}
+    fee_labels = [c for i, c in enumerate(candidates) if "fee" in c.label.lower() and i not in picked]
     other_fees = round(sum(c.value for c in fee_labels), 2) if fee_labels else 0.0
     if total is None:  # nothing to check against: add up what the page showed
         flags.append("total_not_shown")
