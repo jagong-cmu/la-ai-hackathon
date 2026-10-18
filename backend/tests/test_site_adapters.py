@@ -12,8 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from app.contracts import SupplierRef
-from tests.test_lanes_live import needs_browser
+pytest.importorskip("playwright", reason="the site adapters need the browser extra")
+
+from app.contracts import SupplierRef  # noqa: E402
+from tests.test_lanes_live import needs_browser  # noqa: E402
 
 SITES = Path(__file__).parent / "sites"
 WSS = "https://www.webstaurantstore.com"

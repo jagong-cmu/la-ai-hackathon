@@ -310,3 +310,46 @@ def test_lane_state_carries_the_live_view_as_soon_as_open_sets_it(settings, monk
         types = [e["type"] for e in lane]
         live = [i for i, e in enumerate(lane) if e["type"] == "lane_state" and e["data"].get("liveUrl")]
         assert live and live[0] < types.index("offers_ready"), lane_id
+
+
+def test_replay_streams_every_recorded_event(client):
+    draft = client.get("/shopping-list/draft").json()
+    source = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-job-replay"}).json()["jobId"]
+    view = wait_for(client, source, {"results_ready"})
+    plan_id = view["results"]["recommendedPlanId"]
+    assert client.post(f"/jobs/{source}/approve", json={"action": "approve", "planId": plan_id}).status_code == 200
+    wait_for(client, source, {"at_payment", "partial_handoff"})
+    recorded = _all_events(client, source)
+
+    # Record what the replay's job view shows when each replayed results_ready goes out.
+    s = client.app.state.s
+    at_results: list[dict] = []
+    emit = s.orchestrator.bus.emit
+
+    async def recording_emit(job_id, type_, data=None, lane_id=None):
+        if type_ == "results_ready" and job_id != source:
+            at_results.append(s.db.load_job(job_id).model_dump(by_alias=True, mode="json"))
+        return await emit(job_id, type_, data, lane_id)
+
+    s.orchestrator.bus.emit = recording_emit
+    r = client.post(f"/admin/replay/{source}?speed=50", headers={"X-Admin-Token": "dev-admin"})
+    assert r.status_code == 200
+    replay_id = r.json()["jobId"]
+    # The replay starts like a new job instead of copying the finished one.
+    started = client.get(f"/jobs/{replay_id}").json()
+    assert started["replayOf"] == source
+    assert started["state"] not in {"at_payment", "partial_handoff"} and started["results"] is None
+
+    # The live stream stays open until the replay reaches the source's final state.
+    replayed = _all_events(client, replay_id)
+    assert replayed[0]["type"] == "replay_started"
+    assert [e["type"] for e in replayed[1:]] == [e["type"] for e in recorded]
+    done = client.get(f"/jobs/{replay_id}").json()
+    assert done["state"] == client.get(f"/jobs/{source}").json()["state"]
+    assert done["results"]["recommendedPlanId"] == plan_id
+
+    # At results the replay shows the source's plans, but its lane tiles still follow the
+    # replayed events: the source's final lanes are already stopped at payment.
+    mid = at_results[0]
+    assert mid["state"] == "results_ready" and mid["results"]["recommendedPlanId"] == plan_id
+    assert mid["lanes"] == [] and mid["handoffs"] == [] and mid["approval"] is None
