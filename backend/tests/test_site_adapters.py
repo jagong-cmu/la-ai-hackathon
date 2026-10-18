@@ -12,8 +12,7 @@ from pathlib import Path
 
 import pytest
 
-# The adapter modules import Playwright at the top, so even the pure helpers need the browser extra.
-pytest.importorskip("playwright")
+pytest.importorskip("playwright", reason="the site adapters need the browser extra")
 
 from app.contracts import SupplierRef  # noqa: E402
 from tests.test_lanes_live import needs_browser  # noqa: E402

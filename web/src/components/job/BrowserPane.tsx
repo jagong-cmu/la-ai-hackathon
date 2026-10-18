@@ -84,24 +84,6 @@ export function TextPage({ text, highlightLast, skuNames = {} }: { text: string;
   );
 }
 
-/** The watched lane's live browser, large: the stage above the store tiles. */
-export function LiveStage({ lane, name, siteUrl }: { lane: LaneTile; name: string; siteUrl: string | undefined }) {
-  if (!lane.liveUrl) return null;
-  return (
-    <section className="stage" aria-label={`${name} live browser, large`}>
-      <div className="stage-bar">
-        <span className="bp-live-tag"><i />Live</span>
-        <b>{name}</b>
-        <span className="mono bp-url">{host(lane.pageUrl ?? siteUrl)}</span>
-        <a className="link small stage-open" href={lane.liveUrl} target="_blank" rel="noreferrer">Open full screen</a>
-      </div>
-      <div className="stage-view">
-        <iframe className="bp-live" src={lane.liveUrl} title={`${name} live browser`} sandbox="allow-scripts allow-same-origin" />
-      </div>
-    </section>
-  );
-}
-
 export function BrowserPane({
   lane,
   name,
@@ -114,7 +96,7 @@ export function BrowserPane({
   name: string;
   siteUrl: string | undefined;
   job: JobView | null;
-  /** This lane's live view is on the stage: show a note here, not a second stream. */
+  /** The highlighted tile: the one the owner watches. Every tile has the same size. */
   watched?: boolean;
   onWatch?: () => void;
 }) {
@@ -153,13 +135,8 @@ export function BrowserPane({
   })();
 
   let body: React.ReactNode;
-  if (lane.liveUrl && watched) {
-    body = (
-      <div className="bp-wall">
-        <span className="small muted">Shown above</span>
-      </div>
-    );
-  } else if (lane.liveUrl) {
+  if (lane.liveUrl && live) {
+    // A finished lane's cloud browser is closed: show its last page below instead.
     body = <iframe className="bp-live" src={lane.liveUrl} title={`${name} live browser`} sandbox="allow-scripts allow-same-origin" />;
   } else if (failed) {
     body = (
@@ -200,11 +177,18 @@ export function BrowserPane({
       <div className="bp-window">
         <div className="bp-bar">
           <span className="mono bp-url">{host(lane.pageUrl ?? siteUrl)}</span>
-          {lane.liveUrl && onWatch && !watched ? (
-            <button type="button" className="bp-watch" onClick={onWatch}>Watch</button>
-          ) : (
-            live && <span className="bp-live-tag"><i />Live</span>
-          )}
+          <span className="bp-tags">
+            {live && <span className="bp-live-tag"><i />Live</span>}
+            {watched ? (
+              lane.liveUrl && live ? (
+                <a className="bp-watch on" href={lane.liveUrl} target="_blank" rel="noreferrer">Full screen</a>
+              ) : (
+                <span className="bp-watch on">Watching</span>
+              )
+            ) : (
+              onWatch && <button type="button" className="bp-watch" onClick={onWatch}>Watch</button>
+            )}
+          </span>
         </div>
         <div className="bp-body">{body}</div>
       </div>

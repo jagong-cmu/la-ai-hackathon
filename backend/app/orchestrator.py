@@ -21,6 +21,7 @@ from app.contracts import (
     ApprovalDecision,
     CartLine,
     CheckoutHandoff,
+    Event,
     JobCreated,
     JobState,
     JobView,
@@ -144,7 +145,6 @@ class Orchestrator:
         self.books = books
         self.insights_provider = insights_provider
         self.jobs: dict[str, JobRuntime] = {}
-        self.replaying: set[str] = set()  # replay jobs still re-emitting; their copied view is already final
         self._tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------ public API
@@ -258,17 +258,35 @@ class Orchestrator:
         if source is None:
             raise KeyError(source_job_id)
         job_id = "job_" + secrets.token_hex(5)
-        view = source.model_copy(update={"job_id": job_id, "replay_of": source_job_id})
+        final = source.model_copy(update={"job_id": job_id, "replay_of": source_job_id})
+        # The replay starts like a new job. Its state follows the replayed job_state events, so the
+        # event stream stays open until the replay reaches the source's final state.
+        view = JobView(job_id=job_id, state=JobState.created, replay_of=source_job_id, request=source.request)
         self.db.save_job(view)
-        self.replaying.add(job_id)
 
-        async def play() -> None:
+        def follow(event: Event) -> None:
+            if event.type != "job_state":
+                return
             try:
-                await self.bus.replay(source_job_id, job_id, speed)
-            finally:
-                self.replaying.discard(job_id)
+                state = JobState(event.data.get("state"))
+            except ValueError:
+                return
+            if state in FINAL_JOB_STATES or state is final.state:
+                self.db.save_job(final.model_copy(update={"state": state}))
+                return
+            current = view.model_copy(update={"state": state})
+            if state not in (JobState.created, JobState.gathering):
+                # From results_ready on, show the source's plans. Lane tiles still come from the
+                # replayed events: the source's final lanes are already at the payment stop.
+                current.offers, current.plans, current.results = final.offers, final.plans, final.results
+            current.updated_at = utcnow()
+            self.db.save_job(current)
 
-        self._spawn(play())
+        async def run() -> None:
+            await self.bus.replay(source_job_id, job_id, speed, before_emit=follow)
+            self.db.save_job(final)
+
+        self._spawn(run())
         return JobCreated(job_id=job_id, state=view.state)
 
     async def route_webhook(self, provider: str, payload: dict[str, Any]) -> bool:
