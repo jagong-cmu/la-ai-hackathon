@@ -153,6 +153,9 @@ class PlaywrightAdapterLane:
     # localStorage) lost a line when two adds raced. Turn on only for a server-side cart checked
     # live; add_to_cart must then not need the tab in front (see click(js=True)).
     parallel_cart_adds: bool = False
+    # The verify phase takes this site through checkout to read the real total (quote()). Off for
+    # a site whose checkout cannot be used before approval (a captcha, a strict guest form).
+    quote_at_checkout: bool = True
 
     def __init__(self, supplier: SupplierRef, cfg: LiveLaneSettings | None = None):
         self.supplier = supplier

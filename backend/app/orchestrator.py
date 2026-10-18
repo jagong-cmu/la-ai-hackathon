@@ -484,6 +484,7 @@ class Orchestrator:
                 return
             todo = [c for c in best.carts if c.status != "verified" and c.cart_key not in tried
                     and (lr := rt.lanes.get(c.supplier_id)) is not None and hasattr(lr.lane, "quote")
+                    and getattr(lr.lane, "quote_at_checkout", True)
                     and lr.ctx is not None and lr.status.state is LaneState.cart_ready]
             if not todo:
                 return

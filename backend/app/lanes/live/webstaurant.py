@@ -82,6 +82,10 @@ class WebstaurantLane(PlaywrightAdapterLane):
     # network-idle wait. A product page opens only when J5 is not sure from the card.
     nav_settle_ms = 0
     parallel_cart_adds = True  # the cart is server-side; checked live with two adds on 2026-10-18
+    # No checkout check before approval (team decision 2026-10-18): the guest form runs reCAPTCHA
+    # Enterprise, which turned repeated automated submits away, and an item that cannot ship to the
+    # address hides the total. The cart stays `estimated` with its real ZIP freight.
+    quote_at_checkout = False
 
     def open_url(self) -> None:
         return None
