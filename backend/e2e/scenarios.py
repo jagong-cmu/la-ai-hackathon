@@ -950,3 +950,54 @@ async def fuzz_other_bodies(ctx: Ctx) -> None:
     if any(m != "cached" for m in h["modes"].values()):
         ctx.fail(f"seed={seed}: the fuzzer set a live mode: {h['modes']}")  # never: "live" is not in the values
     await ctx.req("POST", f"/jobs/{jid}/approve", json={"action": "reject"}, expect={200, 409})
+
+
+@scenario("planner_concurrent_messages", "planner")
+async def planner_concurrent_messages(ctx: Ctx) -> None:
+    """12 owner messages at once, then confirm/reject each: unique ids, statuses as decided."""
+    texts = [f"Catering order on Saturday, about {n * 10} extra hamburger buns" for n in range(1, 13)]
+    rs = await asyncio.gather(*(ctx.req("POST", "/planner/owner-messages", json={"text": t}, expect=200)
+                                for t in texts))
+    adjs = [r.json() for r in rs if r.status_code == 200]
+    ids = [a["adjustmentId"] for a in adjs]
+    if len(set(ids)) != len(ids):
+        ctx.fail(f"concurrent owner messages share adjustment ids: {sorted(ids)}")
+    decided = {}
+    results = await asyncio.gather(*(ctx.req("POST", f"/planner/adjustments/{a['adjustmentId']}/confirm",
+                                             params={"accept": str(i % 2 == 0).lower()}, expect=200)
+                                     for i, a in enumerate(adjs)))
+    for i, (a, r) in enumerate(zip(adjs, results, strict=True)):
+        decided[a["adjustmentId"]] = "applied" if i % 2 == 0 else "rejected"
+        if r.status_code == 200 and r.json()["status"] != decided[a["adjustmentId"]]:
+            ctx.fail(f"{a['adjustmentId']}: confirm gave {r.json()['status']}")
+    view = (await ctx.req("GET", "/planner", expect=200)).json()
+    stored = {a["adjustmentId"]: a["status"] for a in view.get("adjustments", [])}
+    for aid, want in decided.items():
+        if stored.get(aid) != want:
+            ctx.fail(f"{aid}: /planner shows {stored.get(aid)}, decided {want}")
+
+
+@scenario("planner_survives_restart", "persistence")
+async def planner_survives_restart(ctx: Ctx) -> None:
+    if ctx.restart is None:
+        return
+    a = (await ctx.req("POST", "/planner/owner-messages",
+                       json={"text": "Catering order on Saturday, about 70 extra hamburger buns"}, expect=200)).json()
+    view = (await ctx.req("GET", "/planner", expect=200)).json()
+    misses = view.get("misses") or []
+    answered = None
+    if misses:
+        answered = misses[0]["missId"]
+        await ctx.req("POST", f"/planner/misses/{answered}/answer", json={"cause": "one_time_event"},
+                      expect={200, 422})
+    before = (await ctx.req("GET", "/planner", expect=200)).json()
+    await ctx.restart()
+    after = (await ctx.req("GET", "/planner", expect=200)).json()
+    ids = lambda v: {(x["adjustmentId"], x["status"]) for x in v.get("adjustments", [])}  # noqa: E731
+    if ids(before) != ids(after):
+        ctx.fail(f"planner adjustments changed across a restart: {ids(before) ^ ids(after)}")
+    if a["adjustmentId"] not in {x for x, _ in ids(after)}:
+        ctx.fail(f"{a['adjustmentId']} lost across a restart")
+    sup = lambda v: {(s["itemId"], s.get("recommendedQty")) for s in v.get("supplies", [])}  # noqa: E731
+    if sup(before) != sup(after):
+        ctx.fail(f"supply recommendations changed across a restart: {sup(before) ^ sup(after)}")
