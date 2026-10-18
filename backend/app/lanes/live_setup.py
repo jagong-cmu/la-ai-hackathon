@@ -22,7 +22,7 @@ def _has(module: str) -> bool:
 
 
 def register_live_lanes() -> dict[str, bool]:
-    done = {"example_site": False, "llm_agent": False}
+    done = {"example_site": False, "webstaurant": False, "wees_express": False, "llm_agent": False}
     if not _has("playwright"):
         log.warning("live lanes off: playwright is not installed (uv sync --extra browser)")
         return done
@@ -33,6 +33,18 @@ def register_live_lanes() -> dict[str, bool]:
         done["example_site"] = True
     except Exception as exc:  # never break server start
         log.warning("example_site adapter not registered: %s", exc)
+
+    # Real supplier sites. The names match discovery.ADAPTER_DOMAINS.
+    try:
+        from app.lanes.live.shopify import WEES_EXPRESS, ShopifyAdapterLane
+        from app.lanes.live.webstaurant import WebstaurantLane
+
+        register_adapter("webstaurant", lambda supplier: WebstaurantLane(supplier))
+        done["webstaurant"] = True
+        register_adapter("wees_express", lambda supplier: ShopifyAdapterLane(supplier, WEES_EXPRESS))
+        done["wees_express"] = True
+    except Exception as exc:  # never break server start
+        log.warning("real-site adapters not registered: %s", exc)
 
     try:
         from app.lanes.live.config import get_live_settings

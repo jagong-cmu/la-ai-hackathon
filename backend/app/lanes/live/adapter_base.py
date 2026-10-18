@@ -16,6 +16,7 @@ to the Browser Use agent on the same browser, if the agent lane is available.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -42,7 +43,7 @@ from app.contracts import (
 from app.guard import CARD_AUTOCOMPLETE, CARD_FIELD
 from app.judgments import j4_rerank, j5_listing, j7_totals
 from app.lanes.base import LaneContext, LaneGuardStopped
-from app.lanes.live import guards
+from app.lanes.live import guards, warm
 from app.lanes.live.config import LiveLaneSettings, get_live_settings
 from app.lanes.live.session import LaneBrowser
 from app.stages.extract import money_candidates
@@ -74,6 +75,7 @@ class ProductPage:
     sku: str
     price: float
     text: str  # the listing text J5 reads (title, description, pack info, stock)
+    url: str | None = None  # the product URL when it differs from the page (a variant, a card link)
 
 
 @dataclass
@@ -103,6 +105,23 @@ class PlaywrightAdapterLane:
     max_results_opened: int = 3
     max_checkout_steps: int = 4
     allow_agent_fallback: bool = True
+    # One-page checkouts (Shopify) put the payment fields on the first checkout page, so the
+    # guard stops there before any contact step. Reaching that page is the handoff.
+    single_page_checkout: bool = False
+    # Speed. A card listing that is "full" has everything the product page would (Shopify's
+    # product JSON): J5 judges it and no product page opens. A partial one (a search card) opens
+    # the product page only when J5 is not sure. None keeps cfg.nav_settle_ms after each load.
+    card_listing_is_full: bool = False
+    nav_settle_ms: int | None = None
+    # True when cart_rows() works from any page of the site (it reads data, not the cart page).
+    cart_rows_on_any_page: bool = False
+    # True: each item searches in its own tab. False: all items search at once on the lane's
+    # page (an adapter that reads site data and loads no search pages).
+    tab_per_item: bool = True
+    # Add cart lines at the same time. Off by default: a cart kept in the browser (the test site's
+    # localStorage) lost a line when two adds raced. Turn on only for a server-side cart checked
+    # live; add_to_cart must then not need the tab in front (see click(js=True)).
+    parallel_cart_adds: bool = False
 
     def __init__(self, supplier: SupplierRef, cfg: LiveLaneSettings | None = None):
         self.supplier = supplier
@@ -111,6 +130,7 @@ class PlaywrightAdapterLane:
         self.ctx: LaneContext | None = None
         self._agent: Any = None
         self._shots = 0
+        self._cart_touched = False  # a new lane's browser has an empty cart: no need to check it
 
     # ---- site steps (override) ----------------------------------------------------
 
@@ -157,27 +177,62 @@ class PlaywrightAdapterLane:
         """Click the button to the next checkout step. Return False when there is none."""
         raise NotImplementedError
 
+    def open_url(self) -> str | None:
+        """The page open() loads. None: start the browser only; search loads the first page."""
+        return self.supplier.url
+
+    async def search_cards(self, page: Page, query: str) -> list[ResultCard]:
+        """Result cards for a query. Default: load search_url(query) and read result_extract()."""
+        page = await self.goto(self.search_url(query), page)
+        return await self.result_extract(page)
+
+    async def card_listing(self, page: Page, card: ResultCard) -> ProductPage | None:
+        """A listing built from the search card (or site data) without opening the product page.
+        None: open the product page. See card_listing_is_full."""
+        return None
+
+    async def add_lines(self, page: Page, lines: list[CartLine]) -> bool:
+        """Add several cart lines at once (one request). False: add them one product page each."""
+        return False
+
+    async def cart_summary(self, page: Page, skus: list[str]) -> str:
+        """The order summary text that J7 reads. Default: `cart_totals_selector`, else the page
+        text without the cart lines. Override to show J7 only the amounts the site applies."""
+        if self.cart_totals_selector:
+            return await self.browser.text(self.cart_totals_selector, page)
+        text = (await self.browser.snapshot(page)).visible_text
+        return "\n".join(t for t in text.splitlines() if not any(s in t for s in skus))
+
     # ---- guarded browser actions (use these in the site steps) ----------------------
 
     def _need_ctx(self) -> LaneContext:
         assert self.ctx is not None, "open() was not called"
         return self.ctx
 
-    async def goto(self, url: str) -> Page:
-        page = await self.browser.goto(url)
+    async def goto(self, url: str, page: Page | None = None) -> Page:
+        page = await self.browser.goto(url, page, settle_ms=self.nav_settle_ms)
         await guards.require_safe(self._need_ctx(), await self.browser.snapshot(page))
         return page
 
-    async def click(self, page: Page, selector: str | Locator, *, wait_nav: bool = False) -> None:
+    async def click(self, page: Page, selector: str | Locator, *, wait_nav: bool = False, js: bool = False) -> None:
+        """Click after the guard. js=True clicks through the element itself (no actionability
+        wait), which works in a background tab where a pointer click can time out."""
         await guards.require_safe(self._need_ctx(), await self.browser.snapshot(page))
         loc = page.locator(selector) if isinstance(selector, str) else selector
         if await loc.count() == 0:
             raise AdapterStepError(f"nothing to click: {selector}")
+
+        async def press() -> None:
+            if js:
+                await loc.first.evaluate("el => el.click()")
+            else:
+                await loc.first.click()
+
         if wait_nav:
             async with page.expect_navigation(wait_until="domcontentloaded"):
-                await loc.first.click()
+                await press()
         else:
-            await loc.first.click()
+            await press()
         with contextlib.suppress(PlaywrightError):
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
 
@@ -189,6 +244,13 @@ class PlaywrightAdapterLane:
         await _refuse_card_field(loc)
         await loc.fill(value)
 
+    async def settle(self, page: Page, timeout_ms: int = 8000) -> None:
+        """Wait for a checkout page to finish loading before the guard reads it. Payment fields
+        often arrive late in iframes: Shopify's card iframes appeared about 3 s after
+        DOMContentLoaded, so a check at load time saw no card field (seen 2026-10-17)."""
+        with contextlib.suppress(PlaywrightError):
+            await page.wait_for_load_state("networkidle", timeout=timeout_ms)
+
     async def after_nav(self, page: Page, *, allow_stop: bool = False) -> GuardVerdict:
         snap = await self.browser.snapshot(page)
         if allow_stop:
@@ -197,17 +259,21 @@ class PlaywrightAdapterLane:
 
     async def shot(self, tag: str, page: Page | None = None) -> str | None:
         self._shots += 1
-        return await self.browser.screenshot(self._need_ctx(), f"{self._shots:03d}_{tag}.png", page)
+        return await self.browser.screenshot(self._need_ctx(), f"{self._shots:03d}_{tag}.jpg", page)
 
     # ---- SupplierLane ---------------------------------------------------------------
 
     async def open(self, ctx: LaneContext) -> None:
         self.ctx = ctx
+        # A browser started while the owner reviewed the list (warm.py), else this lane's own.
+        if (warmed := await warm.claim(self.supplier)) is not None:
+            self.browser = warmed
         await self.browser.start()
         ctx.session_id = self.browser.session_id
         ctx.live_url = self.browser.live_url
-        page = await self.goto(self.supplier.url)
-        await self.shot("open", page)
+        if (url := self.open_url()) is not None:
+            page = await self.goto(url)
+            await self.shot("open", page)
 
     async def search(self, ctx: LaneContext, items: list[ShoppingItem]) -> SupplierOffers:
         self.ctx = ctx
@@ -222,43 +288,21 @@ class PlaywrightAdapterLane:
             return await agent.search(ctx, items)
 
     async def _search(self, ctx: LaneContext, items: list[ShoppingItem]) -> SupplierOffers:
-        products: list[Product] = []
-        visited: list[str] = []
-        shots: list[str] = []
-        th = ctx.settings.thresholds
-        for item in items:
-            spec = ctx.specs.get(item.id) or item.spec or SearchSpec(
-                item_id=item.id, query=item.name, unit=item.unit, spec_fallback=True)
-            page = await self.goto(self.search_url(spec.query))
-            visited.append(page.url)
-            cards = await self.result_extract(page)
-            if not cards:
-                continue
-            ranked = await j4_rerank(ctx.decider, spec, [{"title": c.title, "snippet": c.snippet} for c in cards],
-                                     job_id=ctx.job_id)
-            best: Product | None = None
-            for idx, _p in ranked[: self.max_results_opened]:
-                card = cards[idx]
-                page = await self.goto(card.url)
-                visited.append(page.url)
-                listing = await self.product_extract(page)
-                jev, candidates, units = await j5_listing(ctx.decider, spec, listing.title, listing.text,
-                                                          job_id=ctx.job_id)
-                rel = self.browser.write_evidence(
-                    ctx, f"listing_{item.id}_{listing.sku}.json",
-                    {"url": page.url, "title": listing.title, "text": listing.text})
-                product = Product(
-                    item_id=item.id, title=listing.title, sku=listing.sku, url=page.url, raw_listing=rel,
-                    pack_candidates=candidates, pack_price=listing.price, units_per_pack=units, jev=jev,
-                )
-                if best is None or _p_same(product) > _p_same(best):
-                    best = product
-                if _p_same(product) >= th.match_act:
-                    break
-            if best is not None:
-                products.append(best)
-                if (rel := await self.shot(f"product_{item.id}", page)) is not None:
-                    shots.append(rel)
+        # Each item searches in its own tab at the same time (same context, so the same cart).
+        main = await self.browser.page()
+        extra = len(items) - 1 if self.tab_per_item else 0
+        tabs = [main] + [await self.browser.new_tab() for _ in range(extra)] + [main] * (len(items) - 1 - extra)
+        try:
+            results = await asyncio.gather(*(self._search_item(ctx, item, tab)
+                                             for item, tab in zip(items, tabs, strict=True)))
+        finally:
+            for tab in tabs[1:]:
+                if tab is not main:
+                    with contextlib.suppress(PlaywrightError):
+                        await tab.close()
+        products = [product for product, _, _ in results if product is not None]
+        visited = [url for _, urls, _ in results for url in urls]
+        shots = [shot for _, _, shot in results if shot is not None]
         return SupplierOffers(
             supplier_id=self.supplier.id,
             source="web",
@@ -267,6 +311,47 @@ class PlaywrightAdapterLane:
             minimum_order_value=self.minimum_order_value,
             free_shipping_threshold=self.free_shipping_threshold,
             evidence=Evidence(visited_urls=list(dict.fromkeys(visited)), screenshot_urls=shots),
+        )
+
+    async def _search_item(
+        self, ctx: LaneContext, item: ShoppingItem, page: Page
+    ) -> tuple[Product | None, list[str], str | None]:
+        th = ctx.settings.thresholds
+        spec = ctx.specs.get(item.id) or item.spec or SearchSpec(
+            item_id=item.id, query=item.name, unit=item.unit, spec_fallback=True)
+        cards = await self.search_cards(page, spec.query)
+        visited = [page.url]
+        if not cards:
+            return None, visited, None
+        ranked = await j4_rerank(ctx.decider, spec, [{"title": c.title, "snippet": c.snippet} for c in cards],
+                                 job_id=ctx.job_id)
+        best: Product | None = None
+        for idx, _p in ranked[: self.max_results_opened]:
+            card = cards[idx]
+            product = None
+            listing = await self.card_listing(page, card)
+            if listing is not None:
+                product = await self._judge(ctx, spec, item, listing, listing.url or card.url)
+            if listing is None or (not self.card_listing_is_full and _p_same(product) < th.match_act):
+                page = await self.goto(card.url, page)  # J5 is not sure from the card: read the page
+                visited.append(page.url)
+                listing = await self.product_extract(page)
+                product = await self._judge(ctx, spec, item, listing, listing.url or page.url)
+            if best is None or _p_same(product) > _p_same(best):
+                best = product
+            if _p_same(product) >= th.match_act:
+                break
+        shot = await self.shot(f"product_{item.id}", page) if best is not None else None
+        return best, visited, shot
+
+    async def _judge(self, ctx: LaneContext, spec: SearchSpec, item: ShoppingItem, listing: ProductPage,
+                     url: str) -> Product:
+        jev, candidates, units = await j5_listing(ctx.decider, spec, listing.title, listing.text, job_id=ctx.job_id)
+        rel = self.browser.write_evidence(
+            ctx, f"listing_{item.id}_{listing.sku}.json", {"url": url, "title": listing.title, "text": listing.text})
+        return Product(
+            item_id=item.id, title=listing.title, sku=listing.sku, url=url, raw_listing=rel,
+            pack_candidates=candidates, pack_price=listing.price, units_per_pack=units, jev=jev,
         )
 
     async def set_cart(self, ctx: LaneContext, lines: list[CartLine]) -> VerifiedCart:
@@ -283,28 +368,49 @@ class PlaywrightAdapterLane:
 
     async def _set_cart(self, ctx: LaneContext, lines: list[CartLine]) -> VerifiedCart:
         want = {line.sku: line for line in lines}
-        page = await self.goto(self.cart_url())
-        for row in await self.cart_rows(page):
-            line = want.get(row.sku)
-            if line is None or line.pack_quantity != row.pack_quantity:
-                await self.remove_item(page, row.sku)
+        page = await self.browser.page()
+        have: set[str] = set()
+        if self._cart_touched:  # a later cart (a subset plan): fix what an earlier step left
+            if not (self.cart_rows_on_any_page and _same_site(page.url, self.cart_url())):
                 page = await self.goto(self.cart_url())
-        have = {row.sku for row in await self.cart_rows(page)}
-        for line in lines:
-            if line.sku in have:
-                continue
-            if not line.url:
-                raise AdapterStepError(f"no product URL for {line.sku}")
-            page = await self.goto(line.url)
-            await self.add_to_cart(page, line.pack_quantity)
-        page = await self.goto(self.cart_url())
+            for row in await self.cart_rows(page):
+                line = want.get(row.sku)
+                if line is None or line.pack_quantity != row.pack_quantity:
+                    await self.remove_item(page, row.sku)
+                    if not self.cart_rows_on_any_page:
+                        page = await self.goto(self.cart_url())
+            have = {row.sku for row in await self.cart_rows(page)}
+        self._cart_touched = True
+        missing = [line for line in lines if line.sku not in have]
+        if missing and not await self.add_lines(page, missing):
+            for line in missing:
+                if not line.url:
+                    raise AdapterStepError(f"no product URL for {line.sku}")
+            # Load the product pages and add in parallel tabs. If two adds ever race on the
+            # server's cart, the cart-lines check below fails the cart; parallel_cart_adds=False
+            # adds one at a time instead.
+            tabs = [await self.browser.new_tab() for _ in missing]
+
+            async def add(line: CartLine, tab: Page) -> None:
+                await self.goto(line.url, tab)
+                await self.add_to_cart(tab, line.pack_quantity)
+
+            try:
+                if self.parallel_cart_adds:
+                    await asyncio.gather(*(add(line, tab) for line, tab in zip(missing, tabs, strict=True)))
+                else:
+                    for line, tab in zip(missing, tabs, strict=True):
+                        await tab.bring_to_front()  # a background tab is throttled: clicks can time out
+                        await add(line, tab)
+            finally:
+                for tab in tabs:
+                    with contextlib.suppress(PlaywrightError):
+                        await tab.close()
+        await page.bring_to_front()
+        page = await self.goto(self.cart_url(), page)
         rows = await self.cart_rows(page)
         shot = await self.shot("cart", page)
-        if self.cart_totals_selector:
-            summary = await self.browser.text(self.cart_totals_selector, page)
-        else:
-            text = (await self.browser.snapshot(page)).visible_text
-            summary = "\n".join(t for t in text.splitlines() if not any(s in t for s in want))
+        summary = await self.cart_summary(page, list(want))
         self.browser.write_evidence(ctx, f"cart_{self._shots:03d}.txt", summary)
         candidates = money_candidates(summary)
         picks, confs = await j7_totals(ctx.decider, candidates, job_id=ctx.job_id)
@@ -338,7 +444,12 @@ class PlaywrightAdapterLane:
         page = await self.goto(self.cart_url())
         await self.checkout_entry(page)
         page = await self.browser.page()
+        await self.settle(page)
         verdict = await self.after_nav(page, allow_stop=True)
+        if verdict.stop and self.single_page_checkout and verdict.reason in ("dom_card_field", "payment_step"):
+            shot = await self.shot("payment_step", page)
+            return CheckoutHandoff(supplier_id=self.supplier.id, status="at_payment", live_url=ctx.live_url,
+                                   screenshot_url=shot)
         if verdict.stop:  # the guard stopped before the contact step
             shot = await self.shot("early_stop", page)
             return CheckoutHandoff(supplier_id=self.supplier.id, status="failed",
@@ -353,6 +464,7 @@ class PlaywrightAdapterLane:
                 verdict = stop.verdict
                 break
             page = await self.browser.page()
+            await self.settle(page)
             verdict = await self.after_nav(page, allow_stop=True)
             if verdict.stop or not moved:
                 break
@@ -386,8 +498,14 @@ class PlaywrightAdapterLane:
         return agent
 
 
-def _p_same(product: Product) -> float:
-    return product.jev.match_probs.get("2", 0.0) if product.jev else 0.0
+def _p_same(product: Product | None) -> float:
+    return product.jev.match_probs.get("2", 0.0) if product is not None and product.jev else 0.0
+
+
+def _same_site(a: str, b: str) -> bool:
+    from urllib.parse import urlparse
+
+    return urlparse(a).netloc == urlparse(b).netloc
 
 
 def _abs(base: str, href: str) -> str:
