@@ -285,7 +285,7 @@ async def run_to_results(ctx: Ctx, body: dict | None = None) -> dict:
 @scenario("reads_ok", "read")
 async def reads_ok(ctx: Ctx) -> None:
     for path in ("/health", "/insights", "/suppliers", "/shopping-list/draft", "/rules", "/planner",
-                 "/planner/backtest", "/jobs", "/health/preflight?apply=false"):
+                 "/planner/backtest", "/jobs", "/health/preflight?apply=false", "/health/preflight"):
         await ctx.req("GET", path, expect=200)
     h = (await ctx.req("GET", "/health")).json()
     if any(m != "cached" for m in h["modes"].values()):
