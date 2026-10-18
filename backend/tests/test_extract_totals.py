@@ -76,3 +76,15 @@ def test_a_picked_shipping_or_tax_row_with_fee_in_its_label_is_not_counted_twice
     costs, flags = resolve_costs(cands, {"subtotal": 0, "shipping": 1, "tax": 2, "total": 4})
     assert not any(f.startswith("sum_mismatch") for f in flags), flags
     assert costs.other_fees == 2.0
+
+
+def test_free_shipping_text_is_a_zero_candidate():
+    """Soak S-022: 'Shipping FREE' gave no candidate, so the cart was flagged shipping_not_shown and
+    could never be verified (and so never approved). A banner with an amount must not count."""
+    text = "Subtotal $80.00\nShipping: FREE\nTax $4.80\nTotal $84.80\nFree shipping on orders over $75"
+    cands = money_candidates(text)
+    ship = [c for c in cands if c.label.lower().startswith("shipping")]
+    assert [(c.label, c.value) for c in ship] == [("Shipping", 0.0)]
+    assert not any(c.value == 0.0 and "over" in c.label for c in cands)  # the banner keeps only its $75
+    costs, flags = resolve_costs(cands, {"subtotal": 0, "shipping": cands.index(ship[0]), "tax": 2, "total": 3})
+    assert not flags and costs.total == 84.80

@@ -303,7 +303,8 @@ class LiveDistributor:
     async def _handle_sms_reply(self, ctx: DistributorContext, event: dict[str, Any]) -> tuple[str, SupplierOffers | None]:
         text = str(event.get("text") or "")
         names = {i.id: i.name for i in ctx.items}
-        money = money_candidates(normalize_spoken_money(text))
+        # Prices only: a "Free delivery" line is a $0.00 candidate, which is no item price.
+        money = [m for m in money_candidates(normalize_spoken_money(text)) if m.value > 0]
         decision = await j8_reply(ctx.decider, text, names, money, job_id=ctx.job_id)
         intent = _choice(decision.answers, "intent") or "unrelated"
         await ctx.emit("reply_received", {"channel": "sms", "intent": intent, "text": text})

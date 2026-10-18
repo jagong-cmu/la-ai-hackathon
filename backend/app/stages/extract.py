@@ -10,6 +10,7 @@ import re
 
 from app.contracts import MoneyCandidate, PackCandidate
 
+FREE_SHIPPING = re.compile(r"(?=.*\b(shipping|delivery|freight)\b)(?=.*\bfree\b)", re.I)
 MONEY = re.compile(r"(?<![\w.])\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)")
 
 CONTAINERS = r"(?:box|case|pack|bag|carton|roll|sleeve|bundle|package|pkg|tub|dispenser|ream)(?:e?s)?"
@@ -30,12 +31,17 @@ def _int(text: str) -> int:
 
 
 def money_candidates(text: str) -> list[MoneyCandidate]:
-    """One candidate per amount; the label is the rest of the line it sits on."""
+    """One candidate per amount; the label is the rest of the line it sits on.
+    A shipping line that says FREE and shows no amount is a $0.00 candidate."""
     out: list[MoneyCandidate] = []
     for line in text.splitlines():
-        for match in MONEY.finditer(line):
+        matches = list(MONEY.finditer(line))
+        for match in matches:
             label = (line[: match.start()] + line[match.end() :]).strip(" :-\t")
             out.append(MoneyCandidate(label=label or "(no label)", value=float(match.group(1).replace(",", ""))))
+        if not matches and FREE_SHIPPING.search(line):  # a banner ("free over $75") has an amount: skipped
+            label = re.sub(r"\bfree\b", "", line, flags=re.I).strip(" :-\t")
+            out.append(MoneyCandidate(label=label or "Shipping", value=0.0))
     return out
 
 
