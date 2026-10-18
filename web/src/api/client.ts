@@ -134,8 +134,8 @@ export const api = {
     return res.text();
   },
   /** The events so far, without following the stream (SSE frames parsed here). */
-  eventsOnce: async (jobId: string): Promise<JobEvent[]> => {
-    const res = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(jobId)}/events?follow=false`, { cache: "no-store" });
+  eventsOnce: async (jobId: string, after = 0): Promise<JobEvent[]> => {
+    const res = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(jobId)}/events?follow=false&after=${after}`, { cache: "no-store" });
     if (!res.ok) throw new ApiError(res.status, res.statusText);
     const out: JobEvent[] = [];
     for (const frame of (await res.text()).split("\n\n")) {
