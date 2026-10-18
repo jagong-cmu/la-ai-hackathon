@@ -56,7 +56,7 @@ T = TypeVar("T")
 # Sentry span status for each result, so a failed step shows as an error in Sentry and not only as a slow span.
 OFFERS_STATUS = {"ok": "ok", "partial": "ok", "not_found": "not_found", "blocked": "permission_denied",
                  "failed": "internal_error"}
-CART_STATUS = {"verified": "ok", "quoted": "ok", "price_changed": "ok", "out_of_stock": "not_found",
+CART_STATUS = {"verified": "ok", "estimated": "ok", "quoted": "ok", "price_changed": "ok", "out_of_stock": "not_found",
                "blocked": "permission_denied", "failed": "internal_error"}
 LANE_STATUS = {LaneState.cart_ready: "ok", LaneState.at_payment: "ok", LaneState.idle: "not_found",
                LaneState.blocked: "permission_denied", LaneState.failed: "internal_error"}
@@ -369,6 +369,10 @@ class Orchestrator:
         return ranked[: self.settings.agent_lane_max_items]
 
     def _budget(self, lr: LaneRuntime, base: float) -> float:
+        # A lane can set its own factor: a hosted agent run takes minutes, not seconds.
+        own = getattr(lr.lane, "budget_factor", None)
+        if isinstance(own, (int, float)) and own > 0:
+            return base * own
         return base * (self.settings.lane_agent_budget_factor if lr.is_agent else 1.0)
 
     async def _timed(self, fn: Callable[[], Awaitable[T]], budget: float, retries: int = 1) -> T:
