@@ -43,6 +43,7 @@ expectation in the harness was wrong).
 | S-026 | Photon service | `POST /sms` with `text: 5`, or a number `to` on `/sms` and `/calls`, or a `null` `/calls` body, gave 500. | `body.text.slice()` and `normalizePhone()` ran on values that are not strings. | fixed (4be82e4): 400; Photon tests 14/14 |
 | S-027 | security | In live mode, `GET /suppliers?category=../outside&zip=1` read any `*-<zip>.json` file and returned its rows as suppliers. A long value gave OSError (500). | `_load_seed()` joined the raw query values into the file name. | fixed (401bb60): `path_segment()` on both parts |
 | S-028 | web | On the new-order page, a quantity above the limit showed the owner raw JSON: `422: [{"type":"less_than_equal","loc":[...`. | `detailText()` stringified the list that FastAPI sends for validation errors. | fixed (94f5e93): "items.1.quantity: Input should be ..." |
+| S-029 | CREAO docs | The Daily Restock Check prompt in `agents/creao/README.md` reads `job_id` and `recommended_qty`, but `/planner/check` sends `jobId` and `recommendedQty`. The agent can report "No sourcing job started" when a job started. | Documentation drift (the models use camelCase aliases). | fixed in the README (1e89a5e); **the deployed CREAO agent must be updated by hand** |
 
 Open questions for the team (not changed by the loop):
 - `POST /admin/replay?speed=0` or a negative speed replays at once. The route could refuse them with 422.
