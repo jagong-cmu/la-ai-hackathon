@@ -14,7 +14,7 @@ cd backend && uv run python -m e2e.run_cycle --out /tmp/soak/cycle-001
 
 29 findings: 28 fixed on this branch, each with a regression test and its own commit; 1 open
 (S-017, a team decision). 3 of the fixes are security fixes (S-012, S-013, S-027). The last 3
-cycles found nothing new. The suite has 266 tests (211 at the start); the soak has 24 scenarios
+cycles found nothing new. The suite has 266 tests (211 at the start); the soak has 25 scenarios
 in 3 server profiles (`default`, `deadline`, `sms_first`). The open questions below need the team.
 
 Status values: `fixed` (commit given), `open` (not fixed yet, with the reason), `not-a-bug` (the
