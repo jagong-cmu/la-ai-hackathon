@@ -310,3 +310,26 @@ def test_lane_state_carries_the_live_view_as_soon_as_open_sets_it(settings, monk
         types = [e["type"] for e in lane]
         live = [i for i, e in enumerate(lane) if e["type"] == "lane_state" and e["data"].get("liveUrl")]
         assert live and live[0] < types.index("offers_ready"), lane_id
+
+
+def test_draft_with_no_selected_supplier_is_a_503_not_a_crash(client, monkeypatch):
+    """Live 2026-10-18 (SUPPLIER-AGENT-API-8): discovery selected no supplier, and the draft raised
+    a ShoppingRequest ValidationError (500). The owner and the daily check need the reason instead."""
+    discovery = client.app.state.s.discovery
+    real = discovery.discover
+
+    async def none_selected(*args, **kwargs):
+        found = await real(*args, **kwargs)
+        for c in found.candidates:
+            c.selected = False
+            c.reason = c.reason or "cannot run in this browser mode"
+        return found
+
+    monkeypatch.setattr(discovery, "discover", none_selected)
+    r = client.get("/shopping-list/draft")
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert detail["code"] == "no_suppliers" and detail["text"]
+    assert detail["candidates"] and all(c["reason"] for c in detail["candidates"])
+    check = client.post("/planner/check", params={"autostart": "true"})
+    assert check.status_code in (200, 503)  # never a 500

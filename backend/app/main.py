@@ -109,7 +109,16 @@ class AppState:
         insights = await self.insights()
         found = await self.discovery.discover(category, self.settings.demo_zip, self.distributor(),
                                               items=[i.bill_item_name for i in insights.items])
-        request = draft_request(insights, selected_suppliers(found), self.distributor(), self.settings.demo_zip)
+        suppliers = selected_suppliers(found)
+        if not suppliers:
+            # A request needs a supplier. Say why none was picked (no lane can run them in this
+            # browser mode, discovery found none...) instead of a ShoppingRequest ValidationError.
+            raise HTTPException(503, {
+                "code": "no_suppliers",
+                "text": f"No supplier can be searched now ({len(found.candidates)} found by {found.source}).",
+                "candidates": [{"id": c.id, "name": c.name, "reason": c.reason} for c in found.candidates],
+            })
+        request = draft_request(insights, suppliers, self.distributor(), self.settings.demo_zip)
         plan = {p.item_id: p for p in due_supplies(await self.planner.view())}
         due = [i for i in request.items if i.id in plan]
         for item in due:
