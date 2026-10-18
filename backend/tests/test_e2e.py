@@ -284,3 +284,29 @@ def test_jobs_list_and_default_rules(client):
     rules = client.get("/rules").json()
     assert rules["perOrderCap"] > 0
     assert set(s["id"] for s in draft["suppliers"]) <= set(rules["approvedSuppliers"])
+
+
+def test_lane_state_carries_the_live_view_as_soon_as_open_sets_it(settings, monkeypatch):
+    """The first "searching" event goes out before open(), so the UI needs a second one with the URL."""
+    import json
+
+    from app.lanes.fixture import FixtureLane
+
+    real_open = FixtureLane.open
+
+    async def open_with_live_view(self, ctx):
+        await real_open(self, ctx)
+        ctx.live_url = f"https://live.example/{self.supplier.id}"
+
+    monkeypatch.setattr(FixtureLane, "open", open_with_live_view)
+    with TestClient(create_app(settings)) as client:
+        draft = client.get("/shopping-list/draft").json()
+        job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-live-url"}).json()["jobId"]
+        wait_for(client, job_id, {"results_ready"})
+        resp = client.get(f"/jobs/{job_id}/events", params={"follow": "false"})  # results_ready is not final
+        events = [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ")]
+    for lane_id in {e["laneId"] for e in events if e["type"] == "offers_ready"}:
+        lane = [e for e in events if e.get("laneId") == lane_id]
+        types = [e["type"] for e in lane]
+        live = [i for i, e in enumerate(lane) if e["type"] == "lane_state" and e["data"].get("liveUrl")]
+        assert live and live[0] < types.index("offers_ready"), lane_id
