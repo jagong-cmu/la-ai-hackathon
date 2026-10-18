@@ -29,7 +29,7 @@ from app.contracts import (
     ShoppingRequest,
     SpendInsights,
 )
-from app.data.insights import build_insights, draft_request
+from app.data.insights import build_insights, draft_request, rules_from_books
 from app.data.loader import Books, load_books
 from app.db import Database, stable_hash
 from app.decide import Decider
@@ -251,12 +251,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Idempotency-Key must be 8 to 128 characters")
         return await s.orchestrator.create_job(body, idempotency_key)
 
+    @app.get("/jobs", response_model=list[JobView])
+    async def list_jobs(limit: int = Query(50, ge=1, le=200), s: AppState = Depends(state)) -> list[JobView]:
+        return s.orchestrator.list_views(limit)
+
     @app.get("/jobs/{job_id}", response_model=JobView)
     async def get_job(job_id: str, s: AppState = Depends(state)) -> JobView:
         view = s.orchestrator.get_view(job_id)
         if view is None:
             raise HTTPException(404, "job not found")
         return view
+
+    @app.get("/rules", response_model=SpendingRules)
+    async def default_rules(s: AppState = Depends(state)) -> SpendingRules:
+        """The rules a new order gets: derived from the books, with the draft's suppliers approved."""
+        request = await s.draft()
+        approved = [x.id for x in request.suppliers] + ([request.distributor.id] if request.distributor else [])
+        return rules_from_books(s.books, await s.insights(), approved)
 
     @app.get("/jobs/{job_id}/rules", response_model=SpendingRules)
     async def get_rules(job_id: str, s: AppState = Depends(state)) -> SpendingRules:
