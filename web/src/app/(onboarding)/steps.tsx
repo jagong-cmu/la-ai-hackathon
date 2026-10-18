@@ -1,6 +1,8 @@
 "use client";
-// Shared pieces of the onboarding: the progress bars, staged entrances and the count-up.
+// Shared pieces of the onboarding: the progress bars, staged entrances, decode text and the odometer.
 import { useEffect, useState } from "react";
+
+const reduced = () => typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const STEPS = ["Connect", "Choose", "Quotes", "Result"];
 
@@ -47,25 +49,68 @@ export function Claim({ text, start = 0 }: { text: string; start?: number }) {
   );
 }
 
-/** Counts from 0 to `to` once (700ms, ease-out). Reduced motion shows the value at once. */
-export function useCountUp(to: number, delay = 0): number {
-  const [v, setV] = useState(0);
+const GLYPHS = "░▒▓/\\|_-=+<>0123456789";
+
+/** Text that decodes in: each character cycles through glyphs, then settles left to right
+ *  (18ms apart, 500ms in all). Runs once on mount. Screen readers get the text at once. */
+export function Decode({ text }: { text: string }) {
+  const [shown, setShown] = useState(() => (reduced() ? text : ""));
   useEffect(() => {
-    if (typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setV(to);
+    if (reduced()) {
+      setShown(text);
       return;
     }
     let raf = 0;
-    const t0 = performance.now() + delay;
+    const t0 = performance.now();
     const tick = (now: number) => {
-      const p = Math.min(1, Math.max(0, (now - t0) / 700));
-      setV(to * (1 - Math.pow(1 - p, 3)));
-      if (p < 1) raf = requestAnimationFrame(tick);
+      const t = now - t0;
+      let out = "";
+      let done = true;
+      for (let i = 0; i < text.length; i++) {
+        const settle = 140 + i * 18;
+        if (t >= settle || text[i] === " ") out += text[i];
+        else {
+          done = false;
+          out += t < i * 6 ? " " : GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+        }
+      }
+      setShown(out);
+      if (!done) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [to, delay]);
-  return v;
+  }, [text]);
+  return (
+    <span aria-label={text}>
+      <span aria-hidden="true">{shown}</span>
+    </span>
+  );
+}
+
+/** An odometer: each digit is a 0-9 column that slides to its value (400ms). A new value
+ *  retargets the transition mid-flight. `fromZero` starts every digit at 0, so a mount rolls in. */
+export function Roll({ text, fromZero = false }: { text: string; fromZero?: boolean }) {
+  const [cur, setCur] = useState(fromZero ? text.replace(/\d/g, "0") : text);
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setCur(text));
+    return () => cancelAnimationFrame(t);
+  }, [text]);
+  const chars = cur.padStart(text.length, " ").split("");
+  return (
+    <span className="roll" aria-label={text}>
+      {chars.map((c, i) => {
+        const key = chars.length - i; // stable from the right, so cents keep their column
+        if (!/\d/.test(c)) return <span key={key} aria-hidden="true" className="roll-ch">{c === " " ? "" : c}</span>;
+        return (
+          <span key={key} aria-hidden="true" className="roll-col">
+            <span className="roll-strip" style={{ transform: `translateY(${-Number(c) * 10}%)` }}>
+              {"0123456789".split("").map((d) => <span key={d}>{d}</span>)}
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 /** Wait for an exit animation (150ms) before the next screen mounts. */

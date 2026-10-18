@@ -11,7 +11,7 @@ import { useJobEvents } from "@/hooks/useJobEvents";
 import { cleanName, int, itemShort, shortName } from "@/lib/format";
 import { supplierNames, supplierUrls } from "@/lib/job";
 import { pct, planSavings, pricedPlan } from "@/lib/savings";
-import { Claim, In, ONBOARDED_KEY, Steps, useCountUp } from "../../steps";
+import { Claim, In, ONBOARDED_KEY, Roll, Steps } from "../../steps";
 
 /** The best price so far, with a one-shot flash when it drops. The number is the static cue. */
 function Best({ total }: { total: number | null }) {
@@ -27,7 +27,7 @@ function Best({ total }: { total: number | null }) {
   return (
     <div className={`ob-best${bump ? " bump" : ""}`} aria-live="polite">
       <span>Best so far</span>
-      <b>{total != null ? money(total) : "–"}</b>
+      <b>{total != null ? <Roll text={money(total)} /> : "–"}</b>
     </div>
   );
 }
@@ -37,7 +37,6 @@ function Result({ job }: { job: JobView }) {
   const plan = pricedPlan(job);
   const sv = planSavings(job, plan);
   const saved = sv && sv.saved > 0.005 ? sv.saved : 0;
-  const shown = useCountUp(plan?.total ?? 0, 400);
   const items = job.request.items.filter((i) => i.quantity > 0);
 
   if (!plan) {
@@ -58,7 +57,7 @@ function Result({ job }: { job: JobView }) {
     <main className="ob-stage">
       <In i={0}><Steps at={3} /></In>
       <In i={1} as="p" className="ob-figure-label">Best plan</In>
-      <In i={2} as="h1" className="ob-figure">{money(shown)}</In>
+      <In i={2} as="h1" className="ob-figure"><Roll text={money(plan.total)} fromZero /></In>
       <In i={3} as="p" className={`ob-figure-sub${saved ? "" : " flat"}`}>
         {sv ? (saved ? `${money(saved)} less than your bills · ${pct(sv.pct)}` : `Your bills: ${money(sv.paidBefore)}`) : "Total with shipping and tax"}
       </In>

@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { api, errorText, money, type PlannerView, type ShoppingRequest, type SpendInsights } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
 import { day, each, int, itemShort } from "@/lib/format";
-import { Claim, exitPause, In, Steps } from "../steps";
+import { Claim, Decode, exitPause, In, Steps } from "../steps";
 
 type Books = { insights: SpendInsights; planner: PlannerView | null; draft: ShoppingRequest };
 type Line = { at: string; text: string };
@@ -72,11 +72,11 @@ function Connect({ onDone }: { onDone: (b: Books) => void }) {
           {lines.map((l) => (
             <li key={l.text}>
               <time className="ob-in">{l.at}</time>
-              <span className="ob-in">{l.text}</span>
+              <span className="ob-in"><Decode text={l.text} /></span>
             </li>
           ))}
           {phase === "loading" && (
-            <li className="wait"><time className="ob-in">{clock()}</time><span className="ob-in">Reading</span></li>
+            <li className="wait"><time className="ob-in">{clock()}</time><span className="ob-in"><i className="ripple" aria-hidden="true" />Reading</span></li>
           )}
         </ul>
       )}

@@ -29,9 +29,9 @@
 .ob-log { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 28px; font-size: 15px; line-height: 20px; min-height: 120px; align-content: start; }
 .ob-log li { display: contents; }
 .ob-log time { font-family: var(--font-mono); font-size: 13px; color: var(--color-muted); }
-.ob-log span { color: var(--color-faint); }
+.ob-log span { font-family: var(--font-mono); font-size: 14px; color: var(--color-faint); }
 .ob-log li:last-child span { color: var(--color-white); }
-.ob-log .wait span { color: var(--color-muted); }
+.ob-log .wait span { color: var(--color-muted); display: inline-flex; align-items: center; gap: 10px; }
 
 /* Device: outer r28 = inner r16 + padding 12 */
 .ob-device { width: 100%; padding: 12px; border-radius: var(--radius-device); background: var(--color-raised-dark); border: 1px solid transparent; box-shadow: var(--shadow-ring-dark); }
@@ -94,3 +94,17 @@
 .ob-best b { transition-property: color; transition-duration: 150ms; transition-timing-function: ease-out; }
 .ob-best.bump b { color: var(--color-mint); }
 .ob-device.grid .tiles > .ob-in > * { flex: 1; min-width: 0; }
+
+/* Live ripple: a ring leaves the dot every 1.6s (a running state, so a loop) */
+.ripple { position: relative; width: 6px; height: 6px; border-radius: 3px; background: var(--color-mint); flex-shrink: 0; }
+.ripple::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--color-mint); opacity: 0; }
+@media (prefers-reduced-motion: no-preference) { .ripple::after { animation: ob-ripple 1.6s cubic-bezier(0.2, 0, 0, 1) infinite; } }
+@keyframes ob-ripple { from { opacity: 0.8; transform: scale(1); } to { opacity: 0; transform: scale(3.2); } }
+
+/* Odometer: one 0-9 strip per digit, clipped to one line; the strip slides to the digit */
+.roll { display: inline-flex; font-variant-numeric: tabular-nums; }
+.roll-col { display: inline-block; height: 1em; line-height: 1; overflow: hidden; vertical-align: baseline; }
+.roll-strip { display: flex; flex-direction: column; transition-property: transform; transition-duration: 400ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+.roll-strip span { height: 1em; line-height: 1; }
+.roll-ch { line-height: 1; }
+@media (prefers-reduced-motion: reduce) { .roll-strip { transition-duration: 0ms; } }
