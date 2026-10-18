@@ -213,7 +213,8 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
                 return False  # no variant in the URL: add from each product page instead
             items.append({"id": variant, "quantity": line.pack_quantity})
         await self.after_nav(page)  # the guard on the current page before the cart changes
-        status = await self._post(page, f"{self._base()}/cart/add.js", {"items": items})
+        status = await self._post(page, f"{self._base()}/cart/add.js", {"items": items}, [
+            f"{self._base()}/cart/add?id={i['id']}&quantity={i['quantity']}" for i in items])
         if status != 200:
             raise AdapterStepError(f"cart add refused (HTTP {status})")
         return True
@@ -234,7 +235,8 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         if variant is None:
             raise AdapterStepError(f"no cart line for {sku}")
         await self.after_nav(page)
-        status = await self._post(page, f"{self._base()}/cart/change.js", {"id": str(variant), "quantity": 0})
+        status = await self._post(page, f"{self._base()}/cart/change.js", {"id": str(variant), "quantity": 0},
+                                 [f"{self._base()}/cart/change?id={variant}&quantity=0"])
         if status != 200:
             raise AdapterStepError(f"cart remove refused (HTTP {status})")
 
@@ -313,38 +315,54 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
     async def next_checkout_step(self, page: Page) -> bool:
         return False
 
-    async def _post(self, page: Page, url: str, body: dict) -> int:
-        """A cart POST in the page; if the page's fetch fails, the same POST from the browser context.
-        The cart cookie it sets goes into the context, so the cart page shows the same lines."""
+    async def _post(self, page: Page, url: str, body: dict, nav_urls: list[str]) -> int:
+        """A cart POST in the page. If the page's fetch fails, the same change as browser navigations
+        (nav_urls, Shopify's /cart/add and /cart/change GET forms) in another tab: the browser's own
+        requests, with its cookies and network. A page.context.request fallback did not work on the
+        cloud browser (attached over CDP): in live test job_4fdc7ee9ff (2026-10-18) the cart read
+        $0.00, and locally that client sent no cookie the page had set."""
         try:
             return await page.evaluate(POST_JS, [url, body])
         except PlaywrightError as exc:
             if "Failed to fetch" not in str(exc):
                 raise
-        response = await page.context.request.post(url, data=body, headers={"Accept": "application/json"})
-        return response.status
+        for nav in nav_urls:
+            status, _ = await self._tab_get(page, nav)
+            if status != 200:
+                return status
+        return 200
 
     async def _json(self, page: Page, path: str) -> dict | None:
         return await self._get_json(page, f"{self._base()}{path}")
 
     async def _get_json(self, page: Page, url: str) -> dict | None:
-        """A JSON read in the page; if the page's fetch fails, the same GET from the browser context.
+        """A JSON read in the page; if the page's fetch fails, the same URL loaded in another tab.
         Wees Express (2026-10-18, cloud browser): every in-page fetch raised 'TypeError: Failed to
-        fetch' inside the store's fetch wrapper, while the URL answered. The context request shares
-        the context's cookies both ways, so /cart.js reads this browser's cart (see _post)."""
+        fetch' inside the store's fetch wrapper, while the URL answered. A tab uses the browser's
+        cookies, so /cart.js reads this browser's cart (see _post)."""
         try:
             return await page.evaluate(JSON_JS, url)
         except PlaywrightError as exc:
             if "Failed to fetch" not in str(exc):
                 raise
-        response = await page.context.request.get(url, headers={"Accept": "application/json"})
-        if not response.ok:
-            return None
-        try:
-            return await response.json()
-        except (PlaywrightError, ValueError):
-            return None
+        status, data = await self._tab_get(page, url)
+        return data if status == 200 else None
 
+    async def _tab_get(self, page: Page, url: str) -> tuple[int, dict | None]:
+        """Load url in a new tab of the same context: the status, and the body if it is JSON."""
+        tab = await page.context.new_page()
+        try:
+            response = await tab.goto(url)
+            if response is None:
+                return 0, None
+            try:
+                data = await response.json()
+            except (PlaywrightError, ValueError):
+                data = None
+            return response.status, data
+        finally:
+            with contextlib.suppress(PlaywrightError):
+                await tab.close()
 
 def pick_variant(variants: list[dict], query: str, wanted: int | None) -> dict:
     """The variant in the URL, else the in-stock one whose title words appear in the query

@@ -38,7 +38,7 @@ ElevenLabs fills the conversation transcript only after the call ends. The real-
 - The service forwards each line as a live `transcript_line`. After the first live line, the poller stops sending its own lines.
 - When the call connects, the service sends the agent's first message (read from the agent config while the phone rings) as the first live line.
 - ElevenLabs can call the tool twice for one turn. The service drops a turn that repeats the previous turn.
-- Measured on a real call (Oct 17) with the older design that sent the agent's *previous* line: supplier lines came about 2 s after speech, and agent lines about 13 s after speech. The current design sends each agent line as the agent starts to speak. The setup script also sets `thinking_budget` to 0, so that the tool call is written faster.
+- Measured on a real call (Oct 17) with the older design that sent the agent's *previous* line: supplier lines came about 2 s after speech, and agent lines about 13 s after speech. The current design sends each agent line as the agent starts to speak. The setup script sets `thinking_budget` to 256: 0 wrote the tool call faster, but the agent then compared totals wrongly.
 - The backend shows live lines only. It reads prices (J9) from the exact post-call transcript and does not show those lines a second time.
 - The agent writes the lines itself, so a live line can differ a little from the exact words. The exact transcript is saved as evidence after the call.
 
