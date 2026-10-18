@@ -1,7 +1,14 @@
+# ruff: noqa: E402  (the env setup below must run before any app import)
 from __future__ import annotations
 
 import os
 from pathlib import Path
+
+import dotenv
+
+# browser-use calls load_dotenv() on import, which copies the repo's .env (keys, RESTOCK_TOKEN)
+# into os.environ. Tests must not depend on local keys, so turn it off before any app import.
+dotenv.load_dotenv = lambda *args, **kwargs: False
 
 # Tests never send to the real Sentry projects, even when .env has a DSN (a blank DSN means off).
 os.environ["SENTRY_DSN"] = ""

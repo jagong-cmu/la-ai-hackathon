@@ -218,3 +218,17 @@ def test_a_job_that_no_process_runs_does_not_block_its_key(settings):
         assert client.get("/jobs/job_dead00000").json()["state"] == "failed"
         again = client.post("/jobs", json=body, headers={"Idempotency-Key": "key-after-restart"}).json()
         assert again["jobId"] == created["jobId"]
+
+
+def test_server_start_builds_the_planner_in_the_background(settings):
+    # The first build can take minutes with live Jev + Step 5; the daily check must not pay for it.
+    import time
+
+    with TestClient(create_app(settings)) as client:
+        s = client.app.state.s
+        for _ in range(200):
+            if s._warm.done():
+                break
+            time.sleep(0.05)
+        assert s._warm.done() and s._warm.exception() is None
+        assert s.planner._view is not None  # /planner and /planner/check reuse this build
