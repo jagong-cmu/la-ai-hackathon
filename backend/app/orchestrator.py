@@ -56,7 +56,7 @@ T = TypeVar("T")
 # Sentry span status for each result, so a failed step shows as an error in Sentry and not only as a slow span.
 OFFERS_STATUS = {"ok": "ok", "partial": "ok", "not_found": "not_found", "blocked": "permission_denied",
                  "failed": "internal_error"}
-CART_STATUS = {"verified": "ok", "quoted": "ok", "price_changed": "ok", "out_of_stock": "not_found",
+CART_STATUS = {"verified": "ok", "estimated": "ok", "quoted": "ok", "price_changed": "ok", "out_of_stock": "not_found",
                "blocked": "permission_denied", "failed": "internal_error"}
 LANE_STATUS = {LaneState.cart_ready: "ok", LaneState.at_payment: "ok", LaneState.idle: "not_found",
                LaneState.blocked: "permission_denied", LaneState.failed: "internal_error"}

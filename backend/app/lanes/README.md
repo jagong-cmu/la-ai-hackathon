@@ -20,6 +20,23 @@ Register the lanes in `registry.py` (`register_adapter`, `register_llm_agent`), 
 
 CREAO results have no adapter field, so discovery maps each supplier URL to an adapter by domain (`ADAPTER_DOMAINS` in `app/discovery.py`: `webstaurant`, `katom`, `uline`, `restaurantware`, `wasserstrom`). Register your adapter under exactly that name and the site moves from the LLM agent lane to your adapter with no other change. For a new site, add its domain to the table.
 
+## Real-site adapters
+
+| Adapter | Site | File | Notes |
+|---|---|---|---|
+| `webstaurant` | webstaurantstore.com | `live/webstaurant.py` | Needs a visible browser (`BROWSER_HEADLESS=false`) or the cloud browser: add to cart fails headless. Cart shows the subtotal and the ZIP freight, so the cart is `estimated`. The checkout contact step refuses to run until `CHECKOUT_CONTACT__*` is set. |
+| `wees_express` | wees-express.com | `live/shopify.py` | Generic Shopify adapter: reads `/products/<handle>.js` and `/cart.js`, so it works with any theme. One-page checkout: the guard stops on the card fields, which is the handoff. |
+
+To add a site:
+
+1. Run the site preflight: `PYTHONPATH=. uv run python scripts/site_preflight.py <domain>`. It passes when a guest search shows prices with no bot or login wall.
+2. A standard Shopify store needs only a `ShopifyStore(...)` entry in `live/shopify.py`. Check that `/products/<handle>.js` and `/cart.js` answer (EcoQuality blocks them, so it needs its own adapter).
+3. Register the adapter in `live_setup.py` and add the domain to `ADAPTER_DOMAINS` in `app/discovery.py`.
+4. Run it on the live site: `uv run python -m app.lanes.live.adapter_gate <name> [--headed] [--checkout]`.
+5. Save trimmed pages under `tests/sites/<site>/` and add offline tests (see `tests/test_site_adapters.py`).
+
+Many real carts show no total before checkout. Such a cart is `estimated`, never `verified` (see `stages/totals.py`).
+
 ## Rules
 
 - **Call `await ctx.guard(snapshot)` after every navigation, and before every click or type.** If `verdict.stop` is true, stop at once. If `verdict.blocked` is set, raise `LaneBlocked(verdict.blocked)`.

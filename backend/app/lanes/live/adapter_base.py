@@ -103,6 +103,9 @@ class PlaywrightAdapterLane:
     max_results_opened: int = 3
     max_checkout_steps: int = 4
     allow_agent_fallback: bool = True
+    # One-page checkouts (Shopify) put the payment fields on the first checkout page, so the
+    # guard stops there before any contact step. Reaching that page is the handoff.
+    single_page_checkout: bool = False
 
     def __init__(self, supplier: SupplierRef, cfg: LiveLaneSettings | None = None):
         self.supplier = supplier
@@ -157,6 +160,14 @@ class PlaywrightAdapterLane:
         """Click the button to the next checkout step. Return False when there is none."""
         raise NotImplementedError
 
+    async def cart_summary(self, page: Page, skus: list[str]) -> str:
+        """The order summary text that J7 reads. Default: `cart_totals_selector`, else the page
+        text without the cart lines. Override to show J7 only the amounts the site applies."""
+        if self.cart_totals_selector:
+            return await self.browser.text(self.cart_totals_selector, page)
+        text = (await self.browser.snapshot(page)).visible_text
+        return "\n".join(t for t in text.splitlines() if not any(s in t for s in skus))
+
     # ---- guarded browser actions (use these in the site steps) ----------------------
 
     def _need_ctx(self) -> LaneContext:
@@ -188,6 +199,13 @@ class PlaywrightAdapterLane:
             raise AdapterStepError(f"no field: {selector}")
         await _refuse_card_field(loc)
         await loc.fill(value)
+
+    async def settle(self, page: Page, timeout_ms: int = 8000) -> None:
+        """Wait for a checkout page to finish loading before the guard reads it. Payment fields
+        often arrive late in iframes: Shopify's card iframes appeared about 3 s after
+        DOMContentLoaded, so a check at load time saw no card field (seen 2026-10-17)."""
+        with contextlib.suppress(PlaywrightError):
+            await page.wait_for_load_state("networkidle", timeout=timeout_ms)
 
     async def after_nav(self, page: Page, *, allow_stop: bool = False) -> GuardVerdict:
         snap = await self.browser.snapshot(page)
@@ -300,11 +318,7 @@ class PlaywrightAdapterLane:
         page = await self.goto(self.cart_url())
         rows = await self.cart_rows(page)
         shot = await self.shot("cart", page)
-        if self.cart_totals_selector:
-            summary = await self.browser.text(self.cart_totals_selector, page)
-        else:
-            text = (await self.browser.snapshot(page)).visible_text
-            summary = "\n".join(t for t in text.splitlines() if not any(s in t for s in want))
+        summary = await self.cart_summary(page, list(want))
         self.browser.write_evidence(ctx, f"cart_{self._shots:03d}.txt", summary)
         candidates = money_candidates(summary)
         picks, confs = await j7_totals(ctx.decider, candidates, job_id=ctx.job_id)
@@ -338,7 +352,12 @@ class PlaywrightAdapterLane:
         page = await self.goto(self.cart_url())
         await self.checkout_entry(page)
         page = await self.browser.page()
+        await self.settle(page)
         verdict = await self.after_nav(page, allow_stop=True)
+        if verdict.stop and self.single_page_checkout and verdict.reason in ("dom_card_field", "payment_step"):
+            shot = await self.shot("payment_step", page)
+            return CheckoutHandoff(supplier_id=self.supplier.id, status="at_payment", live_url=ctx.live_url,
+                                   screenshot_url=shot)
         if verdict.stop:  # the guard stopped before the contact step
             shot = await self.shot("early_stop", page)
             return CheckoutHandoff(supplier_id=self.supplier.id, status="failed",
@@ -353,6 +372,7 @@ class PlaywrightAdapterLane:
                 verdict = stop.verdict
                 break
             page = await self.browser.page()
+            await self.settle(page)
             verdict = await self.after_nav(page, allow_stop=True)
             if verdict.stop or not moved:
                 break

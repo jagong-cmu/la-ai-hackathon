@@ -331,7 +331,12 @@ async def test_live_mode_falls_back_to_saved_real_run(live_settings, db, decider
     assert not any("(fixture)" in c.name for c in result.candidates)
     hidden = {c.name for c in result.candidates if c.reason == "filtered: prices not public"}
     assert {"KSS Enterprises", "Highland Supply"} <= hidden
-    assert all(c.adapter is None for c in result.candidates)  # no real adapters registered yet
+    # Wees Express maps to its adapter by domain once that adapter is registered; the rest
+    # of the saved run has no adapter and stays an unknown site for the LLM agent lane.
+    known = registry.registered()["adapters"]
+    by_name = {c.name: c for c in result.candidates}
+    assert by_name["Wees Express"].adapter == ("wees_express" if "wees_express" in known else None)
+    assert all(c.adapter is None for c in result.candidates if c.name != "Wees Express")
 
 
 async def test_fixture_mode_keeps_the_fake_list(settings, db, decider):
