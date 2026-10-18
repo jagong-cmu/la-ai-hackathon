@@ -267,6 +267,10 @@ def broken_fetch_store() -> AsyncIterator:
     pages = {
         "/cart": ("text/html", "<html><script>window.fetch = () => Promise.reject("
                                "new TypeError('Failed to fetch'))</script><body>Cart</body></html>"),
+        # A fetch that never settles until its signal aborts (job_458035c3a1 waited 45 s on one).
+        "/cart-hangs": ("text/html", "<html><script>window.fetch = (u, o) => new Promise((_, reject) =>"
+                                     " o?.signal?.addEventListener('abort', () => reject(o.signal.reason)))"
+                                     "</script><body>Cart</body></html>"),
         "/search/suggest.json": ("application/json", json.dumps(
             {"resources": {"results": {"products": [{"title": product["title"], "handle": "bakery-box",
                                                      "price": "45.99"}]}}})),
@@ -389,3 +393,21 @@ async def test_shopify_works_when_the_page_fetch_fails(broken_fetch_store, cdp_b
     await lane.remove_item(page, "BB-10")
     assert await lane.cart_rows(page) == []
     assert len(context.pages) == 1  # the extra tabs are closed
+
+
+@needs_browser
+async def test_shopify_falls_back_when_the_page_fetch_hangs(broken_fetch_store, cdp_browser):
+    import time
+
+    from app.lanes.live.shopify import WEES_EXPRESS, ShopifyAdapterLane
+
+    store = f"http://127.0.0.1:{broken_fetch_store.server_port}"
+    lane = ShopifyAdapterLane(SupplierRef(id="w", name="W", url=f"{store}/"), WEES_EXPRESS)
+    lane.fetch_timeout_ms = 200
+    context = cdp_browser.contexts[0]
+    page = context.pages[0] if context.pages else await context.new_page()
+    await page.goto(f"{store}/cart-hangs")
+    started = time.monotonic()
+    cards = await asyncio.wait_for(lane.search_cards(page, "white bakery box"), 5)  # unbounded before
+    assert [c.url for c in cards] == [f"{store}/products/bakery-box"]
+    assert time.monotonic() - started < 3

@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     lane_search_budget_s: float = 45
     lane_cart_budget_s: float = 45
     lane_subset_budget_s: float = 20
+    # Cloud browsers count against one account limit (Browser Use answered 429 with 12 open,
+    # 2026-10-18). A job with no decision this long after its results closes its lane browsers.
+    lane_idle_close_s: float = 300
     lane_agent_budget_factor: float = 3.0  # LLM-agent lanes (unknown sites) get longer budgets
     # An LLM-agent lane searches only this many items, largest past spend first. The H3 gate (2026-10-17)
     # took 92 s to search 2 items and 93 s to cart them, which does not fit the job deadline.
