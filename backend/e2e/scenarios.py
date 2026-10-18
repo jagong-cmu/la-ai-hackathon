@@ -232,6 +232,24 @@ def check_view(ctx: Ctx, view: dict) -> None:
     for card in view.get("cards", []):
         if not card.get("simulated", False):
             ctx.fail(f"{jid}: non-simulated card {card}")
+    appr = view.get("approval") or {}
+    if appr.get("action") == "approve" and view.get("cards"):
+        plan = next((p for p in res["plans"] if p["planId"] == appr.get("planId")), None)
+        if plan is None:
+            ctx.fail(f"{jid}: approved plan {appr.get('planId')} is not in the results")
+        else:
+            cards = {}
+            for c in view["cards"]:
+                cards.setdefault(c["supplierId"], []).append(c)
+            for cart in plan["carts"]:
+                got = cards.get(cart["supplierId"], [])
+                if len(got) != 1:
+                    ctx.fail(f"{jid}: cart {cart['supplierId']} has {len(got)} cards")
+                elif got[0]["limitUsd"] + 1e-9 < cart["total"]:
+                    ctx.fail(f"{jid}: card limit {got[0]['limitUsd']} < cart total {cart['total']}")
+            extra = set(cards) - {c["supplierId"] for c in plan["carts"]}
+            if extra:
+                ctx.fail(f"{jid}: cards for suppliers outside the approved plan: {extra}")
     if view["state"] in ("at_payment", "partial_handoff"):
         if not view.get("approval") or view["approval"]["action"] != "approve":
             ctx.fail(f"{jid}: handed off with no approval")
