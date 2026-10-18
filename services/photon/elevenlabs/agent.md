@@ -158,7 +158,7 @@ The response is `{"agent_id": "..."}`. Put it in `ELEVENLABS_AGENT_ID`. Use a bu
 
 | Setting | Value |
 |---|---|
-| Agent ID | `agent_8701m570gbqeeqcsby2yd3yg6yfj` on the new ElevenLabs account (Oct 18; in `.env` as `ELEVENLABS_AGENT_ID`). The old account's agent was `agent_0101m55tm410fk0aw5m80w47ascn`. |
+| Agent ID | `agent_0901m57y1naaesmare22b71rmkz5` on the third ElevenLabs account (Oct 18; in `.env` as `ELEVENLABS_AGENT_ID`). Earlier agents: `agent_8701m570gbqeeqcsby2yd3yg6yfj` (second account), `agent_0101m55tm410fk0aw5m80w47ascn` (first account). |
 | Name, tags | Hearthloaf supply quote caller · `LA Hacks 2026`, `supplier-agent` |
 | Voice | Eric – Smooth, Trustworthy (premade, `cjVigY5qzO86Huf0OWal`). Library voices must be added to the workspace before an agent can use them. |
 | LLM | `gemini-2.5-flash`, temperature 0.2, ElevenLabs default backup LLM, time zone America/Detroit |
@@ -230,3 +230,8 @@ The response is `{"agent_id": "..."}`. Put it in `ELEVENLABS_AGENT_ID`. Use a bu
   - Simulation tests: test 10 ("Already below our total", $625 against $690) passes; the agent skips
     the counter offer. Tests 01 to 06 passed on the version before the last close fix. The last run
     stopped with "Insufficient credits to run this simulation" on the new account.
+- Oct 18: the second account ran out of credits, so the agent moved to a third account (free plan,
+  10,000 credits). The number was deleted on the second account first, because a number can be on
+  one account only. New IDs: agent `agent_0901m57y1naaesmare22b71rmkz5`, tool `log_live_turn`
+  `tool_4201m57y1wj0egnvpw7b1mfm5jwj`, phone number `phnum_8501m57y1za1egttaz3vv80z25d9`, test folder
+  `tfld_7901m57y31hhfxfrnybcex3z5097` (10 tests). All agent settings match the second account.
