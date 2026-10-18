@@ -44,7 +44,7 @@ from app.events import EventBus
 from app.lanes.base import LaneBlocked, LaneContext, LaneGuardStopped, SupplierLane
 from app.lanes.registry import NoLaneAvailable, lane_for
 from app.llm import Step5Client
-from app.observability import capture, forked, in_transaction, span
+from app.observability import capture, current, forked, in_transaction, outcome, span
 from app.stages.cards import mint_cards
 from app.stages.normalize import NormalizeResult, normalize
 from app.stages.optimize import optimize
@@ -52,6 +52,19 @@ from app.stages.rank import build_results, summary_facts
 from app.stages.rules import SpendingRules, check_plan
 
 T = TypeVar("T")
+
+# Sentry span status for each result, so a failed step shows as an error in Sentry and not only as a slow span.
+OFFERS_STATUS = {"ok": "ok", "partial": "ok", "not_found": "not_found", "blocked": "permission_denied",
+                 "failed": "internal_error"}
+CART_STATUS = {"verified": "ok", "quoted": "ok", "price_changed": "ok", "out_of_stock": "not_found",
+               "blocked": "permission_denied", "failed": "internal_error"}
+LANE_STATUS = {LaneState.cart_ready: "ok", LaneState.at_payment: "ok", LaneState.idle: "not_found",
+               LaneState.blocked: "permission_denied", LaneState.failed: "internal_error"}
+
+
+def cart_data(cart: VerifiedCart) -> dict[str, Any]:
+    return {"cart.total": cart.costs.total if cart.costs else None, "cart.verification": cart.verification_status,
+            "cart.totals_check": cart.totals_check, "cart.lines": len(cart.cart_items), "cart.reason": cart.reason}
 SUMMARY_TIMEOUT_S = 12
 # A job in one of these states is done. Any other saved state means that a process was running it.
 FINAL_JOB_STATES = {JobState.at_payment, JobState.partial_handoff, JobState.rejected, JobState.failed}
@@ -274,12 +287,33 @@ class Orchestrator:
             if deadline_hit:
                 await self.bus.emit(job_id, "deadline_hit", {"pending": len(pending)})
             await self._finalize(rt, deadline_hit=deadline_hit, event="results_ready")
+            self._record_job(rt)
             if pending:
                 self._spawn(self._late(rt, pending))
         except Exception as exc:  # the job must always end in a known state
             capture(exc)
+            outcome(current(), "internal_error", **{"job.state": "failed", "job.error": type(exc).__name__})
             await self._set_job_state(rt, JobState.failed)
             await self.bus.emit(job_id, "job_failed", {"error": f"{type(exc).__name__}: {exc}"})
+
+    def _record_job(self, rt: JobRuntime) -> None:
+        """Put the job result on its transaction: one row per job in Sentry, to compare runs and releases."""
+        res = rt.view.results
+        if res is None:
+            return
+        best = next((p for p in res.plans if p.plan_id == res.recommended_plan_id), None)
+        states = [lr.status.state for lr in rt.lanes.values()]
+        outcome(current(), "ok" if best else "not_found", **{
+            "job.state": rt.view.state.value, "job.results": res.status, "job.deadline_hit": res.deadline_hit,
+            "job.plans": len(res.plans), "job.recommended_total": best.total if best else None,
+            "job.recommended_status": best.status if best else None,
+            "job.no_recommendation_reason": res.no_recommendation_reason,
+            "job.savings_vs_paid_before": res.savings_vs_paid_before,
+            "job.items": len(rt.request.items), "job.lanes": len(states),
+            "job.lanes_ok": sum(s in (LaneState.cart_ready, LaneState.at_payment) for s in states),
+            "job.lanes_failed": sum(s in (LaneState.failed, LaneState.blocked) for s in states),
+            "job.quote": any(o.source != "web" for o in rt.offers.values()),
+        })
 
     async def _make_specs(self, rt: JobRuntime) -> None:
         items = rt.request.items
@@ -349,14 +383,19 @@ class Orchestrator:
         raise RuntimeError("unreachable")
 
     async def _run_lane(self, rt: JobRuntime, lr: LaneRuntime) -> None:
-        if not lr.is_agent:
-            await self._run_lane_steps(rt, lr)
-            return
-        # The browser agent lane is an AI agent run: Sentry's AI Agents view groups it with its model calls.
         sid = lr.status.supplier_id
-        with span("gen_ai.invoke_agent", f"invoke_agent browser lane {sid}", **{
-                "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "browser-use lane", "supplier": sid}):
+        if lr.is_agent:
+            # The browser agent lane is an AI agent run: Sentry's AI Agents view groups it with its model calls.
+            lane_span = span("gen_ai.invoke_agent", f"invoke_agent browser lane {sid}", **{
+                "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "browser-use lane"}, supplier=sid)
+        else:
+            lane_span = span("lane.run", f"lane {sid}", supplier=sid)
+        with lane_span as s:
             await self._run_lane_steps(rt, lr)
+            st = lr.status
+            outcome(s, LANE_STATUS.get(st.state, "unknown"), **{
+                "lane.mode": st.mode, "lane.state": st.state.value, "lane.reason": st.reason,
+                "lane.items": len(self._lane_items(rt, lr))})
 
     async def _run_lane_steps(self, rt: JobRuntime, lr: LaneRuntime) -> None:
         assert lr.lane is not None and lr.ctx is not None
@@ -367,9 +406,12 @@ class Orchestrator:
                 with span("lane.open", f"open {sid}", supplier=sid):
                     await self._timed(lambda: lane.open(ctx), self._budget(lr, self.settings.lane_search_budget_s))
                 lr.status.session_id, lr.status.live_url = ctx.session_id, ctx.live_url
-                with span("lane.search", f"search {sid}", supplier=sid):
+                with span("lane.search", f"search {sid}", supplier=sid) as s:
                     offers = await self._timed(lambda: lane.search(ctx, self._lane_items(rt, lr)),
                                                self._budget(lr, self.settings.lane_search_budget_s))
+                    outcome(s, OFFERS_STATUS[offers.status], **{
+                        "offers.status": offers.status, "offers.products": len(offers.products),
+                        "offers.items_found": len({p.item_id for p in offers.products}), "offers.error": offers.error})
                 rt.offers[sid] = offers
                 await self.bus.emit(rt.job_id, "offers_ready", {"status": offers.status, "products": len(offers.products)},
                                     lr.status.lane_id)
@@ -385,9 +427,10 @@ class Orchestrator:
                 lines = [CartLine(item_id=o.item_id, sku=o.sku, pack_quantity=o.packs_needed, unit_price=o.pack_price, url=o.url)
                          for o in sorted(options, key=lambda o: o.item_id)]
                 await self._lane_state(rt, lr, LaneState.carting)
-                with span("lane.set_cart", f"set_cart {sid}", supplier=sid):
+                with span("lane.set_cart", f"set_cart {sid}", supplier=sid, **{"cart.requested_lines": len(lines)}) as s:
                     cart = await self._timed(lambda: lane.set_cart(ctx, lines),
                                              self._budget(lr, self.settings.lane_cart_budget_s))
+                    outcome(s, CART_STATUS[cart.verification_status], **cart_data(cart))
                 rt.carts[cart.cart_key] = cart
                 await self.bus.emit(rt.job_id, "supplier_cart_ready", {
                     "cartKey": cart.cart_key, "total": cart.costs.total if cart.costs else None,
@@ -431,9 +474,11 @@ class Orchestrator:
                 try:
                     async with lr.lock:
                         await self._lane_state(rt, lr, LaneState.subset_pricing)
-                        with span("lane.subset_set_cart", f"subset set_cart {sid}", supplier=sid):
+                        with span("lane.subset_set_cart", f"subset set_cart {sid}", supplier=sid,
+                                  **{"cart.requested_lines": len(lines)}) as s:
                             cart = await self._timed(lambda lines=lines: lane.set_cart(ctx, lines),
                                                      self._budget(lr, self.settings.lane_subset_budget_s), retries=0)
+                            outcome(s, CART_STATUS[cart.verification_status], **cart_data(cart))
                         rt.carts[cart.cart_key] = cart
                         await self.bus.emit(rt.job_id, "subset_total", {
                             "cartKey": cart.cart_key, "total": cart.costs.total if cart.costs else None,
@@ -474,8 +519,10 @@ class Orchestrator:
             first_plan_ready=rt.first_plan, on_offer=on_offer, started_at=rt.started_at,
         )
         try:
-            with span("distributor.run", f"distributor {dist.id}", supplier=dist.id):
+            with span("distributor.run", f"distributor {dist.id}", supplier=dist.id) as s:
                 await channel.run(rt.dist_ctx)
+                quoted = dist.id in rt.offers
+                outcome(s, "ok" if quoted else "not_found", **{"distributor.quoted": quoted})
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -563,9 +610,11 @@ class Orchestrator:
                     with span("lane.set_cart", f"checkout set_cart {sid}", supplier=sid):
                         await self._timed(lambda: lane.set_cart(ctx, cart_plan.lines),
                                           self._budget(lr, self.settings.lane_subset_budget_s), retries=0)
-                    with span("lane.checkout", f"checkout {sid}", supplier=sid):
+                    with span("lane.checkout", f"checkout {sid}", supplier=sid) as s:
                         handoff = await self._timed(lambda: lane.checkout(ctx, contact),
                                                     self._budget(lr, self.settings.lane_cart_budget_s), retries=0)
+                        outcome(s, "ok" if handoff.status == "at_payment" else "internal_error", **{
+                            "handoff.status": handoff.status, "handoff.reason": handoff.reason})
                 handoff.card_id = card.card_id if card else None
                 handoff.live_url = handoff.live_url or ctx.live_url
                 await self._lane_state(rt, lr, LaneState.at_payment if handoff.status == "at_payment"

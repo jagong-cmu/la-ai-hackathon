@@ -78,5 +78,5 @@ FastAPI + Python 3.12 + SQLite. The backend holds all the state, all the arithme
 
 - The live Photon channel and the live browser lanes belong to the agents team (see `app/lanes/README.md`).
 - The `decisions` table holds the evaluation data. The labelling script and the report (Intuit) are not written yet.
-- Sentry is initialized and wraps the Jev and LLM calls in spans. Lane-level spans are not added yet.
+- Sentry traces each job, lane, lane step, `decide()` call and model call. Each span records how it ended (`lane.state`, `offers.status`, `cart.verification`, `decision.band`, `job.*`). Prompts and replies are not sent yet.
 - Job state lives in memory while the server runs, and as a snapshot in SQLite. A restart does not resume running jobs. A resumed job would need the browser sessions, which do not survive a restart anyway.
