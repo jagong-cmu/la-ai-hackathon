@@ -1,0 +1,70 @@
+[
+  {
+    "supplierId": "supplier-a",
+    "offers": [
+      {
+        "id": "offer-supplier-a-markers",
+        "supplierId": "supplier-a",
+        "itemId": "markers",
+        "title": "Fixture black fine-point permanent markers, 12 pack",
+        "sku": "A-MARKERS-12",
+        "productUrl": "https://supplier-a.example/markers",
+        "unitsPerPack": 12,
+        "packUnit": "marker",
+        "packPriceCents": 800,
+        "inStock": true,
+        "matchStatus": "exact"
+      },
+      {
+        "id": "offer-supplier-a-tape",
+        "supplierId": "supplier-a",
+        "itemId": "tape",
+        "title": "Fixture clear shipping tape, 2 rolls",
+        "sku": "A-TAPE-2",
+        "productUrl": "https://supplier-a.example/tape",
+        "unitsPerPack": 2,
+        "packUnit": "roll",
+        "packPriceCents": 2400,
+        "inStock": true,
+        "matchStatus": "exact"
+      }
+    ],
+    "missingItemIds": [],
+    "errors": [],
+    "runId": null
+  },
+  {
+    "supplierId": "supplier-b",
+    "offers": [
+      {
+        "id": "offer-supplier-b-markers",
+        "supplierId": "supplier-b",
+        "itemId": "markers",
+        "title": "Fixture black fine-point permanent markers, 12 pack",
+        "sku": "B-MARKERS-12",
+        "productUrl": "https://supplier-b.example/markers",
+        "unitsPerPack": 12,
+        "packUnit": "marker",
+        "packPriceCents": 1800,
+        "inStock": true,
+        "matchStatus": "exact"
+      },
+      {
+        "id": "offer-supplier-b-tape",
+        "supplierId": "supplier-b",
+        "itemId": "tape",
+        "title": "Fixture clear shipping tape, 2 rolls",
+        "sku": "B-TAPE-2",
+        "productUrl": "https://supplier-b.example/tape",
+        "unitsPerPack": 2,
+        "packUnit": "roll",
+        "packPriceCents": 700,
+        "inStock": true,
+        "matchStatus": "exact"
+      }
+    ],
+    "missingItemIds": [],
+    "errors": [],
+    "runId": null
+  }
+]
