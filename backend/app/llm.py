@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from typing import Any
@@ -19,6 +20,8 @@ from app.config import RuntimeModes, Settings
 from app.contracts import SearchSpec, ShoppingItem
 from app.db import Database, stable_hash
 from app.observability import ai_span, set_data
+
+log = logging.getLogger(__name__)
 
 
 class LLMError(Exception):
@@ -128,7 +131,9 @@ class Step5Client:
                 unit=item.unit,
                 acceptable_pack_sizes=[int(x) for x in data.get("acceptablePackSizes") or []],
             )
-        except (LLMError, ValueError, TypeError):
+        except (LLMError, ValueError, TypeError) as exc:
+            # The job still runs on the item name, but J5 then has no must-haves: say why.
+            log.warning("spec for %s fell back to the item name: %s: %s", item.id, type(exc).__name__, str(exc)[:200])
             return template_spec(item)
 
     async def answer_questions(self, state: Any, questions: dict[str, dict]) -> dict[str, Any]:

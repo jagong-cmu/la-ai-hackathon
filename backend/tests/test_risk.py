@@ -81,3 +81,25 @@ def test_results_explain_a_cheaper_plan_that_ranks_lower():
     warning = next(w for w in results.warnings if w.code == "ranked_for_confidence")
     assert warning.text == ("Everything from A costs $2.00 less, but the match is uncertain "
                             "for 1 of its items, so it ranks lower.")
+
+
+def test_related_listing_with_every_must_have_confirmed_stays_eligible():
+    from app.contracts import JevListing, Product
+
+    def listing(sku: str, probs: dict, must: dict) -> Product:
+        return Product(item_id="g", title=sku, sku=sku, pack_price=40.0, units_per_pack=100,
+                       jev=JevListing(match_score=1.0, match_probs=probs, must_have=must, in_stock=0.95))
+
+    # Live J5 (2026-10-18): P(same) 0.39, P(related) 0.61, all must-haves 0.97+.
+    related = {"0": 0.0, "1": 0.61, "2": 0.39}
+    offers = SupplierOffers(supplier_id="a", products=[
+        listing("OK", related, {"nitrile": 0.98, "large": 0.97}),
+        listing("NOMUST", related, {}),  # nothing confirmed: still no match
+        listing("ONEWEAK", related, {"nitrile": 0.98, "large": 0.6}),
+        listing("DIFF", {"0": 0.3, "1": 0.4, "2": 0.3}, {"nitrile": 0.98}),
+    ])
+    by_sku = {o.sku: o for o in normalize(GLOVES, [offers], TH).all_options}
+    assert by_sku["OK"].eligible and "low_match" in by_sku["OK"].flags
+    assert not by_sku["NOMUST"].eligible and "no_match" in by_sku["NOMUST"].flags
+    assert not by_sku["ONEWEAK"].eligible
+    assert not by_sku["DIFF"].eligible

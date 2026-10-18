@@ -22,8 +22,8 @@ def _has(module: str) -> bool:
 
 
 def register_live_lanes() -> dict[str, bool]:
-    done = {"example_site": False, "webstaurant": False, "wees_express": False, "llm_agent": False,
-            "hosted_agent": False}
+    done = {"example_site": False, "webstaurant": False, "wees_express": False, "restaurantware": False,
+            "llm_agent": False, "hosted_agent": False}
     playwright = _has("playwright")
     if not playwright:
         log.warning("adapter and Step 5 agent lanes off: playwright is not installed (uv sync --extra browser)")
@@ -38,13 +38,15 @@ def register_live_lanes() -> dict[str, bool]:
 
         # Real supplier sites. The names match discovery.ADAPTER_DOMAINS.
         try:
-            from app.lanes.live.shopify import WEES_EXPRESS, ShopifyAdapterLane
+            from app.lanes.live.shopify import RESTAURANTWARE, WEES_EXPRESS, ShopifyAdapterLane
             from app.lanes.live.webstaurant import WebstaurantLane
 
             register_adapter("webstaurant", lambda supplier: WebstaurantLane(supplier))
             done["webstaurant"] = True
             register_adapter("wees_express", lambda supplier: ShopifyAdapterLane(supplier, WEES_EXPRESS))
             done["wees_express"] = True
+            register_adapter("restaurantware", lambda supplier: ShopifyAdapterLane(supplier, RESTAURANTWARE))
+            done["restaurantware"] = True
         except Exception as exc:  # never break server start
             log.warning("real-site adapters not registered: %s", exc)
 
