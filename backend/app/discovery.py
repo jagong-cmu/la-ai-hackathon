@@ -86,6 +86,17 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40]
 
 
+def _text(value: Any) -> str | None:
+    """A model-written field as text: numbers become strings, lists and objects are dropped."""
+    if isinstance(value, bool) or not isinstance(value, str | int | float):
+        return None
+    return str(value).strip() or None
+
+
+def _row_id(row: dict[str, Any]) -> str:
+    return _text(row.get("id")) or _slug(_text(row.get("name")) or row["url"])
+
+
 def _error_code(resp: httpx.Response) -> str:
     try:
         body = resp.json()
@@ -201,7 +212,7 @@ def adapter_for_url(url: str) -> str | None:
 
 def _resolve_adapter(row: dict[str, Any], known: set[str]) -> str | None:
     """A row's own adapter, else its domain's; None (LLM agent lane) unless it is registered."""
-    for adapter in (row.get("adapter"), adapter_for_url(row["url"])):
+    for adapter in (_text(row.get("adapter")), adapter_for_url(row["url"])):
         if adapter and adapter in known:
             return adapter
     return None
@@ -281,18 +292,18 @@ class Discovery:
         known = self.known_adapters
         candidates = [
             SupplierCandidate(
-                id=c.get("id") or _slug(c.get("name") or c["url"]),
-                name=c.get("name") or c["url"],
+                id=_row_id(c),
+                name=_text(c.get("name")) or c["url"],
                 url=c["url"],
-                phone=c.get("phone") or None,
-                email=c.get("email") or None,
+                phone=_text(c.get("phone")),
+                email=_text(c.get("email")),
                 adapter=_resolve_adapter(c, known),
                 creao_run_id=run_id,
                 cached_at=utcnow() if source == "creao" else None,
             )
             for c in raw
         ]
-        notes = {c.get("id") or _slug(c.get("name") or c["url"]): c.get("notes") or "" for c in raw}
+        notes = {_row_id(c): _text(c.get("notes")) or "" for c in raw}
         # Code filter before J3: a supplier without public prices cannot be priced by a lane.
         hidden = {cand.id for cand, c in zip(candidates, raw, strict=True) if _prices_hidden(c)}
         judged = [c for c in candidates if c.id not in hidden]

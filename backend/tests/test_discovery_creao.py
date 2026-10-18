@@ -401,3 +401,23 @@ async def test_fixture_mode_selection_is_unchanged(settings, db, decider):
 
     assert [c.id for c in result.candidates if c.selected] == ["alpha", "bravo", "charlie", "delta"]
     assert not any(c.reason == discovery.APPROVED_REASON for c in result.candidates)
+
+
+async def test_model_output_with_odd_field_types_does_not_break_discovery(live_settings, db, decider):
+    """Soak S-015: CREAO rows come from model output. An int id or phone raised a pydantic
+    ValidationError after the rows were cached, so every later draft failed until the cache expired."""
+    odd = {"suppliers": [
+        {"id": 7, "name": "Seven Supply", "url": "https://seven.example", "phone": 3105550100, "pricesPublic": True},
+        {"name": ["not", "a", "name"], "url": "https://list.example", "email": {"x": 1}},
+        {"name": "Fine Co", "url": "https://fine.example", "adapter": ["webstaurant"]},
+    ]}
+    text = "```json\n" + json.dumps(odd) + "\n```"
+    disc = make_discovery(live_settings, db, decider,
+                          scripted([run_state("completed", result={"text": text, "artifacts": []})]))
+    result = await disc.discover("packaging_disposables", "90024", None)
+    by_url = {c.url: c for c in result.candidates}
+    assert set(by_url) == {"https://seven.example", "https://list.example", "https://fine.example"}
+    assert by_url["https://seven.example"].id == "7" and by_url["https://seven.example"].phone == "3105550100"
+    assert all(isinstance(c.name, str) and c.name for c in result.candidates)
+    again = await disc.discover("packaging_disposables", "90024", None)  # the cached rows work too
+    assert len(again.candidates) == 3
