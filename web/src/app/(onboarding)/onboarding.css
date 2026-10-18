@@ -84,3 +84,19 @@
 .ob-device.grid .tiles > .ob-in > * { flex: 1; min-width: 0; }
 
 
+
+/* Reading the books: the bill lines stream into a fixed-height feed. */
+.ob-read { max-width: 920px; }
+.ob-read-stats { display: flex; gap: 12px 32px; flex-wrap: wrap; margin: 0; }
+.ob-read-stats div { display: flex; flex-direction: column; gap: 2px; }
+.ob-read-stats dt { font-size: 13px; line-height: 16px; color: var(--color-muted); }
+.ob-read-stats dd { margin: 0; font-weight: 600; font-size: 20px; line-height: 24px; font-variant-numeric: tabular-nums; }
+.ob-feed { min-height: 346px; overflow-x: auto; }
+.ob-feed tr.ob-new td { animation: ob-flash 900ms ease-out both; }
+@keyframes ob-flash { from { background-color: var(--color-mint-tint); } }
+.ob-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--color-mint-tint); color: var(--color-mint-text); font-size: 12px; line-height: 16px; font-weight: 500; }
+.ob-bar { flex: 1; max-width: 240px; height: 4px; border-radius: 2px; background: var(--color-line); overflow: hidden; }
+.ob-bar i { display: block; height: 100%; background: var(--color-mint-text); transform-origin: left; transition-property: transform; transition-duration: 120ms; transition-timing-function: linear; }
+.ob-note { max-width: 640px; font-size: 13px; line-height: 18px; color: var(--color-faint); text-align: center; text-wrap: pretty; }
+@media (max-width: 640px) { .ob-feed .wide-only { display: none; } }
+@media (prefers-reduced-motion: reduce) { .ob-feed tr.ob-new td { animation: none; } .ob-bar i { transition: none; } }
