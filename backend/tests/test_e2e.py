@@ -271,3 +271,16 @@ def test_verify_phase_skips_sites_without_checkout_quotes(settings, monkeypatch)
         web = [p for p in results["plans"] if p["kind"] != "quoted_bundle"]
         assert quotes == []
         assert web and all(p["status"] != "verified" for p in web if not any(c["status"] == "quoted" for c in p["carts"]))
+
+
+def test_jobs_list_and_default_rules(client):
+    assert client.get("/jobs").json() == []
+    draft = client.get("/shopping-list/draft").json()
+    job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "list-test-0001"}).json()["jobId"]
+    jobs = client.get("/jobs").json()
+    assert [j["jobId"] for j in jobs] == [job_id]
+    assert client.get("/jobs", params={"limit": 0}).status_code == 422
+
+    rules = client.get("/rules").json()
+    assert rules["perOrderCap"] > 0
+    assert set(s["id"] for s in draft["suppliers"]) <= set(rules["approvedSuppliers"])

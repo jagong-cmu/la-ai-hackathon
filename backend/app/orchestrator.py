@@ -180,6 +180,10 @@ class Orchestrator:
         rt = self.jobs.get(job_id)
         return rt.view if rt else self.db.load_job(job_id)
 
+    def list_views(self, limit: int = 50) -> list[JobView]:
+        """Stored jobs, newest first, with the live view for each job that still runs."""
+        return [self.jobs[v.job_id].view if v.job_id in self.jobs else v for v in self.db.list_jobs(limit)]
+
     def rules_for(self, job_id: str) -> SpendingRules | None:
         rt = self.jobs.get(job_id)
         return rt.rules if rt else None

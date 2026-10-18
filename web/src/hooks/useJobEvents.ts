@@ -17,7 +17,7 @@ export const EVENT_TYPES = [
   "dependency_degraded", "replay_started",
 ] as const;
 
-const REFETCH_ON = new Set(["results_ready", "results_updated", "handoff_ready", "job_state", "approved", "rejected"]);
+const REFETCH_ON = new Set(["plans_updated", "offers_ready", "results_ready", "results_updated", "handoff_ready", "job_state", "approved", "rejected"]);
 
 export interface LaneTile {
   laneId: string;
@@ -28,7 +28,11 @@ export interface LaneTile {
   liveUrl: string | null;
   lastScreenshotUrl: string | null;
   pageState?: string;
+  pageUrl?: string;
   cartTotal?: number;
+  subsetTotal?: number;
+  /** The most recent cart total this lane read (full cart or a subset). */
+  lastTotal?: number;
   totalsCheck?: string;
   updatedAt?: string;
 }
@@ -110,10 +114,13 @@ function applyEvent(s: JobEventsState, e: JobEvent): JobEventsState {
         lane = { ...prev, lastScreenshotUrl: str(d.url) || prev.lastScreenshotUrl };
         break;
       case "page_state":
-        lane = { ...prev, pageState: str(d.state) };
+        lane = { ...prev, pageState: str(d.state), pageUrl: str(d.url) || prev.pageUrl };
         break;
       case "supplier_cart_ready":
-        lane = { ...prev, cartTotal: num(d.total), totalsCheck: str(d.totalsCheck) || undefined };
+        lane = { ...prev, cartTotal: num(d.total), lastTotal: num(d.total) ?? prev.lastTotal, totalsCheck: str(d.totalsCheck) || undefined };
+        break;
+      case "subset_total":
+        lane = { ...prev, subsetTotal: num(d.total), lastTotal: num(d.total) ?? prev.lastTotal };
         break;
       case "handoff_ready":
         lane = { ...prev, liveUrl: (d.liveUrl as string) ?? prev.liveUrl };

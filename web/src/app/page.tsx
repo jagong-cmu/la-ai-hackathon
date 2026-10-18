@@ -1,58 +1,64 @@
 "use client";
+// Landing. Black ground, one plain claim, then the real Orders table from the API.
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, errorText, money, type DiscoveryResult, type SpendInsights } from "@/api/client";
+import { api, money, type JobView } from "@/api/client";
+import { ArrowRight } from "@/components/Icons";
+import { Status } from "@/components/Status";
+import { tsDay } from "@/lib/format";
+import { headlinePlan, jobStateWord, orderTitle } from "@/lib/job";
+import "./landing.css";
 
-export default function InsightsPage() {
-  const [data, setData] = useState<SpendInsights | null>(null);
-  const [suppliers, setSuppliers] = useState<DiscoveryResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
+export default function Landing() {
+  const [jobs, setJobs] = useState<JobView[] | null>(null);
   useEffect(() => {
-    api.insights().then(setData).catch((e) => setError(errorText(e)));
-    // Start discovery at the same time: it can take minutes when it runs live.
-    api.suppliers().then(setSuppliers).catch(() => setSuppliers(null));
+    api.jobs(6).then(setJobs).catch(() => setJobs([]));
   }, []);
 
-  if (error) return <p className="error" role="alert">{error}</p>;
-  if (!data) return <p>Loading spend insights...</p>;
-
   return (
-    <>
-      <h1>Spend insights</h1>
-      {data.disclosure && <p className="disclosure">{data.disclosure}</p>}
-      <p>
-        Supply spend in the last {data.periodDays} days: <strong>{money(data.supplySpend)}</strong> in {data.supplyOrders} orders
-        ({data.otherLines} other bill lines).
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th><th>Category</th><th>Past unit price</th><th>Usual order</th><th>Cadence</th><th>Year spend</th><th>Source</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.items.map((it) => (
-            <tr key={it.itemId}>
-              <td>{it.billItemName}</td>
-              <td>{it.category}</td>
-              <td>${it.pastUnitPrice.toFixed(4)} / {it.unit}</td>
-              <td>{it.pastOrderQty.toLocaleString()}</td>
-              <td>{it.orderCadenceDays != null ? `${it.orderCadenceDays} days` : "-"}</td>
-              <td>{money(it.yearSpend)}</td>
-              <td>{it.synthetic ? "synthetic" : "books"} ({it.sourceBillIds.length} bills)</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="muted">
-        Suppliers: {suppliers
-          ? `found ${suppliers.candidates.length}, using ${suppliers.candidates.filter((c) => c.selected).length} (${suppliers.source}${suppliers.ageS != null ? `, cache age ${Math.round(suppliers.ageS)} s` : ""})`
-          : "discovery running..."}
-      </p>
-      <p>
-        <Link href="/list">Find cheaper</Link>
-      </p>
-    </>
+    <div className="land">
+      <header className="land-top">
+        <span className="land-mark">SOURN</span>
+        <Link href="/planner" className="btn btn-primary">Open app</Link>
+      </header>
+      <section className="land-hero">
+        <h1>Restocking that runs itself for bakeries</h1>
+        <p>Forecasts what runs out, prices it at every supplier, and orders when you approve.</p>
+        <div className="row" style={{ justifyContent: "center", gap: 8 }}>
+          <Link href="/planner" className="btn btn-primary has-icon">Open planner <ArrowRight /></Link>
+          <Link href="/orders" className="btn btn-on-black">See orders</Link>
+        </div>
+      </section>
+      {jobs && jobs.length > 0 && (
+        <div className="land-device">
+          <div className="land-screen">
+            <div className="land-screen-head">
+              <h2>Orders</h2>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl wide">
+                <thead>
+                  <tr><th>Order</th><th>Total</th><th className="l">Price</th><th className="l">Status</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                  {jobs.map((j) => {
+                    const plan = headlinePlan(j);
+                    return (
+                      <tr key={j.jobId}>
+                        <td>{orderTitle(j)}</td>
+                        <td className="best">{plan ? money(plan.total) : "—"}</td>
+                        <td className="l">{plan && <Status status={plan.status} />}</td>
+                        <td className="l ink-2">{jobStateWord(j.state)}</td>
+                        <td className="muted">{tsDay(j.createdAt)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
