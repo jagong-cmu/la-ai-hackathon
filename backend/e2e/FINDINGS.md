@@ -10,6 +10,13 @@ How to run one cycle:
 cd backend && uv run python -m e2e.run_cycle --out /tmp/soak/cycle-001
 ```
 
+## Result (2026-10-18, 03:30 to 07:19 PDT)
+
+29 findings: 28 fixed on this branch, each with a regression test and its own commit; 1 open
+(S-017, a team decision). 3 of the fixes are security fixes (S-012, S-013, S-027). The last 3
+cycles found nothing new. The suite has 266 tests (211 at the start); the soak has 24 scenarios
+in 3 server profiles (`default`, `deadline`, `sms_first`). The open questions below need the team.
+
 Status values: `fixed` (commit given), `open` (not fixed yet, with the reason), `not-a-bug` (the
 expectation in the harness was wrong).
 
@@ -79,3 +86,6 @@ The full flow passed in a headless browser with no console errors: planner, owne
 | 009 | 1.0 | 20 + 2 deadline | 0 | none in the cycle; in-process probes in the same period found S-020 to S-027 |
 | 010 | 0.1 | 22 + 5 sms_first | 0 | none; new `sms_first` profile (SMS, no reply, then the call) passed |
 | 011 | 0.1 | 23 + 6 sms_first | 0 | none in the cycle; the UI and contract checks in the same period found S-028 and S-029 |
+| 012 | 1.0 | 23 + 2 deadline | 0 | none |
+| 013 | 0.1 | 23 + 6 sms_first | 0 | none |
+| 014 | 0.1 | 23 + 6 sms_first, 3 more fuzz seeds | 0 | none. Third cycle in a row with no new finding: the loop stopped at 07:19 |
