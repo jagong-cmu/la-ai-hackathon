@@ -11,10 +11,13 @@ import asyncio
 import copy
 import json
 import math
+import os
+import random
 import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
@@ -39,6 +42,7 @@ class Ctx:
     restock_token: str | None
     port: int
     restart: Callable[[], Awaitable[None]] | None = None  # stop and start the server on the same VAR_DIR
+    profile: str = "default"
     failures: list[str] = field(default_factory=list)
 
     def fail(self, msg: str) -> None:
@@ -63,14 +67,22 @@ class Scenario:
     name: str
     area: str
     fn: Callable[[Ctx], Awaitable[None]]
+    profile: str = "default"
 
 
 SCENARIOS: list[Scenario] = []
+# Server env for each profile; run_cycle --profile <name> runs only that profile's scenarios.
+PROFILES: dict[str, dict[str, str]] = {
+    "default": {},
+    # At time-scale 1.0: alpha/bravo carts are verified by ~47 s, the delta lane searches for 125 s.
+    # Run this profile with --time-scale 1.0 --scenario-timeout 240.
+    "deadline": {"JOB_DEADLINE_S": "50"},
+}
 
 
-def scenario(name: str, area: str):
+def scenario(name: str, area: str, profile: str = "default"):
     def wrap(fn):
-        SCENARIOS.append(Scenario(name, area, fn))
+        SCENARIOS.append(Scenario(name, area, fn, profile))
         return fn
     return wrap
 
@@ -674,3 +686,205 @@ async def create_race_new_key(ctx: Ctx) -> None:
             ctx.fail(f"20 concurrent creates with one key made {len(ids)} jobs")
         for jid in ids:
             await wait_state(ctx, jid, {"results_ready", "failed"})
+
+
+# ---------------------------------------------------------------- distributor (fixture call)
+
+
+@scenario("quoted_plan", "distributor")
+async def quoted_plan(ctx: Ctx) -> None:
+    view = await run_to_results(ctx)
+    jid = view["jobId"]
+    res = view.get("results") or {}
+    qid = res.get("quotedPlanId")
+    if not qid:
+        ctx.fail(f"{jid}: the fixture call gave no quoted plan")
+        return
+    quoted = next(p for p in res["plans"] if p["planId"] == qid)
+    for c in quoted["carts"]:
+        if c["status"] == "quoted":
+            continue
+        if c["status"] not in ("verified", "estimated"):
+            ctx.fail(f"{jid}/{qid}: odd cart status {c['status']}")
+    evs = await events(ctx, jid)
+    for e in evs:
+        url = (e["data"] or {}).get("transcriptUrl")
+        if url:
+            await ctx.req("GET", url, expect=200)
+    offers = [o for o in view.get("offers", []) if o.get("source") != "web"]
+    for o in offers:
+        t = (o.get("evidence") or {}).get("transcriptUrl")
+        if not t:
+            ctx.fail(f"{jid}: quoted offer {o['supplierId']} has no transcript evidence")
+        else:
+            await ctx.req("GET", t, expect=200)
+    r = await approve(ctx, jid, {"action": "approve", "planId": qid}, expect=409)
+    if r.status_code == 409 and r.json()["detail"].get("code") != "quoted_not_accepted":
+        ctx.fail(f"{jid}: quoted approve without acceptQuoted: {r.json()}")
+    r = await approve(ctx, jid, {"action": "approve", "planId": qid, "acceptQuoted": True}, expect={200, 409})
+    if r.status_code != 200:
+        return  # e.g. rules_failed: the plan breaks a spending rule; full_check still runs below
+    final = await wait_state(ctx, jid, {"at_payment", "partial_handoff", "failed"})
+    phone = [h for h in final.get("handoffs", []) if h["status"] == "quoted_confirm_by_phone"]
+    if not phone:
+        ctx.fail(f"{jid}: approved quoted plan has no quoted_confirm_by_phone handoff: {final.get('handoffs')}")
+    await full_check(ctx, jid)
+
+
+# ---------------------------------------------------------------- deadline profile
+
+
+@scenario("deadline_partial_then_update", "deadline", profile="deadline")
+async def deadline_partial_then_update(ctx: Ctx) -> None:
+    """Results at the deadline, then results_updated from late lanes; no update after a decision."""
+    body = await draft(ctx)
+    jid = (await create(ctx, body)).json()["jobId"]
+    view = await wait_state(ctx, jid, {"results_ready", "failed"}, timeout=90)
+    if view["state"] != "results_ready":
+        ctx.fail(f"{jid}: {view['state']} at the deadline")
+        return
+    if not view["results"]["deadlineHit"]:
+        ctx.fail(f"{jid}: deadline profile but deadlineHit is false (lanes were faster than the deadline?)")
+    check_view(ctx, view)
+    end = time.monotonic() + 140  # the delta lane ends ~125 s after the start
+    while time.monotonic() < end:
+        evs = await events(ctx, jid)
+        if any(e["type"] == "results_updated" for e in evs):
+            break
+        await asyncio.sleep(0.5)
+    else:
+        ctx.fail(f"{jid}: no results_updated after the deadline")
+    await full_check(ctx, jid)
+    await approve(ctx, jid, {"action": "reject"}, expect=200)
+
+
+@scenario("approve_during_late_update", "deadline", profile="deadline")
+async def approve_during_late_update(ctx: Ctx) -> None:
+    """Approve the first recommendation at once while late lanes still run."""
+    t0 = time.monotonic()
+    body = await draft(ctx)
+    jid = (await create(ctx, body)).json()["jobId"]
+    view = await wait_state(ctx, jid, {"results_ready", "failed"}, timeout=90)
+    res = view.get("results") or {}
+    pid = res.get("recommendedPlanId")
+    if view["state"] != "results_ready" or not pid:
+        await approve(ctx, jid, {"action": "reject"}, expect={200, 409})
+        return
+    r = await approve(ctx, jid, {"action": "approve", "planId": pid}, expect={200, 409})
+    if r.status_code != 200:
+        return
+    final = await wait_state(ctx, jid, FINAL, timeout=150)
+    await asyncio.sleep(max(0.0, 130 - (time.monotonic() - t0)))  # until the late delta lane is done
+    final = (await ctx.req("GET", f"/jobs/{jid}")).json()
+    ids = [p["planId"] for p in (final.get("results") or {}).get("plans", [])]
+    if pid not in ids:
+        ctx.fail(f"{jid}: the approved plan {pid} left the results after approval (late update replaced them)")
+    evs = await events(ctx, jid)
+    types = [e["type"] for e in evs]
+    if "approved" in types and "results_updated" in types[types.index("approved"):]:
+        ctx.fail(f"{jid}: results_updated after the approval")
+    if final["state"] not in FINAL:
+        ctx.fail(f"{jid}: not final: {final['state']}")
+    check_view(ctx, final)
+
+
+# ---------------------------------------------------------------- stream load
+
+
+@scenario("sse_many_followers", "events")
+async def sse_many_followers(ctx: Ctx) -> None:
+    """30 followers on one running job; 10 of them disconnect early. The rest get the same events."""
+    body = await draft(ctx)
+    jid = (await create(ctx, body)).json()["jobId"]
+
+    async def quitter(n: int) -> None:
+        async with ctx.client.stream("GET", f"/jobs/{jid}/events", timeout=60) as r:
+            got = 0
+            async for _ in r.aiter_text():
+                got += 1
+                if got >= n:
+                    return
+
+    async def stayer() -> list[int]:
+        evs = await follow_all(ctx, jid, timeout=200)
+        return [e["seq"] for e in evs]
+
+    async def to_final() -> None:
+        await wait_state(ctx, jid, {"results_ready", "failed"})
+        await approve(ctx, jid, {"action": "reject"}, expect={200, 409})
+
+    results = await asyncio.gather(*(stayer() for _ in range(20)), *(quitter(i % 5 + 1) for i in range(10)),
+                                   to_final(), return_exceptions=True)
+    seqs = [r for r in results[:20] if isinstance(r, list)]
+    errors = [repr(r) for r in results if isinstance(r, BaseException)]
+    if errors:
+        ctx.fail(f"{jid}: follower errors: {errors[:3]}")
+    stored = [e["seq"] for e in await events(ctx, jid)]
+    bad = [x for x in seqs if x != stored]
+    if bad:
+        ctx.fail(f"{jid}: {len(bad)} of {len(seqs)} followers got other events than stored ({len(stored)})")
+    t = time.monotonic()
+    await ctx.req("GET", "/health", expect=200)
+    if time.monotonic() - t > 1:
+        ctx.fail(f"/health took {time.monotonic() - t:.1f}s after the follower load")
+    await full_check(ctx, jid)
+
+
+# ---------------------------------------------------------------- fuzzing
+
+_FUZZ_VALUES: list[Any] = [None, "", " ", 0, -1, 1, 2**63, 1e308, -0.0, True, [], {}, [None], {"a": 1},
+                           "x" * 5000, "😀", "\x00", "../../etc/passwd", "<script>", "NaN"]
+
+
+def _paths(node: Any, prefix: tuple = ()) -> list[tuple]:
+    out = [prefix] if prefix else []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            out += _paths(v, prefix + (k,))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            out += _paths(v, prefix + (i,))
+    return out
+
+
+def _set(node: Any, path: tuple, value: Any) -> None:
+    for p in path[:-1]:
+        node = node[p]
+    node[path[-1]] = value
+
+
+@scenario("fuzz_job_bodies", "validation")
+async def fuzz_job_bodies(ctx: Ctx) -> None:
+    """Random one- and two-field changes to a valid draft. Only 202 or 422; accepted jobs must settle."""
+    seed = int(os.environ.get("SOAK_SEED") or time.time())
+    rng = random.Random(seed)
+    body = await draft(ctx)
+    paths = _paths(body)
+    accepted: list[tuple[str, str]] = []
+    for _ in range(40):
+        b = copy.deepcopy(body)
+        changes = []
+        for _ in range(rng.choice((1, 1, 2))):
+            p = rng.choice(paths)
+            v = rng.choice(_FUZZ_VALUES)
+            try:
+                _set(b, p, copy.deepcopy(v))
+            except (KeyError, IndexError, TypeError):
+                continue
+            changes.append(f"{'/'.join(map(str, p))}={str(v)[:20]!r}")
+        r = await create(ctx, b, expect={202, 422})
+        if r.status_code == 202:
+            accepted.append((r.json()["jobId"], "; ".join(changes)))
+    for jid, what in accepted:
+        try:
+            v = await wait_state(ctx, jid, {"results_ready", "failed"}, timeout=120)
+        except AssertionError as exc:
+            ctx.fail(f"seed={seed} [{what}]: {exc}")
+            continue
+        if v["state"] == "failed":
+            err = [e["data"] for e in await events(ctx, jid) if e["type"] == "job_failed"]
+            ctx.fail(f"seed={seed} [{what}]: accepted body crashed the job: {err}")
+        n = len(ctx.failures)
+        await full_check(ctx, jid)
+        for i in range(n, len(ctx.failures)):
+            ctx.failures[i] = f"seed={seed} [{what}]: {ctx.failures[i]}"

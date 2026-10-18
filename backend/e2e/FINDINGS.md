@@ -21,11 +21,13 @@ expectation in the harness was wrong).
 | S-004 | webhook | `POST /webhooks/photon` gave 500 for a body that is not a JSON object, and for a `jobId` list. | `json.loads` without a guard; `payload.get` on a list; a list as a dict key. | fixed (0bf77b4): 400 |
 | S-005 | jobs | The same `Idempotency-Key` with a changed body returned the first job, with no error. | The key lookup did not compare the request. | fixed (3f355f7): 422 `idempotency_key_reused` |
 | S-006 | persistence | After a restart, a job that was `gathering` or `results_ready` showed that state forever. Its event stream never ended, and approve gave 404. | No process runs a stored job after a restart, and nothing marked it. | fixed (756632e): failed at start with a `job_failed` reason; its key is freed |
+| S-007 | jobs | After a deadline, an approval during the late update got a `results_updated` event after `approved`, and the approved results were replaced. | `_late()` checked for an approval, then awaited the summary (about 12 s with live Step 5), then set `view.results`. | fixed (1580eb2): results set under the approve lock; no late update after a decision |
 
 Open questions for the team (not changed by the loop):
 - `POST /admin/replay?speed=0` or a negative speed replays at once. The route could refuse them with 422.
 - `create_job` checks the key, then awaits, then inserts. Two concurrent creates with one new key can race. The soak sends 20 concurrent creates with one new key each cycle (`create_race_new_key`); it has not failed yet.
 - A replay that runs during a restart keeps its copied state, and its stream can stay open. S-006 does not change replays, because a replay is a recording.
+- After a deadline, `results_updated` comes only when all the late work ends (`_late()` waits for every pending task). In a deadline run, verified plans existed at 47 s, but the owner's results showed "no recommendation" until the slow `delta` lane ended at 125 s. With live hosted-agent lanes, this wait can be minutes. The team must decide if each late plan change must update the results.
 - Live lead, not reproducible in fixture mode: Sentry SUPPLIER-AGENT-API-3, "All 3 reconnection attempts failed" from the `browser_use` `BrowserSession` logger, during a live Wees Express lane (4 events, last at 10:25 UTC).
 
 ## Cycle log

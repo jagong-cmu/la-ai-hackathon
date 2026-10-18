@@ -1,6 +1,7 @@
 """Run one soak cycle against a fresh fixture-mode server.
 
     uv run python -m e2e.run_cycle --out <dir> [--port 8100] [--only name,name] [--time-scale 0.1]
+                                   [--profile default|deadline]
 
 The server runs from this checkout on its own port with its own VAR_DIR, so it never touches the
 live server on port 8000. Every dependency stays cached: the harness refuses to set a live mode.
@@ -85,6 +86,8 @@ async def run_all(ctx: Ctx, only: set[str] | None, timeout: float, results: list
     for sc in scenarios.SCENARIOS:
         if only and sc.name not in only:
             continue
+        if sc.profile != ctx.profile:
+            continue
         ctx.failures = []
         started = time.monotonic()
         try:
@@ -123,6 +126,7 @@ async def main() -> int:
     ap.add_argument("--only", default="")
     ap.add_argument("--scenario-timeout", type=float, default=180)
     ap.add_argument("--time-scale", default="0.1", help="FIXTURE_TIME_SCALE; 1.0 is real time (finds races)")
+    ap.add_argument("--profile", default="default", choices=sorted(scenarios.PROFILES))
     args = ap.parse_args()
     out: Path = args.out
     out.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240 - CLI setup before the loop matters
@@ -132,6 +136,7 @@ async def main() -> int:
     server_env = {
         "FIXTURE_TIME_SCALE": args.time_scale,
         "SENTRY_RELEASE": f"soak-{out.name}",  # the SDK reads it; filter Sentry with release:soak-*
+        **scenarios.PROFILES[args.profile],
     }
     proc = start_server(args.port, var_dir, log_path, server_env)
     base = f"http://127.0.0.1:{args.port}"
@@ -150,7 +155,8 @@ async def main() -> int:
 
             ctx = Ctx(client=client, base=base, admin_token=env.get("ADMIN_TOKEN", "dev-admin"),
                       webhook_secret=env.get("WEBHOOK_SECRET", "dev-webhook"),
-                      restock_token=env.get("RESTOCK_TOKEN"), port=args.port, restart=restart)
+                      restock_token=env.get("RESTOCK_TOKEN"), port=args.port, restart=restart,
+                      profile=args.profile)
             only = {s for s in args.only.split(",") if s} or None
             await run_all(ctx, only, args.scenario_timeout, results)
     finally:
