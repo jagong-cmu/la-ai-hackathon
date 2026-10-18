@@ -42,6 +42,7 @@ expectation in the harness was wrong).
 | S-025 | pack size | "100/Box, 10 Boxes/Case" and "10 boxes of 100" gave the pack candidates 10 and 100, not 1,000. For a price per case, J5 could not choose the right count, and a pick of 100 buys 10 times too many cases. | No pattern for nested packs. | fixed (75c4de5): the product is one more candidate |
 | S-026 | Photon service | `POST /sms` with `text: 5`, or a number `to` on `/sms` and `/calls`, or a `null` `/calls` body, gave 500. | `body.text.slice()` and `normalizePhone()` ran on values that are not strings. | fixed (4be82e4): 400; Photon tests 14/14 |
 | S-027 | security | In live mode, `GET /suppliers?category=../outside&zip=1` read any `*-<zip>.json` file and returned its rows as suppliers. A long value gave OSError (500). | `_load_seed()` joined the raw query values into the file name. | fixed (401bb60): `path_segment()` on both parts |
+| S-028 | web | On the new-order page, a quantity above the limit showed the owner raw JSON: `422: [{"type":"less_than_equal","loc":[...`. | `detailText()` stringified the list that FastAPI sends for validation errors. | fixed (94f5e93): "items.1.quantity: Input should be ..." |
 
 Open questions for the team (not changed by the loop):
 - `POST /admin/replay?speed=0` or a negative speed replays at once. The route could refuse them with 422.
