@@ -6,6 +6,7 @@ search -> J4 -> J5 -> cart -> J7 -> (optional) checkout entry, where the guard s
     uv run python -m app.lanes.live.adapter_gate webstaurant --headed
     uv run python -m app.lanes.live.adapter_gate wees_express
     uv run python -m app.lanes.live.adapter_gate wees_express --checkout
+    uv run python -m app.lanes.live.adapter_gate webstaurant --cloud     # Browser Use cloud browser
 
 It uses a real guest cart on the site and never submits anything past the cart; --checkout
 opens the checkout page, where the payment guard stops the lane. Jev runs live if JEV_API_KEY
@@ -51,8 +52,8 @@ def make_lane(name: str, supplier: SupplierRef, cfg: LiveLaneSettings):
     return ShopifyAdapterLane(supplier, WEES_EXPRESS, cfg)
 
 
-async def run(name: str, headless: bool, checkout: bool) -> int:
-    cfg = LiveLaneSettings(browser_mode="local", browser_headless=headless).model_copy(
+async def run(name: str, headless: bool, checkout: bool, cloud: bool = False) -> int:
+    cfg = LiveLaneSettings(browser_mode="cloud" if cloud else "local", browser_headless=headless).model_copy(
         update={"openrouter_api_key": None})  # no agent fallback: the gate tests the adapter alone
     tmp = Path(tempfile.mkdtemp(prefix=f"gate-{name}-"))
     settings = Settings(run_mode="live", var_dir=tmp)
@@ -76,10 +77,12 @@ async def run(name: str, headless: bool, checkout: bool) -> int:
     ctx = LaneContext(job_id="gate", lane_id=f"gate-{name}", supplier=supplier, settings=settings,
                       decider=decider, emit=emit, evidence_dir=settings.evidence_dir)
     lane = make_lane(name, supplier, cfg)
-    print(f"gate {name}: headless={headless} jev={modes.get('jev')} evidence={tmp}")
+    print(f"gate {name}: browser={cfg.browser_mode} headless={headless} jev={modes.get('jev')} evidence={tmp}")
     t0 = time.monotonic()
     try:
         await lane.open(ctx)
+        if cloud:
+            report(bool(ctx.live_url), f"cloud browser live view: {ctx.live_url}")
         offers = await lane.search(ctx, ITEMS)
         report(offers.status in ("ok", "partial"), f"search status={offers.status} ({time.monotonic() - t0:.0f}s)")
         for p in offers.products:
@@ -111,9 +114,10 @@ def main() -> None:
     parser.add_argument("site", choices=sorted(SITES))
     parser.add_argument("--headed", action="store_true", help="show the browser (WebstaurantStore needs it)")
     parser.add_argument("--checkout", action="store_true", help="also open checkout, where the guard stops")
+    parser.add_argument("--cloud", action="store_true", help="use the Browser Use cloud browser (BROWSER_USE_API_KEY)")
     args = parser.parse_args()
     sys.stdout.reconfigure(line_buffering=True)
-    sys.exit(asyncio.run(run(args.site, headless=not args.headed, checkout=args.checkout)))
+    sys.exit(asyncio.run(run(args.site, headless=not args.headed, checkout=args.checkout, cloud=args.cloud)))
 
 
 if __name__ == "__main__":
