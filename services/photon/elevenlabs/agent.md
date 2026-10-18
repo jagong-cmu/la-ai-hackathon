@@ -121,7 +121,7 @@ The setup script adds the "# Live log" section to the live prompt one time. If y
 | `log_live_turn` execution mode | `immediate` | set by `scripts/setup_live_transcript.py`. `async` made the agent say each line twice |
 | Tools | `end_call`, `voicemail_detection`, `play_keypad_touch_tone` (system tools), `log_live_turn` (webhook tool) | `end_call` lets the agent hang up after the recap. `log_live_turn` feeds the live transcript; `scripts/setup_live_transcript.py` creates it (see the service README) |
 | Voice speed | 1.2 (the maximum; the range is 0.7 to 1.2) | set Oct 17 |
-| Thinking budget | 0 | set by `scripts/setup_live_transcript.py`; thinking only slows each turn |
+| Thinking budget | 256 | set by `scripts/setup_live_transcript.py`. With 0, the agent compared totals wrongly ($550 against $690 got a counter offer) |
 | Audio saving / recording | Off if your plan allows | the prompt says "not recorded" |
 | Post-call webhook | `https://<photon-tunnel>/elevenlabs/post-call`, transcript event on | optional: the service also polls the transcript |
 
@@ -235,3 +235,7 @@ The response is `{"agent_id": "..."}`. Put it in `ELEVENLABS_AGENT_ID`. Use a bu
   one account only. New IDs: agent `agent_0901m57y1naaesmare22b71rmkz5`, tool `log_live_turn`
   `tool_4201m57y1wj0egnvpw7b1mfm5jwj`, phone number `phnum_8501m57y1za1egttaz3vv80z25d9`, test folder
   `tfld_7901m57y31hhfxfrnybcex3z5097` (10 tests). All agent settings match the second account.
+- Oct 18, third real call (`conv_6301m57y6fjdffgt4msxttwyega6`, 111 s, about 1,000 credits): speech
+  recognition heard "four per box" for "a dollar per box"; the confirm step caught it and the
+  supplier corrected it. But the agent made the counter offer at $550 against $690. The thinking
+  budget is now 256 (it was 0). Test 10 now uses that case ($1.00 a box, $50 delivery) and passes.

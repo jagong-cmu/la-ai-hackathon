@@ -28,6 +28,7 @@ from pathlib import Path
 
 ENV = Path(__file__).resolve().parents[3] / ".env"
 DEFAULT_API = "https://api.us.elevenlabs.io"  # this workspace is on the US host
+THINKING_BUDGET = 256  # tokens of reasoning per turn for gemini-2.5-flash
 TOOL_NAME = "log_live_turn"
 PROMPT_MARKER = "# Live log"
 PROMPT_RULES = f"""
@@ -148,10 +149,11 @@ def main() -> None:
     if PROMPT_MARKER in text:
         text = text[:text.index(PROMPT_MARKER)]
     text = text.rstrip() + PROMPT_RULES
-    # Thinking makes each turn (and so each tool call) slower; this agent needs no reasoning.
+    # Thinking makes each turn (and so each tool call) slower. With 0, the agent compared totals
+    # wrongly on a real call ($550 against $690 got a counter offer), so it gets a small budget.
     call("PATCH", f"{api}/v1/convai/agents/{agent_id}", key,
          {"conversation_config": {"agent": {"prompt": {"prompt": text, "tool_ids": tool_ids,
-                                                       "thinking_budget": 0}},
+                                                       "thinking_budget": THINKING_BUDGET}},
                                   "turn": TURN}})
 
     config = call("GET", f"{api}/v1/convai/agents/{agent_id}", key)["conversation_config"]
