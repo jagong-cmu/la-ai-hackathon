@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     step5_model: str = "stepfun/step-5-preview"
     llm_timeout_s: float = 30
+    # A confirm-band second opinion is optional: past this, keep Jev's answer marked unsure. Lane
+    # searches ask one per listing inside a 45 s budget, and live calls took 18-24 s (2026-10-18).
+    step5_escalation_timeout_s: float = 10
     llm_concurrency: int = 4
     # Step 5 Preview reasons before it answers, and the reasoning counts against max_tokens.
     # A spec used about 1,150 tokens in a test (2026-10-17), so no call asks for less than this.
