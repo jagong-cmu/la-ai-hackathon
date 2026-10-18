@@ -20,10 +20,13 @@ expectation in the harness was wrong).
 | S-003 | events | A follower of a replay got 0 of 78 events. A live follower of a rejected or failed job missed the `rejected` / `job_failed` event. | A replay copies the source's final view at once, so the events route closed the stream. The stream ends on the terminal `job_state`, but reject and failure emitted their reason after it. | fixed (ee39ab9) |
 | S-004 | webhook | `POST /webhooks/photon` gave 500 for a body that is not a JSON object, and for a `jobId` list. | `json.loads` without a guard; `payload.get` on a list; a list as a dict key. | fixed (0bf77b4): 400 |
 | S-005 | jobs | The same `Idempotency-Key` with a changed body returned the first job, with no error. | The key lookup did not compare the request. | fixed (3f355f7): 422 `idempotency_key_reused` |
+| S-006 | persistence | After a restart, a job that was `gathering` or `results_ready` showed that state forever. Its event stream never ended, and approve gave 404. | No process runs a stored job after a restart, and nothing marked it. | fixed (756632e): failed at start with a `job_failed` reason; its key is freed |
 
 Open questions for the team (not changed by the loop):
 - `POST /admin/replay?speed=0` or a negative speed replays at once. The route could refuse them with 422.
-- `create_job` checks the key, then awaits, then inserts. Two concurrent creates with one new key can race. The soak tests this each cycle; it has not failed yet.
+- `create_job` checks the key, then awaits, then inserts. Two concurrent creates with one new key can race. The soak sends 20 concurrent creates with one new key each cycle (`create_race_new_key`); it has not failed yet.
+- A replay that runs during a restart keeps its copied state, and its stream can stay open. S-006 does not change replays, because a replay is a recording.
+- Live lead, not reproducible in fixture mode: Sentry SUPPLIER-AGENT-API-3, "All 3 reconnection attempts failed" from the `browser_use` `BrowserSession` logger, during a live Wees Express lane (4 events, last at 10:25 UTC).
 
 ## Cycle log
 
@@ -31,3 +34,5 @@ Open questions for the team (not changed by the loop):
 |---|---|---|---|---|
 | 001 | 1.0 | (killed by a harness timeout) | - | S-001 (from pytest) |
 | 002 | 0.1 | 14 | 3 | S-003, S-004, S-005; S-002 from Sentry |
+| 003 | 0.1 | 14 | 0 | none (S-003 to S-005 fixes hold) |
+| 004 | 0.1 | 16 | 1 | S-006 (new scenario `restart_mid_job`); `create_race_new_key` passed |

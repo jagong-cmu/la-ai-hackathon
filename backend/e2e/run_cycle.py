@@ -39,7 +39,8 @@ def _dotenv(path: Path) -> dict[str, str]:
     return env
 
 
-def start_server(port: int, var_dir: Path, log_path: Path, extra_env: dict[str, str]) -> subprocess.Popen:
+def start_server(port: int, var_dir: Path, log_path: Path, extra_env: dict[str, str],
+                 append: bool = False) -> subprocess.Popen:
     env = {k: v for k, v in os.environ.items() if k not in ("VIRTUAL_ENV",)}
     env.update(_dotenv(REPO_DIR / ".env"))
     env.update({
@@ -48,7 +49,7 @@ def start_server(port: int, var_dir: Path, log_path: Path, extra_env: dict[str, 
         "CORS_ORIGINS": '["http://localhost:3000"]',
         **extra_env,
     })
-    log = log_path.open("w")
+    log = log_path.open("a" if append else "w")
     return subprocess.Popen(
         ["uv", "run", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
         cwd=BACKEND_DIR, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
@@ -128,19 +129,28 @@ async def main() -> int:
     var_dir = out / "var"
     log_path = out / "server.log"
     env = _dotenv(REPO_DIR / ".env")
-    proc = start_server(args.port, var_dir, log_path, {
+    server_env = {
         "FIXTURE_TIME_SCALE": args.time_scale,
         "SENTRY_RELEASE": f"soak-{out.name}",  # the SDK reads it; filter Sentry with release:soak-*
-    })
+    }
+    proc = start_server(args.port, var_dir, log_path, server_env)
     base = f"http://127.0.0.1:{args.port}"
     started = time.time()
     results: list[dict] = []
     try:
         await wait_healthy(base)
         async with httpx.AsyncClient(base_url=base, timeout=30) as client:
+            async def restart() -> None:
+                nonlocal proc
+                stop_server(proc)
+                with log_path.open("a") as log:
+                    log.write("\n===== soak restart =====\n")
+                proc = start_server(args.port, var_dir, log_path, server_env, append=True)
+                await wait_healthy(base)
+
             ctx = Ctx(client=client, base=base, admin_token=env.get("ADMIN_TOKEN", "dev-admin"),
                       webhook_secret=env.get("WEBHOOK_SECRET", "dev-webhook"),
-                      restock_token=env.get("RESTOCK_TOKEN"), port=args.port)
+                      restock_token=env.get("RESTOCK_TOKEN"), port=args.port, restart=restart)
             only = {s for s in args.only.split(",") if s} or None
             await run_all(ctx, only, args.scenario_timeout, results)
     finally:

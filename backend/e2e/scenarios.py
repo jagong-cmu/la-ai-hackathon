@@ -38,6 +38,7 @@ class Ctx:
     webhook_secret: str
     restock_token: str | None
     port: int
+    restart: Callable[[], Awaitable[None]] | None = None  # stop and start the server on the same VAR_DIR
     failures: list[str] = field(default_factory=list)
 
     def fail(self, msg: str) -> None:
@@ -623,3 +624,53 @@ async def planner(ctx: Ctx) -> None:
     for m in misses[:2]:
         mid = m.get("missId") or m.get("id")
         await ctx.req("POST", f"/planner/misses/{mid}/answer", json={"cause": "bogus-cause"}, expect=422)
+
+
+# ---------------------------------------------------------------- persistence
+
+
+@scenario("restart_mid_job", "persistence")
+async def restart_mid_job(ctx: Ctx) -> None:
+    """A server restart while a job gathers: the old job must reach a final state, not hang."""
+    if ctx.restart is None:
+        return
+    body = await draft(ctx)
+    k = key()
+    mid = (await create(ctx, body, k)).json()["jobId"]
+    done = await run_to_results(ctx)
+    await approve(ctx, done["jobId"], {"action": "reject"}, expect=200)
+    done = await wait_state(ctx, done["jobId"], {"rejected"})  # a final job must survive the restart
+    await asyncio.sleep(0.2)
+    await ctx.restart()
+    v = (await ctx.req("GET", f"/jobs/{mid}", expect=200)).json()
+    if v["state"] not in FINAL:
+        ctx.fail(f"{mid}: after a restart, a job no process runs shows {v['state']} (a watcher waits forever)")
+    try:
+        evs = await asyncio.wait_for(follow_all(ctx, mid), 10)
+        _ = evs
+    except TimeoutError:
+        ctx.fail(f"{mid}: after a restart, the live event stream of the orphan job never ends")
+    kept = (await ctx.req("GET", f"/jobs/{done['jobId']}", expect=200)).json()
+    if kept["state"] != done["state"] or kept.get("results") != done.get("results"):
+        ctx.fail(f"{done['jobId']}: a finished job changed across the restart ({done['state']} -> {kept['state']})")
+    # The orphan's key starts a new job with the same body.
+    again = (await create(ctx, body, k)).json()["jobId"]
+    if again == mid:
+        ctx.fail(f"{mid}: the key of an orphan job returned the dead job")
+    else:
+        await wait_state(ctx, again, {"results_ready", "failed"})
+        await full_check(ctx, again)
+
+
+@scenario("create_race_new_key", "jobs")
+async def create_race_new_key(ctx: Ctx) -> None:
+    """Many concurrent creates with one new key, on a cold cache: one job, no 5xx."""
+    body = await draft(ctx)
+    for _ in range(3):
+        k = key()
+        rs = await asyncio.gather(*(create(ctx, body, k, expect={202}) for _ in range(20)))
+        ids = {r.json().get("jobId") for r in rs if r.status_code == 202}
+        if len(ids) != 1:
+            ctx.fail(f"20 concurrent creates with one key made {len(ids)} jobs")
+        for jid in ids:
+            await wait_state(ctx, jid, {"results_ready", "failed"})
