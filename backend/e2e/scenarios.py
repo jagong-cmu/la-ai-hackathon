@@ -916,3 +916,37 @@ async def fuzz_job_bodies(ctx: Ctx) -> None:
         await full_check(ctx, jid)
         for i in range(n, len(ctx.failures)):
             ctx.failures[i] = f"seed={seed} [{what}]: {ctx.failures[i]}"
+
+
+@scenario("fuzz_other_bodies", "validation")
+async def fuzz_other_bodies(ctx: Ctx) -> None:
+    """Random values in the other request bodies. Any 5xx is a failure (Ctx.req records it)."""
+    seed = int(os.environ.get("SOAK_SEED") or time.time()) + 1
+    rng = random.Random(seed)
+    view = await run_to_results(ctx)
+    jid = view["jobId"]
+    plan_ids = [p["planId"] for p in (view.get("results") or {}).get("plans", [])] or ["x"]
+    misses = [m.get("missId") for m in ((await ctx.req("GET", "/planner")).json().get("misses") or [])][:3] or ["m"]
+    wh = {"X-Webhook-Secret": ctx.webhook_secret}
+
+    def v() -> Any:
+        return copy.deepcopy(rng.choice(_FUZZ_VALUES + plan_ids + [jid, "approve", "reject", "cached", "phone"]))
+
+    for _ in range(25):
+        n = len(ctx.failures)
+        body_a = {"action": rng.choice(["approve", "reject", v()]), "planId": rng.choice(plan_ids + [v()]),
+                  "acceptQuoted": v(), "reason": v()}
+        await ctx.req("POST", f"/jobs/{jid}/approve", json=body_a)
+        await ctx.req("POST", "/planner/owner-messages", json={"text": v(), "receivedAt": v()})
+        await ctx.req("POST", f"/planner/misses/{rng.choice(misses)}/answer", json={"cause": v()})
+        await ctx.req("POST", "/admin/mode", headers=ctx.admin(),
+                      json={"dependency": v(), "mode": rng.choice(["cached", v()])})
+        await ctx.req("POST", f"/webhooks/{rng.choice(['photon', 'elevenlabs'])}", headers=wh,
+                      json={"eventId": v(), "jobId": rng.choice([jid, v()]), "type": v(), "text": v(),
+                            "from": v(), "data": v()})
+        for i in range(n, len(ctx.failures)):
+            ctx.failures[i] = f"seed={seed}: {ctx.failures[i]}"
+    h = (await ctx.req("GET", "/health", expect=200)).json()
+    if any(m != "cached" for m in h["modes"].values()):
+        ctx.fail(f"seed={seed}: the fuzzer set a live mode: {h['modes']}")  # never: "live" is not in the values
+    await ctx.req("POST", f"/jobs/{jid}/approve", json={"action": "reject"}, expect={200, 409})

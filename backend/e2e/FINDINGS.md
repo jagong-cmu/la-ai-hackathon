@@ -33,6 +33,7 @@ expectation in the harness was wrong).
 | S-016 | optimizer | A listing with `pack_price` 0 ("$0.00, see the price in the cart") was eligible with a line cost of 0, so it ranked as the cheapest offer. | `normalize_option()` had no price check. | fixed (5ac15db): ineligible, flag `price_missing` |
 | S-017 | spending rules | 8 approved orders in one month ($6,825) passed a monthly budget of $2,533. | `monthly_budget_remaining` comes only from the books; orders approved in this system never count. | open (team decision): a fix was written and tested, then reverted. See the open questions |
 | S-018 | persistence | Regression from S-011: after a restart, the server did not start ("Application startup failed"). A job saved before the `ge=0` rule had `pastUnitPrice=-3`. | `fail_orphans()` and `GET /jobs` validated every stored snapshot against the current contract. Each stricter rule can do this to the live database. | fixed (214aba9): such a snapshot is skipped with a warning; an unfinished one is marked failed |
+| S-019 | jobs | Found by the fuzzer: a 5,000-character supplier id crashed the whole job (`OSError: File name too long`). | `fixture_path().exists()` and the evidence folder used the full id as a file name. | fixed (6c23ce8): `path_segment()` keeps 64 characters and a hash |
 
 Open questions for the team (not changed by the loop):
 - `POST /admin/replay?speed=0` or a negative speed replays at once. The route could refuse them with 422.
@@ -56,3 +57,4 @@ Open questions for the team (not changed by the loop):
 | 004 | 0.1 | 16 | 1 | S-006 (new scenario `restart_mid_job`); `create_race_new_key` passed |
 | 005 | 1.0 | 16 | 10 | none: harness timeouts (a fixture job takes ~125 s at real time); fixed in 29a8cd2. S-007 to S-010 came from new tests this cycle |
 | 006 | 1.0 | 19 + 2 deadline | 5 | S-018 (the restart in `restart_mid_job` could not start the server); the deadline profile passed |
+| 007 | 0.1 | 19 | 1 | S-019 (fuzzer); then 10 more fuzz seeds and a new `fuzz_other_bodies` scenario (3 seeds) passed |
