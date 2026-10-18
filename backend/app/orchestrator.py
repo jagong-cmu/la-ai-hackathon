@@ -260,11 +260,12 @@ class Orchestrator:
             if state in FINAL_JOB_STATES or state is final.state:
                 self.db.save_job(final.model_copy(update={"state": state}))
                 return
-            view.state = state
-            if state is not JobState.gathering:
-                view.results = final.results
-            view.updated_at = utcnow()
-            self.db.save_job(view)
+            if state in (JobState.created, JobState.gathering):
+                current = view.model_copy(update={"state": state})
+            else:  # from results_ready on, the replay shows the source's plans
+                current = final.model_copy(update={"state": state, "approval": None, "cards": [], "handoffs": []})
+            current.updated_at = utcnow()
+            self.db.save_job(current)
 
         async def run() -> None:
             await self.bus.replay(source_job_id, job_id, speed, before_emit=follow)
