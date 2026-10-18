@@ -1,0 +1,18 @@
+{
+  "mode": "fixture",
+  "fixtureDataOnly": true,
+  "offerCount": 4,
+  "planCount": 4,
+  "distinctCartCount": 6,
+  "winnerPlanId": "plan:markers=supplier-a|tape=supplier-b",
+  "winnerAllocations": [
+    { "itemId": "markers", "supplierId": "supplier-a", "packs": 1 },
+    { "itemId": "tape", "supplierId": "supplier-b", "packs": 1 }
+  ],
+  "lowestVerifiedTotalCents": 2500,
+  "bestSingleSupplierPlanId": "plan:markers=supplier-b|tape=supplier-b",
+  "bestSingleSupplierTotalCents": 3000,
+  "savingsCents": 500,
+  "scope": "all_feasible_verified",
+  "limitations": ["Synthetic fixture data; these are not current supplier prices."]
+}

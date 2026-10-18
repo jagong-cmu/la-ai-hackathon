@@ -1,0 +1,41 @@
+{
+  "items": [
+    {
+      "id": "markers",
+      "description": "Sharpie black fine-point permanent markers",
+      "quantity": 12,
+      "unit": "marker"
+    },
+    {
+      "id": "tape",
+      "description": "Scotch clear shipping tape, 1.88 inches by 38.2 yards",
+      "quantity": 2,
+      "unit": "roll"
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "supplier-a",
+      "name": "Supplier A",
+      "url": "https://supplier-a.example"
+    },
+    {
+      "id": "supplier-b",
+      "name": "Supplier B",
+      "url": "https://supplier-b.example"
+    }
+  ],
+  "address": {
+    "line1": "123 Test Street",
+    "city": "Los Angeles",
+    "state": "CA",
+    "postalCode": "90001",
+    "country": "US"
+  },
+  "contact": {
+    "firstName": "Cart",
+    "lastName": "Wise",
+    "email": "cartwise.demo@example.com",
+    "phone": "202-555-0147"
+  }
+}
