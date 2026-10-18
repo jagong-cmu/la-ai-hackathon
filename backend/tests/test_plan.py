@@ -25,8 +25,8 @@ def jev(p_same: float = 0.95, must: dict | None = None, stock: float = 0.95) -> 
                       must_have=must or {}, in_stock=stock)
 
 
-def product(item: str, sku: str, units: int | None, price: float, **kw) -> Product:
-    return Product(item_id=item, title=sku, sku=sku, pack_price=price, units_per_pack=units, jev=jev(**kw))
+def product(item: str, sku: str, units: int | None, price: float, url: str | None = None, **kw) -> Product:
+    return Product(item_id=item, title=sku, sku=sku, pack_price=price, units_per_pack=units, url=url, jev=jev(**kw))
 
 
 ITEMS = [
@@ -93,6 +93,20 @@ def test_subset_requests_come_from_top_split_plans():
     res = optimize(ITEMS, normalize(ITEMS, [a, b], TH), {"a": a, "b": b}, {}, {})
     assert res.plans[0].kind == "split"
     assert {sid for sid, _ in res.subset_requests} == {"a", "b"}
+
+
+def test_product_url_reaches_every_cart_line():
+    # A lane opens the product page to add an item. Without the URL an adapter fails at cart (found in a live run).
+    a = SupplierOffers(supplier_id="a", products=[product("g", "AG", 100, 10.0, url="https://a/AG"),
+                                                  product("b", "AB", 100, 90.0, url="https://a/AB")])
+    b = SupplierOffers(supplier_id="b", products=[product("g", "BG", 100, 30.0, url="https://b/BG"),
+                                                  product("b", "BB", 100, 20.0, url="https://b/BB")])
+    normalized = normalize(ITEMS, [a, b], TH)
+    assert normalized.best[("b", "a")].url == "https://a/AB"
+    res = optimize(ITEMS, normalized, {"a": a, "b": b}, {}, {})
+    lines = [line for plan in res.plans for cart in plan.carts for line in cart.lines]
+    lines += [line for _, subset in res.subset_requests for line in subset]
+    assert lines and all(line.url == f"https://{line.sku[0].lower()}/{line.sku}" for line in lines)
 
 
 def _plan(total: float, status: str = "verified", sid: str = "a") -> Plan:

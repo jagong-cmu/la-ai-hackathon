@@ -83,6 +83,7 @@ def normalize_option(
         flags=flags,
         eligible=eligible,
         risk_penalty=round(line_cost * th.risk_penalty * sum(map(is_doubt, flags)), 2),
+        url=product.url,
     )
 
 

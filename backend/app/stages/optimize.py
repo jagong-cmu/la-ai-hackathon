@@ -184,7 +184,7 @@ def _build_plan(
         opt = normalized.best[(item.id, sid)]
         by_supplier.setdefault(sid, []).append(
             CartLine(item_id=item.id, sku=opt.sku, pack_quantity=opt.packs_needed,
-                     unit_price=opt.pack_price)
+                     unit_price=opt.pack_price, url=opt.url)
         )
         assignments.append(Assignment(item_id=item.id, supplier_id=sid, sku=opt.sku,
                                       pack_quantity=opt.packs_needed, line_cost=opt.line_cost,
