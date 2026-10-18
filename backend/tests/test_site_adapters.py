@@ -12,8 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from app.contracts import SupplierRef
-from tests.test_lanes_live import needs_browser
+# The adapter modules import Playwright at the top, so even the pure helpers need the browser extra.
+pytest.importorskip("playwright")
+
+from app.contracts import SupplierRef  # noqa: E402
+from tests.test_lanes_live import needs_browser  # noqa: E402
 
 SITES = Path(__file__).parent / "sites"
 WSS = "https://www.webstaurantstore.com"

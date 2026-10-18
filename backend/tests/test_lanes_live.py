@@ -256,6 +256,7 @@ async def test_adapter_refuses_to_type_into_card_field(settings, decider, tmp_pa
             await lane.close(ctx)
 
 
+@pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed")  # warm imports session
 async def test_warm_pool_hands_one_browser_to_one_lane(monkeypatch):
     from app.lanes.live import warm
 
