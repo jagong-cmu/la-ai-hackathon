@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+# Tests never send to the real Sentry projects, even when .env has a DSN (a blank DSN means off).
+os.environ["SENTRY_DSN"] = ""
 
 import pytest
 

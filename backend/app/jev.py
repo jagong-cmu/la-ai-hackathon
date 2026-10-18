@@ -22,7 +22,7 @@ import httpx
 
 from app.config import RuntimeModes, Settings
 from app.db import Database, stable_hash
-from app.observability import span
+from app.observability import ai_span, set_data
 
 Question = dict[str, Any]
 Answers = dict[str, dict[str, Any]]
@@ -170,7 +170,7 @@ class JevClient:
         headers = {"Authorization": f"Bearer {self.settings.jev_api_key.get_secret_value()}"}
         deadline = time.monotonic() + timeout
         attempt = 0
-        with span("jev", purpose, questions=len(questions)):
+        with ai_span("typesafe", self.settings.jev_model, purpose, **{"app.questions": len(questions)}) as s:
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -196,6 +196,7 @@ class JevClient:
                 data = resp.json()
                 latency = (time.monotonic() - t0) * 1000
                 tokens = int(data.get("usage", {}).get("input_tokens", 0))
+                set_data(s, **{"gen_ai.usage.input_tokens": tokens, "app.latency_ms": round(latency, 1)})
                 self.db.cache_set(key, {"answers": data["answers"], "tokens": tokens})
                 return JevResult(data["answers"], latency, tokens, "jev")
 
