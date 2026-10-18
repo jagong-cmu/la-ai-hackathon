@@ -81,8 +81,9 @@ class Settings(BaseSettings):
     lane_search_budget_s: float = 45
     lane_cart_budget_s: float = 45
     lane_subset_budget_s: float = 20
-    # Cloud browsers count against one account limit (Browser Use answered 429 with 12 open,
-    # 2026-10-18). A job with no decision this long after its results closes its lane browsers.
+    # Cloud browsers count against one account limit: 10 at once (measured 2026-10-18; 429 after
+    # that). A job with no decision this long after its results closes its lane browsers, and a
+    # new job closes them at once (Orchestrator._free_browsers).
     lane_idle_close_s: float = 300
     lane_agent_budget_factor: float = 3.0  # LLM-agent lanes (unknown sites) get longer budgets
     # An LLM-agent lane searches only this many items, largest past spend first. The H3 gate (2026-10-17)
@@ -105,7 +106,7 @@ class Settings(BaseSettings):
     jev_api_key: SecretStr | None = None
     jev_base_url: str = "https://api.typesafe.ai"
     jev_model: str = "jev-latest"
-    jev_concurrency: int = 6
+    jev_concurrency: int = 10  # 8 lanes run at once, and each asks J4, J5 and J6
     jev_timeout_s: float = 5
     jev_safety_timeout_s: float = 3
 

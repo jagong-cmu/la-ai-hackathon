@@ -9,7 +9,7 @@ import { BrowserPane } from "@/components/job/BrowserPane";
 import { CallPanel, callFromEvents } from "@/components/job/CallStrip";
 import { useJobEvents } from "@/hooks/useJobEvents";
 import { cleanName, int, itemShort, shortName } from "@/lib/format";
-import { supplierNames, supplierUrls } from "@/lib/job";
+import { supplierNames, supplierUrls, tileCols } from "@/lib/job";
 import { pct, planSavings, pricedPlan } from "@/lib/savings";
 import { Roll } from "@/components/Roll";
 import { Claim, In, ONBOARDED_KEY, Steps } from "../../steps";
@@ -156,7 +156,7 @@ export default function OnboardingJobPage() {
         <In i={2}><Best total={s.bestPlan?.total ?? null} /></In>
       </div>
       <In i={3} className="ob-device grid">
-        <div className="tiles" style={{ "--tile-cols": tiles <= 4 ? 2 : 3 } as React.CSSProperties}>
+        <div className="tiles" style={{ "--tile-cols": tileCols(tiles) } as React.CSSProperties}>
           {lanes.map((l, k) => (
             <div key={l.laneId} className="ob-in" style={{ "--d": `${400 + k * 100}ms`, display: "flex", minHeight: 0 } as React.CSSProperties}>
               <BrowserPane lane={l} name={names[l.supplierId] ?? l.supplierId} siteUrl={urls[l.supplierId]} job={job} />

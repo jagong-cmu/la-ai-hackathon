@@ -82,3 +82,8 @@ const REASON: Record<string, string> = {
   out_of_stock: "Out of stock",
 };
 export const reasonWord = (r: string | null | undefined) => (r ? REASON[r] ?? r.replaceAll("_", " ") : "");
+
+/** Grid columns for the browser tiles (and the call tile): 2 x 2 up to 4, 3 x 3 up to 9 (8 stores + the call). */
+export function tileCols(tiles: number): number {
+  return tiles <= 4 ? 2 : tiles <= 9 ? 3 : 4;
+}

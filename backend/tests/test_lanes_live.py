@@ -150,8 +150,19 @@ async def test_agent_lane_judges_pages_the_agent_skipped(settings, decider, tmp_
 def test_live_setup_never_breaks_import():
     from app.lanes import live_setup
 
-    assert set(live_setup.LIVE_LANES) == {"example_site", "webstaurant", "wees_express", "restaurantware", "llm_agent",
+    assert set(live_setup.LIVE_LANES) == {"example_site", "webstaurant", *live_setup.SHOPIFY_ADAPTERS, "llm_agent",
                                        "hosted_agent"}
+
+
+def test_every_shopify_store_is_registered_and_mapped():
+    from app.discovery import ADAPTER_DOMAINS
+    from app.lanes import live_setup
+
+    pytest.importorskip("playwright")
+    from app.lanes.live.shopify import SHOPIFY_STORES
+
+    assert set(SHOPIFY_STORES) == set(live_setup.SHOPIFY_ADAPTERS)
+    assert set(SHOPIFY_STORES) <= set(ADAPTER_DOMAINS.values())
 
 
 # ---------------------------------------------------------------- end to end: example adapter

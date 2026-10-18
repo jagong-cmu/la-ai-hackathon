@@ -21,8 +21,14 @@ def _has(module: str) -> bool:
         return False
 
 
+# The Shopify store adapters (app/lanes/live/shopify.py SHOPIFY_STORES). Here too, because that
+# module needs playwright and this list must exist without it.
+SHOPIFY_ADAPTERS = ("wees_express", "restaurantware", "lollicup", "restaurant_supply_drop",
+                    "packaging_supplies", "box_and_wrap", "nycake")
+
+
 def register_live_lanes() -> dict[str, bool]:
-    done = {"example_site": False, "webstaurant": False, "wees_express": False, "restaurantware": False,
+    done = {"example_site": False, "webstaurant": False, **dict.fromkeys(SHOPIFY_ADAPTERS, False),
             "llm_agent": False, "hosted_agent": False}
     playwright = _has("playwright")
     if not playwright:
@@ -38,15 +44,14 @@ def register_live_lanes() -> dict[str, bool]:
 
         # Real supplier sites. The names match discovery.ADAPTER_DOMAINS.
         try:
-            from app.lanes.live.shopify import RESTAURANTWARE, WEES_EXPRESS, ShopifyAdapterLane
+            from app.lanes.live.shopify import SHOPIFY_STORES, ShopifyAdapterLane
             from app.lanes.live.webstaurant import WebstaurantLane
 
             register_adapter("webstaurant", lambda supplier: WebstaurantLane(supplier))
             done["webstaurant"] = True
-            register_adapter("wees_express", lambda supplier: ShopifyAdapterLane(supplier, WEES_EXPRESS))
-            done["wees_express"] = True
-            register_adapter("restaurantware", lambda supplier: ShopifyAdapterLane(supplier, RESTAURANTWARE))
-            done["restaurantware"] = True
+            for name, store in SHOPIFY_STORES.items():
+                register_adapter(name, lambda supplier, store=store: ShopifyAdapterLane(supplier, store))
+                done[name] = True
         except Exception as exc:  # never break server start
             log.warning("real-site adapters not registered: %s", exc)
 

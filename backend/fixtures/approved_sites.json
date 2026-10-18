@@ -6,6 +6,11 @@
     {"id": "uline", "name": "Uline", "url": "https://www.uline.com", "adapter": "uline"},
     {"id": "restaurantware", "name": "Restaurantware", "url": "https://www.restaurantware.com", "adapter": "restaurantware"},
     {"id": "wasserstrom", "name": "Wasserstrom", "url": "https://www.wasserstrom.com", "adapter": "wasserstrom"},
-    {"id": "wees_express", "name": "Wees Express", "url": "https://www.wees-express.com", "adapter": "wees_express"}
+    {"id": "wees_express", "name": "Wees Express", "url": "https://www.wees-express.com", "adapter": "wees_express"},
+    {"id": "lollicup", "name": "Lollicup", "url": "https://lollicupstore.com", "adapter": "lollicup"},
+    {"id": "restaurant_supply_drop", "name": "Restaurant Supply Drop", "url": "https://www.restaurantsupplydrop.com", "adapter": "restaurant_supply_drop"},
+    {"id": "packaging_supplies", "name": "PackagingSupplies.com", "url": "https://www.packagingsupplies.com", "adapter": "packaging_supplies"},
+    {"id": "box_and_wrap", "name": "Box and Wrap", "url": "https://www.boxandwrap.com", "adapter": "box_and_wrap"},
+    {"id": "nycake", "name": "NY Cake", "url": "https://nycake.com", "adapter": "nycake"}
   ]
 }

@@ -662,6 +662,27 @@ def test_finished_and_undecided_lanes_close_their_browsers(settings, monkeypatch
         assert {h["reason"] for h in done["handoffs"] if h["status"] == "failed"} == {"lane_closed_no_decision"}
 
 
+def test_a_new_job_closes_the_browsers_of_an_undecided_job(settings, monkeypatch):
+    """The account allows 10 cloud browsers and a job uses up to 8: the next job must not wait
+    for the last job's idle close (live 2026-10-18: 429 on most lanes of the second job)."""
+    from app.lanes.fixture import FixtureLane
+
+    closed: list[str] = []
+
+    async def record_close(self, ctx):
+        closed.append(self.supplier.id)
+
+    monkeypatch.setattr(FixtureLane, "close", record_close)
+    with TestClient(create_app(settings)) as client:  # idle close is 300 s: it never runs here
+        draft = client.get("/shopping-list/draft").json()
+        first = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-free-01"}).json()["jobId"]
+        lanes = {lane["supplierId"] for lane in wait_for(client, first, {"results_ready"})["lanes"]}
+        assert lanes - set(closed)  # the carts stay open for a decision
+        second = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-free-02"}).json()["jobId"]
+        wait_for(client, second, {"results_ready"})
+        assert lanes <= set(closed)
+
+
 def test_a_decision_in_time_keeps_the_lane_browsers(settings, monkeypatch):
     from app.lanes.fixture import FixtureLane
 

@@ -329,6 +329,7 @@ class Orchestrator:
                 "modes": self.modes.as_dict(),
             })
             await self._make_specs(rt)
+            await self._free_browsers(rt)
             lane_tasks = self._start_lanes(rt)
             work = [self._spawn(self._lanes_then_subsets(rt, lane_tasks))]
             if rt.request.distributor is not None:
@@ -793,6 +794,19 @@ class Orchestrator:
         lr.closed = True
         with contextlib.suppress(Exception):
             await asyncio.wait_for(lr.lane.close(lr.ctx), timeout=10)
+
+    async def _free_browsers(self, rt: JobRuntime) -> None:
+        """Before a job opens its lane browsers, close those of older jobs that wait for a decision.
+        The account allows 10 cloud browsers at once (measured 2026-10-18) and a job uses up to 8, so
+        the carts of the last job (kept for lane_idle_close_s) made Browser Use answer 429 to most
+        lanes of the next one. An older job approved later gets lane_closed_no_decision, as after
+        the idle close. Jobs that still gather keep their browsers."""
+        for other in list(self.jobs.values()):
+            if other is rt or other.view.state is not JobState.results_ready:
+                continue
+            async with other.approve_lock:
+                if other.view.approval is None:
+                    await self._close_lanes(other)
 
     async def _close_if_undecided(self, rt: JobRuntime) -> None:
         """Close the lane browsers of a job that gets no decision in lane_idle_close_s. Each open
