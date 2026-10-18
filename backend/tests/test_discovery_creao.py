@@ -95,6 +95,17 @@ async def test_success_polls_until_completed(live_settings, db, decider):
     assert sum(r.method == "GET" for r in seen) == 3
 
 
+async def test_success_reads_chat_text_when_text_is_a_summary(live_settings, db, decider):
+    # The shape of a live run on 2026-10-17: a summary in text, the suppliers in chatText.
+    summary = '{"category":"packaging_disposables","zipCode":90024,"supplier_count":2}'
+    handler = scripted([run_state("completed", result={"text": summary, "chatText": FINAL_TEXT})])
+    disc = make_discovery(live_settings, db, decider, handler)
+
+    _, rows = await disc._run_creao("packaging_disposables", "90024")
+
+    assert [r["name"] for r in rows] == ["Westside Restaurant Supply", "Harbor Paper Co"]
+
+
 async def test_success_discover_uses_creao_and_fills_cache(live_settings, db, decider):
     handler = scripted([run_state("completed", result={"text": FINAL_TEXT, "artifacts": []})])
     disc = make_discovery(live_settings, db, decider, handler)
