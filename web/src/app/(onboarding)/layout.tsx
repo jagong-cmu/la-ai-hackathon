@@ -6,8 +6,8 @@ export default function OnboardingLayout({ children }: { children: React.ReactNo
   return (
     <div className="ob">
       <header className="ob-top">
-        <span className="ob-mark">SOURN</span>
-        <Link href="/planner" className="ob-skip">Skip to dashboard</Link>
+        <Link href="/" className="ob-mark">SOURN</Link>
+        <Link href="/planner" className="ob-skip">Skip to planner</Link>
       </header>
       {children}
     </div>

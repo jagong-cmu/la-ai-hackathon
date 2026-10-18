@@ -25,7 +25,7 @@ export default function Landing() {
         <h1>Restocking that runs itself for bakeries</h1>
         <p>Forecasts what runs out, prices it at every supplier, and orders when you approve.</p>
         <div className="row" style={{ justifyContent: "center", gap: 8 }}>
-          <Link href="/start" className="btn btn-primary has-icon">Get started <ArrowRight /></Link>
+          <Link href="/start" className="btn btn-primary has-icon">Start a restock <ArrowRight /></Link>
           <Link href="/planner" className="btn btn-on-black">Open planner</Link>
         </div>
       </section>

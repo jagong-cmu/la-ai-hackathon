@@ -1,44 +1,55 @@
 "use client";
-// Onboarding steps 1 and 2: connect the books, then choose what to get quotes for.
+// Onboarding steps 1 and 2: connect the books, then choose what to price.
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { api, errorText, type PlannerView, type ShoppingRequest, type SpendInsights } from "@/api/client";
+import { api, errorText, money, type PlannerView, type ShoppingRequest, type SpendInsights } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
-import { day, int, itemShort } from "@/lib/format";
-import { Steps } from "../steps";
+import { day, each, int, itemShort } from "@/lib/format";
+import { Claim, exitPause, In, Steps } from "../steps";
 
 type Books = { insights: SpendInsights; planner: PlannerView | null; draft: ShoppingRequest };
+type Line = { at: string; text: string };
 
-// The data loads in well under a second; each checklist line stays long enough to read.
+// The data loads in well under a second; each log line stays long enough to read.
 const pause = () => new Promise((r) => setTimeout(r, 450));
-
+const clock = () => new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: false });
 const plural = (unit: string, n: number) =>
   n === 1 || unit.endsWith("s") ? unit : /(x|ch|sh)$/.test(unit) ? `${unit}es` : `${unit}s`;
 
+const Check = () => (
+  <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 7.4l2.6 2.6L11 4.5" />
+  </svg>
+);
+
 function Connect({ onDone }: { onDone: (b: Books) => void }) {
-  const [phase, setPhase] = useState<"idle" | "loading" | "done">("idle");
-  const [lines, setLines] = useState<string[]>([]);
+  const [phase, setPhase] = useState<"idle" | "loading" | "leaving">("idle");
+  const [lines, setLines] = useState<Line[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const log = (text: string) => setLines((l) => [...l, { at: clock(), text }]);
 
   async function connect() {
     setPhase("loading");
     setError(null);
-    setLines(["Connected to QuickBooks"]);
+    setLines([{ at: clock(), text: "Connected to QuickBooks" }]);
     try {
-      const insightsP = api.insights();
       const plannerP = api.planner().catch(() => null);
       const draftP = api.shoppingDraft();
-      const insights = await insightsP;
+      const insights = await api.insights();
       await pause();
-      setLines((l) => [...l, `Read ${int(insights.supplyOrders)} supply bills`]);
+      log(`Read ${int(insights.supplyOrders)} supply bills · ${money(insights.supplySpend)}`);
       await pause();
-      setLines((l) => [...l, `Found ${insights.items.length} supplies you buy`]);
+      log(`${insights.items.length} supplies · ${insights.items.map((i) => itemShort(i.billItemName).toLowerCase()).slice(0, 3).join(", ")}`);
       const [planner, draft] = await Promise.all([plannerP, draftP]);
       await pause();
-      const due = planner?.supplies.filter((s) => s.status !== "ok" && s.recommendedQty > 0).length ?? 0;
-      setLines((l) => [...l, planner ? `${due} ${due === 1 ? "runs" : "run"} low in the next weeks` : "Forecast not ready"]);
-      setPhase("done");
-      setTimeout(() => onDone({ insights, planner, draft }), 900);
+      const due = planner?.supplies.filter((s) => s.status !== "ok" && s.recommendedQty > 0) ?? [];
+      const first = due.map((s) => s.runOutDate).filter(Boolean).sort()[0];
+      log(planner ? `${due.length} run low · first on ${day(first)}` : "Forecast not ready");
+      await pause();
+      await pause();
+      setPhase("leaving");
+      await exitPause();
+      onDone({ insights, planner, draft });
     } catch (e) {
       setError(errorText(e));
       setPhase("idle");
@@ -47,30 +58,31 @@ function Connect({ onDone }: { onDone: (b: Books) => void }) {
   }
 
   return (
-    <div className="ob-card">
-      <Steps at={0} />
-      <h1>Connect your books</h1>
-      <p className="ob-lead">We read your past supply bills to learn what you buy and what you pay. Nothing is ordered without you.</p>
+    <main className={`ob-stage${phase === "leaving" ? " ob-out" : ""}`}>
+      <In i={0}><Steps at={0} /></In>
+      <Claim text="Connect your books" start={100} />
+      <In i={4} as="p" className="ob-sub">Your supply bills set the prices to beat.</In>
       {phase === "idle" ? (
-        <div className="ob-actions">
-          <button className="ob-connect" onClick={connect}>
-            <span className="qb" aria-hidden="true">qb</span>
-            Connect QuickBooks
-            <ArrowRight />
-          </button>
-          <button className="ob-alt" onClick={connect}>I use other accounting software</button>
-        </div>
+        <In i={5} className="ob-row">
+          <button className="btn btn-primary has-icon" onClick={connect}>Connect QuickBooks <ArrowRight /></button>
+          <button className="btn btn-on-black" onClick={connect}>Connect other books</button>
+        </In>
       ) : (
-        <ul className="ob-progress" aria-live="polite">
+        <ul className="ob-log" aria-live="polite">
           {lines.map((l) => (
-            <li key={l}><i className="ok" />{l}</li>
+            <li key={l.text}>
+              <time className="ob-in">{l.at}</time>
+              <span className="ob-in">{l.text}</span>
+            </li>
           ))}
-          {phase === "loading" && <li className="muted"><i className="spin" />Reading</li>}
+          {phase === "loading" && (
+            <li className="wait"><time className="ob-in">{clock()}</time><span className="ob-in">Reading</span></li>
+          )}
         </ul>
       )}
       {error && <p className="alert" role="alert">{error}</p>}
-      <p className="ob-fine">Demo: this loads the books of Hearthloaf Bakeries from the QuickBooks sample data.</p>
-    </div>
+      <In i={6} as="p" className="ob-fine">Demo books · Hearthloaf Bakeries · QuickBooks sample data</In>
+    </main>
   );
 }
 
@@ -80,9 +92,12 @@ function Choose({ books }: { books: Books }) {
   const plans = Object.fromEntries((books.planner?.supplies ?? []).map((s) => [s.itemId, s]));
   const [picked, setPicked] = useState<Set<string>>(() => new Set(items.map((i) => i.id)));
   const [busy, setBusy] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const key = useRef<string | null>(null);
   const all = picked.size === items.length;
+  const chosen = items.filter((i) => picked.has(i.id));
+  const atBills = chosen.reduce((n, i) => n + i.quantity * (i.pastUnitPrice ?? 0), 0);
 
   function toggle(id: string) {
     const next = new Set(picked);
@@ -97,8 +112,9 @@ function Choose({ books }: { books: Books }) {
     setError(null);
     key.current ??= crypto.randomUUID();
     try {
-      const body: ShoppingRequest = { ...books.draft, items: items.filter((i) => picked.has(i.id)) };
-      const created = await api.createJob(body, key.current);
+      const created = await api.createJob({ ...books.draft, items: chosen }, key.current);
+      setLeaving(true);
+      await exitPause();
       router.push(`/start/${created.jobId}`);
     } catch (e) {
       setError(errorText(e));
@@ -106,45 +122,78 @@ function Choose({ books }: { books: Books }) {
     }
   }
 
-  const sources = books.draft.suppliers.length + (books.draft.distributor ? 1 : 0);
+  const sites = books.draft.suppliers.length;
   return (
-    <div className="ob-card">
-      <Steps at={1} />
-      <h1>What should we get quotes for?</h1>
-      <p className="ob-lead">These are the supplies you reorder. We set each amount from your sales.</p>
-      <div className="ob-seg" role="group" aria-label="Which items">
-        <button aria-pressed={all} onClick={() => setPicked(new Set(items.map((i) => i.id)))}>Everything</button>
-        <button aria-pressed={!all} onClick={() => all && setPicked(new Set())}>Pick items</button>
-      </div>
-      <ul className="ob-items">
-        {items.map((it) => {
-          const s = plans[it.id];
-          const on = picked.has(it.id);
-          return (
-            <li key={it.id}>
-              <label className={on ? "on" : undefined}>
-                <input type="checkbox" checked={on} onChange={() => toggle(it.id)} />
-                <span className="box" aria-hidden="true" />
-                <span className="name">
-                  {itemShort(it.name)}
-                  {s?.runOutDate && <em>Runs out {day(s.runOutDate)}</em>}
-                </span>
-                <span className="qty tnum">{int(it.quantity)} {plural(it.unit, it.quantity)}</span>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
+    <main className={`ob-stage${leaving ? " ob-out" : ""}`}>
+      <In i={0}><Steps at={1} /></In>
+      <Claim text="Pick what to price" start={100} />
+      <In i={4} as="p" className="ob-sub">
+        {sites} websites{books.draft.distributor ? " and one call" : ""} · amounts from your sales
+      </In>
+      <In i={5} className="ob-device">
+        <div className="ob-screen">
+          <div className="ob-screen-head">
+            <h2>Supplies</h2>
+            <div className="seg" role="group" aria-label="Which supplies">
+              <button aria-pressed={all} onClick={() => setPicked(new Set(items.map((i) => i.id)))}>Everything</button>
+              <button aria-pressed={!all} onClick={() => all && setPicked(new Set())}>Pick</button>
+            </div>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl wide ob-pick">
+              <thead>
+                <tr>
+                  <th className="chk"><span className="sr-only">Price it</span></th>
+                  <th className="l">Supply</th>
+                  <th className="l">Runs out</th>
+                  <th>Amount</th>
+                  <th>Paid each</th>
+                  <th>At bill price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, k) => {
+                  const on = picked.has(it.id);
+                  const s = plans[it.id];
+                  return (
+                    <tr key={it.id} className={`ob-in ${on ? "on" : "off"}`} style={{ "--d": `${600 + k * 100}ms` } as React.CSSProperties} onClick={() => toggle(it.id)}>
+                      <td className="chk">
+                        <span className="ob-check">
+                          <input type="checkbox" checked={on} onChange={() => toggle(it.id)} onClick={(e) => e.stopPropagation()} aria-label={`Price ${itemShort(it.name).toLowerCase()}`} />
+                          <Check />
+                        </span>
+                      </td>
+                      <td className="l">
+                        <span className="strong">{itemShort(it.name)}</span>
+                        <span className="sub">{it.name.split(",").slice(1).join(",").trim()}</span>
+                      </td>
+                      <td className="l">{s?.runOutDate ? day(s.runOutDate) : "–"}</td>
+                      <td>{int(it.quantity)} {plural(it.unit, it.quantity)}</td>
+                      <td className="muted">{each(it.pastUnitPrice)}</td>
+                      <td className="best">{it.pastUnitPrice != null ? money(it.quantity * it.pastUnitPrice) : "–"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="ob-screen-foot">
+            <p className="sum">
+              {chosen.length} of {items.length} at bill prices
+              <b>{money(atBills)}</b>
+            </p>
+            <button className="btn btn-primary has-icon" disabled={busy || chosen.length === 0} onClick={start}>
+              {busy ? "Starting" : `Get quotes for ${chosen.length} ${chosen.length === 1 ? "supply" : "supplies"}`} <ArrowRight />
+            </button>
+          </div>
+        </div>
+      </In>
       {error && <p className="alert" role="alert">{error}</p>}
-      <button className="btn btn-primary has-icon ob-go" disabled={busy || picked.size === 0} onClick={start}>
-        {busy ? "Starting" : `Get quotes for ${picked.size} ${picked.size === 1 ? "item" : "items"}`} <ArrowRight />
-      </button>
-      <p className="ob-fine">Agents check {sources} suppliers at once: {books.draft.suppliers.length} websites and a phone call.</p>
-    </div>
+    </main>
   );
 }
 
 export default function StartPage() {
   const [books, setBooks] = useState<Books | null>(null);
-  return <main className="ob-center">{books ? <Choose books={books} /> : <Connect onDone={setBooks} />}</main>;
+  return books ? <Choose books={books} /> : <Connect onDone={setBooks} />;
 }
