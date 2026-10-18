@@ -31,6 +31,16 @@ class LiveLaneSettings(BaseSettings):
     cloud_proxy_country_code: str | None = "us"
     cloud_timeout_min: int = 15
 
+    # Hosted agent lane (hosted_agent.py, ported from Cartwise): the Browser Use Cloud agent, API v4.
+    # With BROWSER_USE_API_KEY set, it is the lane for unknown sites, and the Step 5 agent is its
+    # fallback. HOSTED_AGENT_FIRST=false makes the Step 5 agent the lane again.
+    hosted_agent_first: bool = True
+    hosted_agent_api_base: str = "https://api.browser-use.com/api/v4"
+    hosted_agent_model: str | None = None  # None: the API default model (StepFun is not on its list)
+    hosted_agent_max_cost_usd: float = 2.0  # spend cap for one lane's whole session
+    hosted_agent_keep_alive_s: int = 900  # the browser stays open between runs and for the owner at payment
+    hosted_agent_poll_s: float = 2.0
+
     # LLM for the Browser Use agent lane (unknown sites). Any OpenAI-compatible endpoint: the team
     # uses StepFun directly (OPENROUTER_BASE_URL=https://api.stepfun.ai/v1) with the same key names.
     openrouter_api_key: SecretStr | None = None
@@ -58,7 +68,7 @@ class LiveLaneSettings(BaseSettings):
     snapshot_text_chars: int = 6000
 
     @field_validator("browser_use_api_key", "openrouter_api_key", "browser_llm_model", "browser_llm_fallback",
-                     "browser_executable", mode="before")
+                     "browser_executable", "hosted_agent_model", mode="before")
     @classmethod
     def _blank_is_unset(cls, value: Any) -> Any:
         return None if isinstance(value, str) and not value.strip() else value
