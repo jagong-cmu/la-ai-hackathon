@@ -137,3 +137,26 @@ async def test_a_slow_step5_second_opinion_keeps_jevs_answer(decider, monkeypatc
     assert time.monotonic() - started < 1
     assert d.band == "unsure" and not d.escalated and d.answers == d.jev_answers
     assert "no answer in 0.05 s" in " ".join(d.notes)
+
+
+def test_live_dependencies_start_live_in_fixture_mode(tmp_path):
+    """The demo server starts with the phone and the paid APIs live, so a restart needs no
+    POST /admin/mode per dependency. Nothing else changes, and a typo is refused."""
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    modes = Settings(_env_file=None, var_dir=tmp_path, live_dependencies=["phone", "jev"]).initial_modes()
+    assert modes == {"jev": "live", "llm": "cached", "creao": "cached", "browser": "cached", "phone": "live"}
+    assert set(Settings(_env_file=None, var_dir=tmp_path).initial_modes().values()) == {"cached"}
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, var_dir=tmp_path, live_dependencies=["phones"])
+
+
+def test_the_soak_harness_never_starts_a_dependency_live():
+    import inspect
+
+    from e2e import run_cycle
+
+    src = inspect.getsource(run_cycle.start_server)
+    assert '"RUN_MODE": "fixture"' in src and '"LIVE_DEPENDENCIES": "[]"' in src

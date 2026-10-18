@@ -69,6 +69,9 @@ class Settings(BaseSettings):
 
     # "fixture" sets every dependency to cached and needs no keys. "live" uses the keys you set.
     run_mode: Literal["fixture", "live"] = "fixture"
+    # In fixture mode, these dependencies start live (for example ["jev","llm","browser","phone"]
+    # on the demo server), so a restart does not need POST /admin/mode for each one.
+    live_dependencies: list[str] = []
     var_dir: Path = BACKEND_DIR / "var"
     qb_data_dir: Path | None = None  # path to the extracted `hackathon-100` folder
     injected_bills_path: Path = FIXTURES_DIR / "injected_supply_bills.yaml"
@@ -149,6 +152,14 @@ class Settings(BaseSettings):
     def _blank_is_unset(cls, value: Any) -> Any:
         return None if isinstance(value, str) and not value.strip() else value
 
+    @field_validator("live_dependencies")
+    @classmethod
+    def _known_dependencies(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(DEPENDENCIES))
+        if unknown:
+            raise ValueError(f"unknown dependencies {unknown}; use {list(DEPENDENCIES)}")
+        return value
+
     @property
     def db_path(self) -> Path:
         return self.var_dir / "app.db"
@@ -159,7 +170,7 @@ class Settings(BaseSettings):
 
     def initial_modes(self) -> dict[str, Mode]:
         if self.run_mode == "fixture":
-            return {dep: "cached" for dep in DEPENDENCIES}
+            return {dep: "live" if dep in self.live_dependencies else "cached" for dep in DEPENDENCIES}
         return {
             "jev": "live" if self.jev_api_key else "cached",
             "llm": "live" if self.openrouter_api_key else "cached",
