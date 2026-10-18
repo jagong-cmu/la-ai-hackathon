@@ -4,6 +4,10 @@ The product finds the cheapest way for a small business to restock its supplies.
 
 The product name is not final. The team picks it at H0.
 
+## When the work was done
+
+The planning documents listed below, together with the CREAO integration notes in `agents/creao/README.md`, were drafted on October 16, 2026, the day before LA Hacks began. All of the code in this repository was written during the event.
+
 ## Documents
 
 | File | What it holds |
