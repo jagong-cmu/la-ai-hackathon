@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import type { JobEvent } from "@/api/client";
+import { useEffect, useRef } from "react";
+import { money, type JobEvent } from "@/api/client";
 import { Phone } from "@/components/Icons";
 import { mmss } from "@/lib/format";
 
@@ -46,24 +46,39 @@ export function Transcript({ lines, who }: { lines: CallLine[]; who: string }) {
   );
 }
 
-export function CallStrip({ call, who }: { call: NonNullable<ReturnType<typeof callFromEvents>>; who: string }) {
-  const [open, setOpen] = useState(false);
-  const last = call.lines.at(-1);
+/** The distributor call, open beside the browser agents: the live transcript, newest line in view. */
+export function CallPanel({ call, who }: { call: ReturnType<typeof callFromEvents>; who: string }) {
+  const end = useRef<HTMLDivElement>(null);
+  const count = call?.lines.length ?? 0;
+  useEffect(() => {
+    const box = end.current?.parentElement;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [count]);
+  const state = !call ? "Not called yet" : call.ended ? `Call ended · ${mmss(call.duration)}` : `On call · ${mmss(call.duration)}`;
   return (
-    <div className="stack" style={{ gap: 8 }}>
-      <div className="callstrip">
+    <section className="callpanel" aria-label={`Call to ${who}`}>
+      <div className="callpanel-head">
         <Phone />
-        <span className="who tnum">{who} · {call.ended ? "call" : "on call"} · {mmss(call.duration)}</span>
-        <q>{last?.text ?? "Ringing"}</q>
-        <button className="btn btn-on-black sm" onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? "Hide" : "Transcript"}
-        </button>
+        <b>{who}</b>
+        {call && !call.ended ? <span className="bp-live-tag"><i />{state}</span> : <span className="who tnum">{state}</span>}
       </div>
-      {open && (
-        <div className="card">
-          <Transcript lines={call.lines} who={who} />
+      <div className="callpanel-lines" aria-live="polite">
+        {!call && <p className="muted-dark">The agent calls the distributor while the browsers work.</p>}
+        {call && call.lines.length === 0 && <p className="muted-dark">Ringing</p>}
+        {call?.lines.map((l, i) => (
+          <div key={i} className={`cl${l.speaker === "agent" ? " agent" : ""}`}>
+            <span className="tnum">{l.speaker === "agent" ? "Agent" : who} · {mmss(l.at)}</span>
+            <p>{l.text}</p>
+          </div>
+        ))}
+        <div ref={end} />
+      </div>
+      {call?.offerTotal != null && (
+        <div className="callpanel-offer">
+          <span>Phone offer</span>
+          <b className="tnum">{money(call.offerTotal)}</b>
         </div>
       )}
-    </div>
+    </section>
   );
 }

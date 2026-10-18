@@ -5,8 +5,9 @@ import { useState } from "react";
 import { money } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
 import { ErrorNote, Loading, PageHead } from "@/components/PageHead";
-import { BrowserPane, LiveStage } from "@/components/job/BrowserPane";
-import { CallStrip, callFromEvents } from "@/components/job/CallStrip";
+import { BrowserPane } from "@/components/job/BrowserPane";
+import { CallPanel, callFromEvents } from "@/components/job/CallStrip";
+import { OrderBasis, usePlanner } from "@/components/job/OrderBasis";
 import { useJobEvents } from "@/hooks/useJobEvents";
 import { shortName } from "@/lib/format";
 import { jobHref, orderTitle, planShort, supplierNames, supplierUrls } from "@/lib/job";
@@ -15,6 +16,7 @@ export default function WorkingPage() {
   const { id } = useParams<{ id: string }>();
   const s = useJobEvents(id);
   const [picked, setPicked] = useState<string | null>(null);
+  const planner = usePlanner();
   const job = s.job;
   if (!job) return s.error ? <ErrorNote error={s.error} /> : <Loading label="Loading the order" />;
 
@@ -22,9 +24,9 @@ export default function WorkingPage() {
   const urls = supplierUrls(job);
   const order = job.request.suppliers.map((x) => x.id);
   const lanes = Object.values(s.lanes).sort((a, b) => order.indexOf(a.supplierId) - order.indexOf(b.supplierId));
-  // The stage shows the lane the owner picked, else the first lane with a live browser.
-  const withLive = lanes.filter((l) => l.liveUrl);
-  const watched = withLive.find((l) => l.laneId === picked) ?? withLive[0] ?? null;
+  // All tiles have the same size. The highlighted one is the lane the owner picked, else the first
+  // lane with a live browser, else the first lane.
+  const watched = lanes.find((l) => l.laneId === picked) ?? lanes.find((l) => l.liveUrl) ?? lanes[0] ?? null;
   const call = callFromEvents(s.events);
   const distributor = job.request.distributor ? shortName(job.request.distributor.name) : "Distributor";
   const ready = !!job.results;
@@ -48,41 +50,35 @@ export default function WorkingPage() {
       />
       <ErrorNote error={s.error} />
 
-      {watched && (
-        <LiveStage
-          key={watched.laneId}
-          lane={watched}
-          name={names[watched.supplierId] ?? watched.supplierId}
-          siteUrl={urls[watched.supplierId]}
-        />
-      )}
+      <div className="work">
+        <div className="panes">
+          {lanes.map((l) => (
+            <BrowserPane
+              key={l.laneId}
+              lane={l}
+              name={names[l.supplierId] ?? l.supplierId}
+              siteUrl={urls[l.supplierId]}
+              job={job}
+              watched={watched?.laneId === l.laneId}
+              onWatch={() => setPicked(l.laneId)}
+            />
+          ))}
+          {lanes.length === 0 && <div className="skeleton" style={{ minHeight: 320 }} />}
+        </div>
 
-      <div className="panes">
-        {lanes.map((l) => (
-          <BrowserPane
-            key={l.laneId}
-            lane={l}
-            name={names[l.supplierId] ?? l.supplierId}
-            siteUrl={urls[l.supplierId]}
-            job={job}
-            watched={watched?.laneId === l.laneId}
-            onWatch={() => setPicked(l.laneId)}
-          />
-        ))}
-        {lanes.length === 0 && <div className="skeleton" style={{ minHeight: 320 }} />}
-      </div>
-
-      <div className="callrow">
-        {call ? <CallStrip call={call} who={distributor} /> : <div />}
-        {bestTotal != null && (
-          <div className="bestbox" aria-live="polite">
-            <div>
-              <p className="k">{ready ? "Best plan" : "Best so far"}</p>
-              {best && <p className="v">{planShort(best, job)}</p>}
+        <aside className="work-side">
+          {bestTotal != null && (
+            <div className="bestbox" aria-live="polite">
+              <div>
+                <p className="k">{ready ? "Best plan" : "Best so far"}</p>
+                {best && <p className="v">{planShort(best, job)}</p>}
+              </div>
+              <span className="n">{money(bestTotal)}</span>
             </div>
-            <span className="n">{money(bestTotal)}</span>
-          </div>
-        )}
+          )}
+          {job.request.distributor && <CallPanel call={call} who={distributor} />}
+          <OrderBasis items={job.request.items} planner={planner} />
+        </aside>
       </div>
     </>
   );
