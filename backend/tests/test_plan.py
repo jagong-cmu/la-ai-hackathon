@@ -131,6 +131,17 @@ def test_rules_and_recommendation():
     assert best is not None and best.total == 95
 
 
+def test_never_recommend_a_plan_that_costs_more_than_past_bills():
+    # Live demo 2026-10-18: the web plan cost more than the QuickBooks bills and was still the best.
+    plans = [_plan(120), _plan(150, sid="b")]
+    best, reason = recommend(plans, accept_quoted=False, past=110.0)
+    assert best is None and reason is not None and "$110.00" in reason
+    best, _ = recommend(plans + [_plan(105, sid="c")], accept_quoted=False, past=110.0)
+    assert best is not None and best.total == 105
+    best, _ = recommend(plans, accept_quoted=False, past=None)  # no past price: no limit
+    assert best is not None and best.total == 120
+
+
 def test_savings_and_cards():
     plan = _plan(100.0)
     per_order, yearly = savings(plan, ITEMS)  # past = 200*0.15 + 100*0.9 = 120

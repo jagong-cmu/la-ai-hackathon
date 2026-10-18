@@ -50,7 +50,7 @@ from app.observability import capture, current, forked, in_transaction, outcome,
 from app.stages.cards import mint_cards
 from app.stages.normalize import NormalizeResult, normalize
 from app.stages.optimize import optimize
-from app.stages.rank import build_results, summary_facts
+from app.stages.rank import beats_past, build_results, past_total, summary_facts
 from app.stages.rules import SpendingRules, check_plan
 
 T = TypeVar("T")
@@ -671,7 +671,9 @@ class Orchestrator:
             rt.plans = result.plans
             rt.subset_requests = result.subset_requests
             self._save(rt)
-            best = rt.plans[0] if rt.plans else None
+            # "Best so far" shows only a plan that costs less than the past bills (QuickBooks).
+            past = past_total(rt.request.items)
+            best = next((p for p in rt.plans if not p.uncovered_items and beats_past(p, past)), None)
             await self.bus.emit(rt.job_id, "plans_updated", {
                 "reason": reason, "count": len(rt.plans),
                 "bestPlanId": best.plan_id if best else None,

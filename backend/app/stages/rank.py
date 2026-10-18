@@ -24,20 +24,39 @@ FLAG_TEXT = {
 }
 
 
-def _usable(plan: Plan, accept_quoted: bool) -> bool:
+def past_total(items: list[ShoppingItem]) -> float | None:
+    """What the list cost at the prices on past bills (QuickBooks). None if an item has no past price."""
+    if not items or any(i.past_unit_price is None for i in items):
+        return None
+    return round(sum(i.quantity * (i.past_unit_price or 0.0) for i in items), 2)
+
+
+def beats_past(plan: Plan, past: float | None) -> bool:
+    """A plan we may recommend costs less than the past bills. With no past price, any plan may."""
+    return past is None or plan.total < past
+
+
+def _usable(plan: Plan, accept_quoted: bool, past: float | None = None) -> bool:
     if plan.uncovered_items:
         return False
     if plan.rules_check is not None and not plan.rules_check.passed:
         return False
+    if not beats_past(plan, past):
+        return False
     return plan.status == "verified" or (plan.status == "quoted" and accept_quoted)
 
 
-def recommend(plans: list[Plan], accept_quoted: bool) -> tuple[Plan | None, str | None]:
+def recommend(plans: list[Plan], accept_quoted: bool, past: float | None = None) -> tuple[Plan | None, str | None]:
+    """The best plan that costs less than the past bills. Never a plan that costs more: then the
+    owner keeps the usual supplier."""
     for plan in sorted(plans, key=ranking_total):
-        if _usable(plan, accept_quoted):
+        if _usable(plan, accept_quoted, past):
             return plan, None
     if not plans:
         return None, "No supplier returned a usable offer for these items."
+    if past is not None and any(_usable(p, accept_quoted) for p in plans):
+        return None, (f"No supplier beats what you paid before (${past:,.2f}). "
+                      "Keep ordering from your usual supplier.")
     if not any(p.status == "verified" for p in plans):
         return None, "No plan has verified carts yet. The totals shown are estimates."
     return None, "Every verified plan breaks a spending rule or misses an item."
@@ -71,7 +90,7 @@ def build_results(
 ) -> JobResults:
     for plan in plans:
         plan.rules_check = check_plan(plan, rules)
-    best, reason = recommend(plans, accept_quoted)
+    best, reason = recommend(plans, accept_quoted, past_total(items))
     per_order, yearly = savings(best, items)
     quoted = next((p for p in sorted(plans, key=lambda p: p.total) if p.status == "quoted"), None)
 
@@ -93,7 +112,7 @@ def build_results(
             if cart.shipping_is_estimate:
                 warnings.append(ResultWarning(code="shipping_estimate", supplier_id=cart.supplier_id,
                                               text=f"{names.get(cart.supplier_id, cart.supplier_id)}: shipping is an estimate."))
-        cheapest = min((p for p in plans if _usable(p, accept_quoted)), key=lambda p: p.total)
+        cheapest = min((p for p in plans if _usable(p, accept_quoted, past_total(items))), key=lambda p: p.total)
         if cheapest.total < best.total:
             doubts = sum(1 for a in cheapest.assignments
                          if any(map(is_doubt, getattr(normalized.best.get((a.item_id, a.supplier_id)),
