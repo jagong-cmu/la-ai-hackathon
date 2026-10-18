@@ -12,7 +12,7 @@ import dataclasses
 import json
 
 from app.config import FIXTURES_DIR
-from app.contracts import Evidence, Product, SupplierOffers
+from app.contracts import Evidence, Product, SupplierOffers, evidence_segment
 from app.distributor.base import (
     DistributorContext,
     anchored_items,
@@ -25,10 +25,11 @@ from app.judgments import j9_call_line, j10_terms
 
 def _save_transcript(ctx: DistributorContext, transcript: list[str]) -> str:
     """Writes the call transcript to the evidence folder and returns its served path."""
-    folder = ctx.settings.evidence_dir / ctx.job_id / ctx.distributor.id
+    did = evidence_segment(ctx.distributor.id)  # the id comes from the request
+    folder = ctx.settings.evidence_dir / ctx.job_id / did
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "call.txt").write_text("\n".join(transcript) + "\n")
-    return f"/evidence/{ctx.job_id}/{ctx.distributor.id}/call.txt"
+    return f"/evidence/{ctx.job_id}/{did}/call.txt"
 
 
 def _spoken_list(ctx: DistributorContext) -> str:

@@ -6,6 +6,7 @@ JSON Schema that the frontend turns into TypeScript types.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -176,6 +177,12 @@ class Product(Model):
     pack_price: float
     units_per_pack: int | None = None
     jev: JevListing | None = None
+
+
+def evidence_segment(value: str) -> str:
+    """A safe folder name for an id from a request (supplier, distributor): no "/", no "..".
+    The evidence files and their /evidence/... URLs both use it."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", value).lstrip(".") or "_"
 
 
 class Evidence(Model):

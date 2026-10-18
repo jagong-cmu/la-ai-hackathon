@@ -455,3 +455,38 @@ def test_negative_past_price_or_cadence_is_refused(client):
         body["items"][0][field] = value
         r = client.post("/jobs", json=body, headers={"Idempotency-Key": f"test-neg-{field}"})
         assert r.status_code == 422, (field, r.status_code)
+
+
+def test_evidence_stays_in_the_evidence_folder(settings):
+    """Soak S-012: the request's distributor and supplier ids are path parts of the evidence files.
+    distributor.id='../../../escaped' wrote escaped/call.txt outside var/evidence (POST /jobs is public)."""
+    from app.contracts import evidence_segment
+
+    assert evidence_segment("../../x") not in ("..", "") and "/" not in evidence_segment("../../x")
+    assert evidence_segment("vend-syn-larkmoor") == "vend-syn-larkmoor"  # normal ids keep their name
+    root = settings.var_dir.parent
+    with TestClient(create_app(settings)) as c:
+        d = c.get("/shopping-list/draft").json()
+        d["distributor"]["id"] = "../../../escaped"
+        d["suppliers"][0]["id"] = "../../../escaped-lane"
+        d["items"][0]["id"] = "../../../../escaped-item"
+        jid = c.post("/jobs", json=d, headers={"Idempotency-Key": "test-trav-01"}).json()["jobId"]
+        view = wait_for(c, jid, {"results_ready"})
+        evidence = settings.evidence_dir.resolve()
+        outside = [p for p in root.rglob("*escaped*") if evidence not in p.resolve().parents]
+        assert not outside, outside
+        lanes = {lane["supplierId"]: lane for lane in view["lanes"]}
+        assert lanes["bravo"]["state"] == "cart_ready", lanes["bravo"]  # an odd item id does not break a lane
+        urls = [o["evidence"]["transcriptUrl"] for o in view["offers"] if o["evidence"].get("transcriptUrl")]
+        assert urls and all(c.get(u).status_code == 200 for u in urls)  # the served path still works
+
+
+def test_lane_evidence_names_stay_in_the_lane_folder(settings, decider, tmp_path):
+    """S-012: lanes name files after request item ids (listing_{item.id}.json)."""
+    from app.contracts import SupplierRef
+    from tests.test_lanes_live import make_ctx
+
+    ctx, _ = make_ctx(settings, decider, tmp_path, SupplierRef(id="../up", name="X", url="https://x.example"))
+    path, url = ctx.evidence("listing_../../../../escaped.json")
+    assert ctx.evidence_dir.resolve() in path.resolve().parents
+    assert ".." not in url.split("/")
