@@ -3,6 +3,10 @@ import { withSentryConfig } from "@sentry/nextjs/config";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  async redirects() {
+    // Old skeleton routes.
+    return [{ source: "/list", destination: "/orders/new", permanent: false }];
+  },
 };
 
 // Sentry is a no-op unless NEXT_PUBLIC_SENTRY_DSN is set. Source map upload

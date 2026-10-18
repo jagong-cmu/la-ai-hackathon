@@ -188,3 +188,16 @@ def test_full_flow_with_the_milp_path(client, monkeypatch):
     r = client.post(f"/jobs/{job_id}/approve", json={"action": "approve", "planId": results["recommendedPlanId"]})
     assert r.status_code == 200
     assert wait_for(client, job_id, {"at_payment", "partial_handoff"})["state"] == "at_payment"
+
+
+def test_jobs_list_and_default_rules(client):
+    assert client.get("/jobs").json() == []
+    draft = client.get("/shopping-list/draft").json()
+    job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "list-test-0001"}).json()["jobId"]
+    jobs = client.get("/jobs").json()
+    assert [j["jobId"] for j in jobs] == [job_id]
+    assert client.get("/jobs", params={"limit": 0}).status_code == 422
+
+    rules = client.get("/rules").json()
+    assert rules["perOrderCap"] > 0
+    assert set(s["id"] for s in draft["suppliers"]) <= set(rules["approvedSuppliers"])
