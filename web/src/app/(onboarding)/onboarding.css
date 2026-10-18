@@ -1,0 +1,86 @@
+/* First-run flow, in the landing's language (style guide v10): black ground, one plain claim,
+   the product UI in the device frame as the only picture. Tokens come from globals.css. */
+.ob { min-height: 100dvh; background: var(--color-black); color: var(--color-white); display: flex; flex-direction: column; }
+.ob-top { max-width: 1160px; width: 100%; margin: 0 auto; height: 76px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; }
+.ob-mark { font-weight: 700; font-size: 22px; line-height: 28px; letter-spacing: -0.02em; color: var(--color-white); text-decoration: none; }
+.ob-skip { font-weight: 500; font-size: 15px; line-height: 20px; color: var(--color-white); text-decoration: none; transition-property: color; transition-duration: 150ms; transition-timing-function: ease-out; }
+@media (hover: hover) { .ob-skip:hover { color: var(--color-mint); } }
+.ob-skip:focus-visible, .ob-mark:focus-visible { outline: 2px solid var(--color-mint); outline-offset: 2px; }
+
+.ob-stage { flex: 1; width: 100%; max-width: 1040px; margin: 0 auto; padding: 32px 16px 96px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.ob-stage.wide { max-width: 1440px; padding-top: 4px; padding-bottom: 16px; gap: 16px; align-items: stretch; }
+
+/* Claim: display type scaled for a task screen, one subline of 14 words or fewer */
+.ob-claim { font-weight: 700; font-size: clamp(40px, 6vw, 64px); line-height: 1; letter-spacing: -0.045em; text-align: center; text-wrap: balance; }
+.ob-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+/* Progress: four thin bars, the fill scales in when a step completes */
+.ob-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 40px); gap: 6px; }
+.ob-steps li { display: flex; flex-direction: column; }
+.ob-steps i { position: relative; height: 2px; border-radius: 1px; background: var(--color-raised-dark); overflow: hidden; }
+.ob-steps i::after { content: ""; position: absolute; inset: 0; border-radius: 1px; background: var(--color-white); transform: scaleX(0); transform-origin: left; transition-property: transform; transition-duration: 300ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+.ob-steps li.done i::after { transform: scaleX(1); }
+.ob-steps li.now i::after { transform: scaleX(1); background: var(--color-mint); }
+
+/* Device: outer r28 = inner r16 + padding 12 */
+.ob-device { width: 100%; padding: 12px; border-radius: var(--radius-device); background: var(--color-raised-dark); border: 1px solid transparent; box-shadow: var(--shadow-ring-dark); }
+.ob-screen { border-radius: 16px; background: var(--color-white); color: var(--color-ink); overflow: hidden; }
+.ob-screen-head { padding: 24px 24px 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.ob-screen-head h2 { font-weight: 500; font-size: 28px; line-height: 32px; letter-spacing: -0.02em; }
+.ob-screen-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 16px 24px; background: var(--color-surface); border-top: 1px solid var(--color-line); }
+.ob-screen-foot .sum { display: flex; align-items: baseline; gap: 12px; font-weight: 500; font-size: 15px; line-height: 20px; color: var(--color-ink); }
+.ob-screen-foot .sum b { font-weight: 600; font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; }
+
+/* Choose table: a row is a toggle; the selected row takes the mint tint of a selected plan */
+.ob-pick td { transition-property: background-color; transition-duration: 150ms; transition-timing-function: ease-out; }
+.ob-pick tbody tr { cursor: pointer; }
+.ob-pick tr.on td { background: var(--color-mint-tint); }
+.ob-pick tr.off td { color: var(--color-muted); }
+.ob-pick td.chk { width: 52px; padding-right: 0; }
+.ob-check { position: relative; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--color-input); background: var(--color-white); transition-property: background-color, border-color; transition-duration: 150ms; transition-timing-function: ease-out; }
+.ob-check input { position: absolute; inset: -12px; opacity: 0; margin: 0; cursor: pointer; }
+.ob-check svg { pointer-events: none; width: 14px; height: 14px; color: var(--color-white); opacity: 0; scale: 0.25; filter: blur(4px); transition-property: opacity, scale, filter; transition-duration: 300ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+.on .ob-check { background: var(--color-ink); border-color: var(--color-ink); }
+.on .ob-check svg { opacity: 1; scale: 1; filter: blur(0); }
+.ob-check:has(input:focus-visible) { outline: 2px solid var(--color-mint-text); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .ob-check svg { scale: 1; filter: none; transition-property: opacity; } }
+
+/* Working: the stores and the call in the device, sized to the window (3 stores + call = 2 x 2) */
+.ob-work-head { display: flex; justify-content: space-between; align-items: center; gap: 16px 32px; flex-wrap: wrap; }
+/* One row, so the browsers get the height: steps · title · facts ... best so far */
+.ob-work-head > div:first-child { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; }
+.ob-work-head h1 { font-weight: 500; font-size: 22px; line-height: 28px; letter-spacing: -0.02em; }
+.ob-best { display: flex; align-items: baseline; gap: 12px; }
+.ob-best > span { font-size: 13px; line-height: 16px; color: var(--color-mint); }
+.ob-best b { font-weight: 600; font-size: 34px; line-height: 38px; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.ob-device.grid { padding: 16px; flex: 1; display: flex; min-height: 0; }
+.ob-device.grid .tiles { flex: 1; height: calc(100dvh - 216px); min-height: 480px; }
+.ob-device.grid .callpanel { box-shadow: var(--shadow-ring-dark); border: 1px solid transparent; }
+@media (max-width: 1100px) { .ob-device.grid .tiles { height: auto; min-height: 0; } }
+
+/* Result: the figure, then the plan in the device */
+.ob-figure-label { font-size: 13px; line-height: 16px; color: var(--color-mint); text-align: center; }
+.ob-figure { font-weight: 600; font-size: clamp(56px, 9vw, 96px); line-height: 1; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; text-align: center; }
+.ob-figure-sub { font-size: 18px; line-height: 26px; color: var(--color-mint); text-align: center; font-variant-numeric: tabular-nums; }
+.ob-figure-sub.flat { color: var(--color-faint); }
+
+/* ---------------------------------------------------------------- motion */
+/* Staged entrance (runs once per screen): 300ms ease-out, opacity + 4px blur + 12px rise,
+   100ms apart (--d). The hidden state lives only in the keyframe, so content never stays hidden. */
+.ob-in { animation: ob-fade 300ms ease-out both; animation-delay: var(--d, 0ms); }
+@media (prefers-reduced-motion: no-preference) { .ob-in { animation-name: ob-rise; } }
+@keyframes ob-fade { from { opacity: 0; } }
+@keyframes ob-rise { from { opacity: 0; transform: translateY(12px); filter: blur(4px); } }
+/* Display claims read word by word, 80ms apart */
+.ob-word { display: inline-block; white-space: pre; }
+/* Exit: shorter and smaller than the enter */
+.ob-out { animation: ob-fade-out 150ms ease-out both; }
+@media (prefers-reduced-motion: no-preference) { .ob-out { animation-name: ob-sink; } }
+@keyframes ob-fade-out { to { opacity: 0; } }
+@keyframes ob-sink { to { opacity: 0; transform: translateY(-12px); filter: blur(4px); } }
+/* A new best price flashes the label once; the number itself is the static cue */
+.ob-best b { transition-property: color; transition-duration: 150ms; transition-timing-function: ease-out; }
+.ob-best.bump b { color: var(--color-mint); }
+.ob-device.grid .tiles > .ob-in > * { flex: 1; min-width: 0; }
+
+

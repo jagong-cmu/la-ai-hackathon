@@ -1,14 +1,28 @@
-import type { ProductForecast } from "@/api/client";
-import { day } from "@/lib/format";
+import type { ForecastPoint, HistoryPoint } from "@/api/client";
+import { day, int } from "@/lib/format";
 
-// Weekly sales (ink line), expected range (mint band, history and future) and misses (red dots).
-export function ForecastChart({ product, width = 880, height = 180 }: { product: ProductForecast; width?: number; height?: number }) {
-  const hist = product.history ?? [];
-  const fut = product.forecast ?? [];
+// Weekly amounts (ink line), expected range (mint band, history and future), the forecast mean
+// (dashed) and misses (red dots). Product sales and supply use share this chart.
+export function ForecastChart({
+  name,
+  history: hist,
+  forecast: fut,
+  unit = "sold",
+  width = 880,
+  height = 200,
+}: {
+  name: string;
+  history: HistoryPoint[];
+  forecast: ForecastPoint[];
+  /** The verb for a week's amount in tooltips: "sold", "used". */
+  unit?: string;
+  width?: number;
+  height?: number;
+}) {
   const n = hist.length + fut.length;
   if (n === 0) return <p className="muted">No sales yet.</p>;
 
-  const pad = { l: 0, r: 0, t: 8, b: 28 };
+  const pad = { l: 44, r: 0, t: 8, b: 28 };
   const values: number[] = [];
   for (const h of hist) values.push(h.actual, h.high ?? 0);
   for (const f of fut) values.push(f.high, f.mean);
@@ -41,26 +55,33 @@ export function ForecastChart({ product, width = 880, height = 180 }: { product:
       viewBox={`0 0 ${width} ${height}`}
       width="100%"
       role="img"
-      aria-label={`${product.name}: ${hist.length} weeks of sales, a ${fut.length}-week forecast and ${misses} misses.`}
+      aria-label={`${name}: ${hist.length} weeks of history, a ${fut.length}-week forecast and ${misses} misses.`}
       style={{ display: "block", overflow: "visible" }}
     >
-      {[0.25, 0.5, 0.75, 1].map((t) => (
-        <line key={t} x1={0} x2={width} y1={y(maxY * t)} y2={y(maxY * t)} stroke="#ECECEC" />
+      {[0.5, 1].map((t) => (
+        <g key={t}>
+          <line x1={pad.l} x2={width} y1={y(maxY * t / 1.05)} y2={y(maxY * t / 1.05)} stroke="#ECECEC" />
+          <text x={pad.l - 8} y={y(maxY * t / 1.05) + 4} fontSize="12" fill="#6B6B6B" textAnchor="end">{int(maxY * t / 1.05)}</text>
+        </g>
       ))}
-      <line x1={0} x2={width} y1={y(0)} y2={y(0)} stroke="#D4D4D4" />
+      <line x1={pad.l} x2={width} y1={y(0)} y2={y(0)} stroke="#D4D4D4" />
+      <text x={pad.l - 8} y={y(0) + 4} fontSize="12" fill="#6B6B6B" textAnchor="end">0</text>
       {bandPath && <path d={bandPath} fill="#E8F7EF" />}
       {fut.length > 0 && hist.length > 0 && (
         <line x1={x(hist.length - 1)} x2={x(hist.length - 1)} y1={pad.t} y2={y(0)} stroke="#D4D4D4" strokeDasharray="2 3" />
       )}
       <path d={future} fill="none" stroke="#6B6B6B" strokeWidth={1.5} strokeDasharray="4 3" />
       <path d={actual} fill="none" stroke="#0A0A0A" strokeWidth={1.5} strokeLinejoin="round" />
-      {hist.map((h, i) =>
-        h.miss ? (
-          <circle key={h.weekStart} cx={x(i)} cy={y(h.actual)} r={3.5} fill="#C8281E">
-            <title>{`Week of ${day(h.weekStart)}: ${Math.round(h.actual)} sold, expected ${Math.round(h.low ?? 0)}–${Math.round(h.high ?? 0)}`}</title>
-          </circle>
-        ) : null,
-      )}
+      {hist.map((h, i) => (
+        <circle key={h.weekStart} cx={x(i)} cy={y(h.actual)} r={h.miss ? 3.5 : 6} fill={h.miss ? "#C8281E" : "transparent"}>
+          <title>{`Week of ${day(h.weekStart)}: ${int(h.actual)} ${unit}${h.low != null ? `, expected ${int(h.low)}–${int(h.high)}` : ""}`}</title>
+        </circle>
+      ))}
+      {fut.map((f, j) => (
+        <circle key={f.weekStart} cx={x(hist.length + j)} cy={y(f.mean)} r={6} fill="transparent">
+          <title>{`Week of ${day(f.weekStart)}: forecast ~${int(f.mean)} (${int(f.low)}–${int(f.high)})`}</title>
+        </circle>
+      ))}
       {ticks.map((i, k) => (
         <text
           key={k}

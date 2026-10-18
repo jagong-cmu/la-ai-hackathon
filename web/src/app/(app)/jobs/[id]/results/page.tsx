@@ -5,10 +5,13 @@ import { useEffect, useState } from "react";
 import { api, ApiError, detailText, errorText, money, type JobView, type Plan } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
 import { ErrorNote, Loading, PageHead } from "@/components/PageHead";
+import { Roll } from "@/components/Roll";
+import { SavingsBreakdown } from "@/components/SavingsBreakdown";
 import { Status, statusWord } from "@/components/Status";
 import { useJobEvents } from "@/hooks/useJobEvents";
 import { int, itemShort, shortName } from "@/lib/format";
 import { orderTitle, supplierNames } from "@/lib/job";
+import { planSavings } from "@/lib/savings";
 
 /** The columns to compare: one per store ("everything from X"), the quote, and the chosen plan last. */
 function columns(job: JobView, selected: Plan): Plan[] {
@@ -78,7 +81,7 @@ export default function ResultsPage() {
   const items = job.request.items.filter((i) => i.quantity > 0);
   const carts = selected?.carts.filter((c) => c.status !== "quoted").length ?? 0;
   const rulesFailed = selected?.rulesCheck && !selected.rulesCheck.pass ? selected.rulesCheck.failed ?? [] : [];
-  const savings = results.savingsVsPaidBefore != null && rec && selected ? results.savingsVsPaidBefore + (rec.total - selected.total) : null;
+  const savings = planSavings(job, selected)?.saved ?? null;
   const decided = job.approval?.action;
 
   async function decide(action: "approve" | "reject") {
@@ -108,10 +111,10 @@ export default function ResultsPage() {
         right={
           selected && (
             <div>
-              <p className="figure">{money(selected.total)}</p>
+              <p className="figure"><Roll text={money(selected.total)} fromZero /></p>
               {savings != null && Math.abs(savings) >= 0.01 && (
                 <p className="figure-sub" style={savings < 0 ? { color: "var(--color-muted)" } : undefined}>
-                  {money(Math.abs(savings))} {savings > 0 ? "less" : "more"} than last order
+                  {money(Math.abs(savings))} {savings > 0 ? "less" : "more"} than your bills
                 </p>
               )}
             </div>
@@ -119,6 +122,7 @@ export default function ResultsPage() {
         }
       />
       {!rec && <p className="alert" role="alert">{results.noRecommendationReason ?? "No plan covers every item."}</p>}
+      {selected && <SavingsBreakdown job={job} plan={selected} />}
 
       {selected && (
         <div className="tbl-wrap">
@@ -208,7 +212,7 @@ export default function ResultsPage() {
               <span className="strong">{header(quoted, job, names)}</span> · <span className="strong tnum">{money(quoted.total)}</span>
             </p>
             {rec && (
-              <p className="small muted tnum" style={{ marginTop: 2 }}>
+              <p className="small ink-2 tnum" style={{ marginTop: 2 }}>
                 {rec.total - quoted.total > 0 ? `${money(rec.total - quoted.total)} less` : `${money(quoted.total - rec.total)} more`}
               </p>
             )}
@@ -230,7 +234,7 @@ export default function ResultsPage() {
       )}
 
       {selected?.uncoveredItems && selected.uncoveredItems.length > 0 && (
-        <p className="alert">Not covered: {selected.uncoveredItems.join(", ")}</p>
+        <p className="alert">Not covered: {selected.uncoveredItems.map((id) => itemShort(items.find((i) => i.id === id)?.name ?? id).toLowerCase()).join(", ")}</p>
       )}
       <ErrorNote error={error} />
 

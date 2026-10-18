@@ -63,7 +63,6 @@ export function CallPanel({ call, who }: { call: ReturnType<typeof callFromEvent
         {call && !call.ended ? <span className="bp-live-tag"><i />{state}</span> : <span className="who tnum">{state}</span>}
       </div>
       <div className="callpanel-lines" aria-live="polite">
-        {!call && <p className="muted-dark">The agent calls the distributor while the browsers work.</p>}
         {call && call.lines.length === 0 && <p className="muted-dark">Ringing</p>}
         {call?.lines.map((l, i) => (
           <div key={i} className={`cl${l.speaker === "agent" ? " agent" : ""}`}>

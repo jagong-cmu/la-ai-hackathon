@@ -10,6 +10,7 @@ from collections import defaultdict
 from datetime import date
 
 from app.contracts import (
+    BillLineView,
     DistributorRef,
     ShoppingItem,
     ShoppingRequest,
@@ -75,6 +76,19 @@ async def build_insights(decider: Decider, books: Books) -> SpendInsights:
         other_lines=other_lines,
         disclosure=books.disclosure,
     )
+
+
+def supply_bill_lines(books: Books, insights: SpendInsights, item_id: str | None = None) -> list[BillLineView]:
+    """The bill lines of the supply items, oldest first (the price history behind past_unit_price)."""
+    supply_ids = {i.item_id for i in insights.items}
+    lines = [line for line in books.lines
+             if line.item_id in supply_ids and (item_id is None or line.item_id == item_id)]
+    return [
+        BillLineView(bill_id=line.bill_id, txn_date=line.date, vendor_name=line.vendor_name, item_id=line.item_id,
+                     quantity=line.quantity, unit_price=line.unit_price, amount=line.amount,
+                     synthetic=line.synthetic)
+        for line in sorted(lines, key=lambda x: (x.date, x.bill_id))
+    ]
 
 
 def _period_days(lines: list[BillLine]) -> int:

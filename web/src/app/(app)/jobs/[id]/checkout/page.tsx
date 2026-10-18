@@ -97,7 +97,7 @@ export default function CheckoutPage() {
               <div className="bp-window">
                 <div className="bp-bar">
                   <span className="mono bp-url">{host(urls[h.supplierId])}/checkout</span>
-                  {h.status === "at_payment" && <span className="small muted">Payment step</span>}
+                  {h.status === "at_payment" && <span className="small ink-2">Payment step</span>}
                 </div>
                 <div className="bp-body" style={{ height: 180 }}>
                   {h.liveUrl ? (
@@ -113,7 +113,7 @@ export default function CheckoutPage() {
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <b>{names[h.supplierId] ?? h.supplierId}</b>
-                    <p className="small muted" style={{ marginTop: 2 }}>
+                    <p className="small ink-2" style={{ marginTop: 2 }}>
                       {cart?.lines.map((l) => `${int(l.packQuantity)} × ${items[l.itemId] ?? l.itemId}`).join(" · ")}
                       {h.status === "quoted_confirm_by_phone" ? " · confirm by phone" : ""}
                     </p>

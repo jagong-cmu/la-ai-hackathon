@@ -1,4 +1,6 @@
-/* sourn tokens and components. Source: the style guide (pages/style-guide). Black, white and mint. */
+/* sourn tokens and components. Source: the Paper style guide "v13 — Style guide, black" (onboarding look):
+   black ground, white screens, mint the only accent. The dark theme block at the end of this file
+   applies it to the app. */
 :root {
   --color-ink: #0A0A0A;
   --color-ink-2: #3A3A3A;
@@ -84,7 +86,6 @@ button, input, select { font: inherit; color: inherit; }
 .head .crumb { font-size: 13px; line-height: 16px; color: var(--color-muted); margin-bottom: 6px; }
 .head .crumb a { color: var(--color-muted); text-decoration: none; }
 @media (hover: hover) { .head .crumb a:hover { color: var(--color-ink); } }
-.head .meta { margin-top: 6px; color: var(--color-muted); }
 .figure { font-weight: 600; font-size: 56px; line-height: 56px; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; text-align: right; }
 .figure-sub { text-align: right; font-size: 13px; line-height: 16px; color: var(--color-mint-text); margin-top: 8px; }
 @media (max-width: 640px) { .figure { font-size: 40px; line-height: 44px; text-align: left; } .figure-sub { text-align: left; } }
@@ -220,9 +221,13 @@ select.input { padding-right: 32px; }
 a.bp-watch.on { cursor: pointer; }
 .bp-watch:focus-visible { outline: 2px solid var(--color-mint-text); outline-offset: 2px; }
 /* 2:1 matches the cloud browser's window with its tab bar (a 16:9 box left a black band, 2026-10-18). */
-.bp-body { aspect-ratio: 2 / 1; min-height: 160px; overflow: hidden; position: relative; background: var(--color-white); }
-.bp-live { width: 100%; height: 100%; border: 0; display: block; }
-.bp-shot { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1px; }
+/* The body keeps the cloud browser's 16:10 window inside any tile shape (container units), so a
+   wide, short tile letterboxes instead of squashing the page. */
+.bp-body { aspect-ratio: 16 / 10; min-height: 160px; overflow: hidden; position: relative; background: var(--color-surface); container-type: size; display: grid; place-items: center; }
+.bp-view { width: min(100cqw, 100cqh * 1.6); height: min(100cqh, 100cqw / 1.6); overflow: hidden; position: relative; background: var(--color-white); }
+.bp-live-box { width: 100%; height: 100%; overflow: hidden; }
+.bp-live { border: 0; display: block; transform-origin: 0 0; }
+.bp-shot { width: 100%; height: 100%; object-fit: contain; object-position: top; display: block; outline: 1px solid oklch(0 0 0 / 0.1); outline-offset: -1px; }
 .bp-page { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 16px; }
 .bp-title { font-weight: 600; }
 .bp-rows { display: flex; flex-direction: column; gap: 2px; }
@@ -285,3 +290,208 @@ a.bp-watch.on { cursor: pointer; }
 .cols { display: grid; gap: 24px; align-items: start; grid-template-columns: var(--cols, minmax(0, 1fr) minmax(0, 1fr)); }
 .cols > * { min-width: 0; }
 @media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------------------------------------------------------------- working page fitted to the screen */
+/* The stores and the call fill a grid as tall as the window (3 stores + call = 2 x 2), so the
+   whole job shows without a scroll. Below 1100px the tiles stack at their natural size. */
+.work.fit { height: calc(100dvh - 180px); min-height: 520px; align-items: stretch; grid-template-columns: minmax(0, 1fr) 300px; }
+.tiles { display: grid; gap: 12px; min-height: 0; grid-template-columns: repeat(var(--tile-cols, 2), minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); }
+.tiles > .skeleton { min-height: 0; }
+.tiles .bp { min-height: 0; }
+.tiles .bp-window { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tiles .bp-body { flex: 1; aspect-ratio: auto; min-height: 0; }
+.tiles .bp-foot { padding: 8px 8px 4px; gap: 6px; }
+/* In the fitted grid the four bars carry the progress; the status line names the step. */
+.tiles .bp-steps span { display: none; }
+.tiles .bp-steps { gap: 3px; }
+.tiles .callpanel { min-height: 0; }
+.tiles .callpanel-lines { flex: 1; max-height: none; min-height: 0; }
+.work.fit .work-side { position: static; min-height: 0; overflow-y: auto; }
+@media (max-width: 1100px) {
+  .work.fit { height: auto; min-height: 0; grid-template-columns: minmax(0, 1fr); }
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); grid-auto-rows: auto; }
+  .tiles .bp-body { aspect-ratio: 16 / 10; flex: none; }
+  .tiles .callpanel-lines { max-height: 360px; min-height: 120px; }
+}
+
+/* ---------------------------------------------------------------- KPI strip */
+.kpis { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { border-radius: var(--radius-card); box-shadow: var(--shadow-ring); padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; background: var(--color-white); min-width: 0; }
+.kpi > span { font-size: 13px; line-height: 16px; color: var(--color-muted); }
+.kpi b { font-weight: 600; font-size: 28px; line-height: 34px; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.kpi em { font-style: normal; font-size: 13px; line-height: 16px; color: var(--color-ink-2); }
+.kpi.hero { background: var(--color-mint-tint); box-shadow: none; }
+.kpi.hero > span, .kpi.hero em { color: var(--color-mint-text); }
+.kpi.warn b { color: var(--color-failed); }
+
+/* Table extras: savings text, row chevron, compact tables */
+.save { color: var(--color-mint-text); }
+.tbl td .sub.save { color: var(--color-mint-text); }
+.tbl td.chev { width: 36px; padding-left: 0; color: var(--color-faint); }
+.tbl td.chev svg { width: 16px; height: 16px; display: block; margin-left: auto; }
+@media (hover: hover) { .tbl tr.click:hover td.chev { color: var(--color-ink); } }
+.tbl.mini th, .tbl.mini td { padding: 8px 12px; }
+.tbl.mini th:first-child, .tbl.mini td:first-child { padding-left: 0; }
+.tbl.mini thead th { background: transparent; }
+
+/* ---------------------------------------------------------------- savings against the bills */
+.savings { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+.savings-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px 32px; flex-wrap: wrap; }
+.savings-figure { margin-top: 4px; font-weight: 600; font-size: 44px; line-height: 48px; letter-spacing: -0.04em; color: var(--color-mint-text); font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 12px; }
+.savings-figure span { font-size: 15px; line-height: 20px; letter-spacing: 0; font-weight: 600; background: var(--color-mint-tint); padding: 2px 8px; border-radius: 4px; }
+.savings-figure.neg { color: var(--color-ink-2); }
+.savings-figure.neg span { background: var(--color-surface); }
+.savings-sum { margin: 0; display: flex; gap: 32px; flex-wrap: wrap; }
+.savings-sum dt { font-size: 13px; line-height: 16px; color: var(--color-muted); }
+.savings-sum dd { margin: 2px 0 0; font-weight: 600; font-size: 18px; line-height: 24px; font-variant-numeric: tabular-nums; }
+.savings-sum dd.mint { color: var(--color-mint-text); }
+.savings-rows { display: flex; flex-direction: column; }
+.savings-row { display: grid; grid-template-columns: minmax(140px, 1.1fr) minmax(120px, 1.6fr) minmax(150px, 1fr) 96px; gap: 20px; align-items: center; padding: 12px 0; border-top: 1px solid var(--color-line); }
+.savings-row .savings-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.savings-row .savings-item b { font-weight: 600; }
+.savings-bars { display: flex; flex-direction: column; gap: 4px; }
+.savings-bars span { display: block; height: 8px; border-radius: 2px; min-width: 2px; }
+.savings-bars .was { background: var(--color-input); }
+.savings-bars .now { background: var(--color-mint-text); }
+.savings-unit b { font-weight: 600; }
+.savings-amt { text-align: right; font-weight: 600; color: var(--color-mint-text); }
+.savings-amt.neg { color: var(--color-ink-2); }
+.savings-row.extras .savings-item b { font-weight: 500; color: var(--color-ink-2); }
+@media (max-width: 760px) { .savings-row { grid-template-columns: 1fr auto; } .savings-bars, .savings-unit { grid-column: 1 / -1; } }
+
+/* ---------------------------------------------------------------- supply page */
+.legend { display: inline-flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 16px; height: 0; margin-left: 6px; }
+.legend .lg-line { border-top: 2px solid var(--color-ink); }
+.legend .lg-dash { border-top: 2px dashed var(--color-muted); }
+.legend .lg-band { height: 10px; background: var(--color-mint-tint); border-radius: 2px; }
+.facts { margin: 0; display: grid; gap: 12px; align-content: start; }
+.facts > div { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--color-line); font-size: 14px; line-height: 20px; }
+.facts > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.facts dt { color: var(--color-muted); }
+.facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.facts.row4 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.facts.row4 > div { flex-direction: column; justify-content: flex-start; gap: 2px; border: 0; padding: 0; }
+.facts.row4 dt { font-size: 13px; line-height: 16px; }
+.facts.row4 dd { text-align: left; font-weight: 600; }
+@media (max-width: 760px) { .facts.row4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.drivers { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
+.driver { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.driver b { font-weight: 600; }
+.save-callout { background: var(--color-mint-tint); color: var(--color-mint-text); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; text-align: right; }
+.save-callout b { font-weight: 600; font-size: 18px; line-height: 24px; }
+.notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.notes li { padding: 12px 0; border-top: 1px solid var(--color-line); display: flex; flex-direction: column; gap: 2px; }
+
+/* ---------------------------------------------------------------- new order */
+.order { display: grid; gap: 32px; align-items: start; grid-template-columns: minmax(0, 1fr) 340px; }
+@media (max-width: 1000px) { .order { grid-template-columns: minmax(0, 1fr); } }
+.order-lines { display: flex; flex-direction: column; border-top: 1px solid var(--color-ink); }
+.oline { display: grid; grid-template-columns: minmax(0, 1fr) auto 140px 32px; gap: 24px; align-items: center; padding: 20px 0; border-bottom: 1px solid var(--color-line); }
+.oline.off .oline-what, .oline.off .oline-cost { opacity: 0.45; }
+.oline-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.oline-name { font-weight: 600; font-size: 17px; line-height: 22px; text-decoration: none; }
+@media (hover: hover) { .oline-name:hover { text-decoration: underline; text-underline-offset: 3px; } }
+.oline-spec { font-size: 13px; line-height: 16px; color: var(--color-muted); }
+.oline-why { margin-top: 6px; font-size: 13px; line-height: 16px; color: var(--color-ink-2); }
+.textbtn { appearance: none; border: 0; background: none; padding: 0; font: 600 13px/16px var(--font-sans); color: var(--color-mint-text); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.textbtn:focus-visible { outline: 2px solid var(--color-mint-text); outline-offset: 2px; }
+.oline-cost { display: flex; flex-direction: column; gap: 2px; text-align: right; }
+.oline-cost b { font-weight: 600; font-size: 17px; line-height: 22px; }
+.oline-cost span { font-size: 12px; line-height: 16px; color: var(--color-muted); }
+.oline-x { appearance: none; border: 0; background: transparent; width: 32px; height: 32px; border-radius: var(--radius-control); display: grid; place-items: center; color: var(--color-faint); cursor: pointer; }
+.oline-x svg { width: 16px; height: 16px; rotate: 45deg; }
+@media (hover: hover) { .oline-x:hover { color: var(--color-ink); background: var(--color-surface); } }
+.oline-x:focus-visible { outline: 2px solid var(--color-mint-text); outline-offset: 2px; }
+@media (max-width: 640px) { .oline { grid-template-columns: minmax(0, 1fr) 32px; gap: 12px; } .oline .step { grid-row: 2; } .oline-cost { grid-row: 2; } }
+.order-foot { display: flex; justify-content: space-between; align-items: baseline; padding: 16px 0; color: var(--color-muted); font-size: 13px; }
+.order-foot b { color: var(--color-ink); font-size: 17px; font-weight: 600; }
+.order-side { position: sticky; top: 24px; }
+@media (max-width: 1000px) { .order-side { position: static; } }
+.order-card { border-radius: var(--radius-card); background: var(--color-surface); padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.order-card .label { font-size: 13px; line-height: 16px; color: var(--color-muted); }
+.sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.sources li { display: flex; align-items: center; gap: 12px; }
+.src-mark { width: 28px; height: 28px; border-radius: var(--radius-control); background: var(--color-white); box-shadow: var(--shadow-ring); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+.src-mark.phone { background: var(--color-black); color: var(--color-white); box-shadow: none; }
+.src-mark svg { width: 14px; height: 14px; }
+.src-name { display: flex; flex-direction: column; font-weight: 500; min-width: 0; }
+.src-name span { font-weight: 400; font-size: 12px; line-height: 16px; color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zip { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; border-top: 1px solid var(--color-line); }
+.zip span { font-size: 13px; color: var(--color-muted); }
+.zip .input { width: 110px; height: 36px; text-align: right; }
+.order-total { display: flex; justify-content: space-between; align-items: baseline; padding-top: 16px; border-top: 1px solid var(--color-line); font-size: 13px; color: var(--color-muted); }
+.order-total b { font-size: 22px; line-height: 28px; font-weight: 600; color: var(--color-ink); }
+
+/* ================================================================ dark theme (style guide v13)
+   The app ground is black. Text on the ground uses the dark values of the role tokens; every
+   content screen (table, card, browser tile) resets to the light values, so it reads as a white
+   screen on black, as in the onboarding device. Status colors and mint keep one meaning. */
+.shell { background: var(--color-black); }
+.main { box-shadow: inset 1px 0 0 var(--color-raised-dark); }
+.main {
+  --color-ink: #FFFFFF;
+  --color-ink-2: #D4D4D4;
+  --color-muted: #A3A3A3;
+  --color-faint: #6B6B6B;
+  --color-line: #1C1C1C;
+  --color-input: #3A3A3A;
+  --color-surface: #1C1C1C;
+  --color-mint-text: #9FE0C0;
+  background: var(--color-black);
+  color: var(--color-ink);
+}
+.main :is(.card, .tbl-wrap, .bp, .order-card, .bestbox, .kpi.hero, .save-callout, .alert) {
+  --color-ink: #0A0A0A;
+  --color-ink-2: #3A3A3A;
+  --color-muted: #6B6B6B;
+  --color-faint: #A3A3A3;
+  --color-line: #ECECEC;
+  --color-input: #D4D4D4;
+  --color-surface: #FAFAFA;
+  --color-mint-text: #1F7A55;
+  color: var(--color-ink);
+}
+/* Screens: r16 white on black, a dark ring for the edge */
+.main :is(.card, .tbl-wrap) { border-radius: 16px; box-shadow: var(--shadow-ring-dark); }
+.main .bp { box-shadow: var(--shadow-ring-dark); }
+.main .callpanel { border: 1px solid transparent; box-shadow: var(--shadow-ring-dark); }
+/* KPI tiles are dark, the number is the picture */
+.main .kpi:not(.hero) { background: var(--color-raised-dark); box-shadow: var(--shadow-ring-dark); }
+.main .kpi b { font-weight: 700; font-size: 34px; line-height: 38px; letter-spacing: -0.04em; }
+/* Display claim for page titles, as on the landing and the onboarding */
+.head h1 { font-weight: 700; font-size: 48px; line-height: 52px; letter-spacing: -0.045em; }
+@media (max-width: 640px) { .head h1 { font-size: 36px; line-height: 40px; } }
+.head .crumb a { color: var(--color-muted); }
+/* Secondary buttons on the ground use the dark ring (style guide: on black) */
+.main .btn-secondary { background: transparent; color: var(--color-white); box-shadow: var(--shadow-ring-dark); border: 1px solid transparent; }
+@media (hover: hover) { .main .btn-secondary:not(:disabled):hover { box-shadow: 0 0 0 1px oklch(1 0 0 / 0.2); } }
+.main :is(.card, .tbl-wrap, .order-card) .btn-secondary { background: var(--color-white); color: var(--color-ink); box-shadow: var(--shadow-ring); }
+.main .link { text-decoration-color: var(--color-input); }
+/* Small sublines read as values, never as gray captions */
+.tbl td .sub { color: var(--color-ink-2); }
+.main .figure { font-weight: 700; letter-spacing: -0.045em; }
+
+/* Staged entrance on every page load: 300ms ease-out, 100ms apart, opacity + 4px blur + 12px rise.
+   The hidden state lives only in the keyframe. */
+.main > * { animation: app-fade 300ms ease-out both; }
+@media (prefers-reduced-motion: no-preference) { .main > * { animation-name: app-rise; } }
+.main > *:nth-child(2) { animation-delay: 100ms; }
+.main > *:nth-child(3) { animation-delay: 200ms; }
+.main > *:nth-child(4) { animation-delay: 300ms; }
+.main > *:nth-child(n + 5) { animation-delay: 400ms; }
+@keyframes app-fade { from { opacity: 0; } }
+@keyframes app-rise { from { opacity: 0; transform: translateY(12px); filter: blur(4px); } }
+
+/* Odometer: one 0-9 strip per digit, clipped to one line; the strip slides to the digit */
+.roll { display: inline-flex; font-variant-numeric: tabular-nums; }
+.roll-col { display: inline-block; height: 1em; line-height: 1; overflow: hidden; vertical-align: baseline; }
+.roll-strip { display: flex; flex-direction: column; transition-property: transform; transition-duration: 400ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+.roll-strip span { height: 1em; line-height: 1; }
+.roll-ch { line-height: 1; }
+@media (prefers-reduced-motion: reduce) { .roll-strip { transition-duration: 0ms; } }
+/* Controls on the ground */
+.main .step { background: transparent; }
+.main :is(.card, .tbl-wrap, .order-card) .step { background: var(--color-white); }
+.main .oline-spec, .main .oline-cost span, .main .order-foot { color: var(--color-ink-2); }

@@ -28,14 +28,12 @@ export default function CallsPage() {
   }, []);
 
   if (!calls) return error ? <ErrorNote error={error} /> : <Loading label="Loading calls" />;
-  const d = calls[0]?.job.request.distributor;
   const c = calls[Math.min(open, calls.length - 1)];
 
   return (
     <>
       <PageHead
         title="Calls"
-        meta={d ? `${cleanName(d.name)}${d.phone ? ` · ${d.phone}` : ""}` : undefined}
       />
       {calls.length === 0 ? (
         <div className="card empty">No calls yet</div>
@@ -73,7 +71,7 @@ export default function CallsPage() {
                 <p style={{ fontWeight: 600, fontSize: 18, lineHeight: "24px" }}>
                   {cleanName(c.to)} · {tsDay(c.startedAt)}, {clock(c.startedAt)}
                 </p>
-                <p className="small muted tnum" style={{ marginTop: 4 }}>{mmss(c.duration)} · AI disclosed</p>
+                <p className="small ink-2 tnum" style={{ marginTop: 4 }}>{mmss(c.duration)} · AI disclosed</p>
               </div>
               <Transcript lines={c.lines} who={shortName(c.to)} />
               {(c.offerTotal != null || c.sms) && (
@@ -83,7 +81,7 @@ export default function CallsPage() {
                   )}
                   {c.sms && (
                     <div style={{ display: "grid", gap: 8 }}>
-                      <span className="small muted">Text sent after the call · {clock(c.sms.ts)}</span>
+                      <span className="small ink-2">Text sent after the call · {clock(c.sms.ts)}</span>
                       <p className="panel" style={{ maxWidth: 520 }}>{c.sms.text}</p>
                     </div>
                   )}

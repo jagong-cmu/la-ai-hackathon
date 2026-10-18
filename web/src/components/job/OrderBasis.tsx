@@ -60,13 +60,13 @@ export function OrderBasis({ items, planner }: { items: ShoppingItem[]; planner:
                 <div>
                   <dt>Demand forecast</dt>
                   <dd>{forecastText(s) || (planner ? "No forecast for this item" : "Loading")}</dd>
-                  {quantityNote(it, s) && <dd className="muted">{quantityNote(it, s)}</dd>}
+                  {quantityNote(it, s) && <dd className="ink-2">{quantityNote(it, s)}</dd>}
                 </div>
                 <div>
                   <dt>Last paid</dt>
                   <dd>{it.pastUnitPrice != null ? `${each(it.pastUnitPrice)} each` : "No past bill"}</dd>
                   {bills > 0 && (
-                    <dd className="muted">
+                    <dd className="ink-2">
                       {bills} past {bills === 1 ? "bill" : "bills"}
                       {it.orderCadenceDays != null && ` · every ${Math.max(1, Math.round(it.orderCadenceDays / 7))} wk`}
                     </dd>
@@ -77,7 +77,6 @@ export function OrderBasis({ items, planner }: { items: ShoppingItem[]; planner:
           );
         })}
       </div>
-      {planner?.disclosure && <p className="small muted">{planner.disclosure}</p>}
     </section>
   );
 }

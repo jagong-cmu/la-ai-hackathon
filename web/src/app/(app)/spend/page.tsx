@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, errorText, type SpendInsights } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
 import { ErrorNote, Loading, PageHead } from "@/components/PageHead";
+import { Roll } from "@/components/Roll";
 import { each, int, itemShort } from "@/lib/format";
 
 const whole = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -20,15 +21,12 @@ export default function SpendPage() {
 
   const items = [...data.items].sort((a, b) => b.yearSpend - a.yearSpend);
   const top = Math.max(1, ...items.map((i) => i.yearSpend));
-  const months = Math.round(data.periodDays / 30.44);
-  const synthetic = items.some((i) => i.synthetic);
 
   return (
     <>
       <PageHead
         title="Spend"
-        meta={`Last ${months} months · ${data.supplyOrders} orders`}
-        right={<p className="figure">{whole(data.supplySpend)}</p>}
+        right={<p className="figure"><Roll text={whole(data.supplySpend)} fromZero /></p>}
       />
       <div className="tbl-wrap">
         <table className="tbl wide">
@@ -62,7 +60,6 @@ export default function SpendPage() {
       </div>
       <div className="row" style={{ justifyContent: "space-between" }}>
         <Link href="/orders/new" className="btn btn-primary has-icon">Find cheaper <ArrowRight /></Link>
-        {synthetic && <p className="small muted">Supply bills in this demo are synthetic.</p>}
       </div>
     </>
   );
