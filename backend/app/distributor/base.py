@@ -41,14 +41,39 @@ class DistributorChannel(Protocol):
         ...
 
 
-def call_scope(items: list[ShoppingItem], plan: Plan, max_items: int) -> list[ShoppingItem]:
-    """The items the call covers: the N with the highest line cost in the plan (most money at stake)."""
+@dataclass(frozen=True)
+class CallAnchor:
+    """The reference price that the call quotes. Code builds it; no model computes it."""
+
+    line_costs: dict[str, float]  # item id -> cost of the full quantity
+    total: float
+    source: str  # "web_plan" (best plan so far) or "past_bills" (what the business paid before)
+
+
+def call_anchor(items: list[ShoppingItem], plan: Plan | None) -> CallAnchor | None:
+    """The best plan so far; with no plan, the past bill prices; None if neither exists."""
+    if plan is not None:
+        return CallAnchor({a.item_id: a.line_cost for a in plan.assignments}, plan.total, "web_plan")
+    costs = {i.id: round(i.past_unit_price * i.quantity, 2) for i in items if i.past_unit_price}
+    if not costs:
+        return None
+    return CallAnchor(costs, round(sum(costs.values()), 2), "past_bills")
+
+
+def call_scope(items: list[ShoppingItem], line_costs: dict[str, float], max_items: int) -> list[ShoppingItem]:
+    """The items the call covers: the N with the highest line cost (most money at stake)."""
     if max_items <= 0 or max_items >= len(items):
         return list(items)
-    cost = {a.item_id: a.line_cost for a in plan.assignments}
-    ranked = sorted(items, key=lambda i: cost.get(i.id, 0.0), reverse=True)
+    ranked = sorted(items, key=lambda i: line_costs.get(i.id, 0.0), reverse=True)
     keep = {i.id for i in ranked[:max_items]}
     return [i for i in items if i.id in keep]  # keep the shopping-list order
+
+
+def anchored_items(items: list[ShoppingItem], anchor: CallAnchor) -> list[ShoppingItem]:
+    """A web plan covers the whole list. Past bills cover only the items with a past price."""
+    if anchor.source == "web_plan":
+        return list(items)
+    return [i for i in items if i.id in anchor.line_costs]
 
 
 def allocate_total(total: float, weights: dict[str, float]) -> dict[str, float]:

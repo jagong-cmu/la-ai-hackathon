@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     distributor_call_max_items: int = 1
     distributor_reply_wait_s: float = 20
     distributor_call_latest_s: float = 60
+    # With no web plan, the live call quotes the past bill prices. Off until the ElevenLabs prompt
+    # says "we paid" for that case (anchor_source), because today it says "the best we found".
+    distributor_call_past_price: bool = False
     fixture_time_scale: float = 1.0  # 0 makes fixture lanes instant (tests)
 
     # Jev (TypeSafe)

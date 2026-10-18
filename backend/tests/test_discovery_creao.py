@@ -47,8 +47,15 @@ def live_settings(settings: Settings) -> Settings:
     })
 
 
-def make_discovery(live_settings: Settings, db: Database, decider: Decider, handler: Handler) -> Discovery:
-    modes = RuntimeModes({**live_settings.initial_modes(), "creao": "live"})
+@pytest.fixture(autouse=True)
+def llm_agent_registered(monkeypatch):
+    """Live browsers can open any unknown site through the LLM agent lane."""
+    monkeypatch.setattr(registry, "_LLM_AGENT", lambda supplier: None)
+
+
+def make_discovery(live_settings: Settings, db: Database, decider: Decider, handler: Handler,
+                   browser: str = "live") -> Discovery:
+    modes = RuntimeModes({**live_settings.initial_modes(), "creao": "live", "browser": browser})
     return Discovery(live_settings, db, modes, decider, transport=httpx.MockTransport(handler))
 
 
@@ -340,3 +347,52 @@ async def test_fixture_mode_keeps_the_fake_list(settings, db, decider):
 
     assert result.source == "fixture"
     assert {c.id for c in result.candidates} == {"alpha", "bravo", "charlie", "delta", "echo"}
+
+
+# ---------------------------------------------------------------- lane checks and approved sites
+
+
+async def test_cached_browsers_skip_creao_sites_and_add_the_fixture_suppliers(live_settings, db, decider):
+    # Cached browsers can only replay fixtures, so a real CREAO site gets no lane and the
+    # fixture suppliers fill the adapter slots. The job still gets prices.
+    disc = make_discovery(live_settings, db, decider, completed_with(KATOM), browser="cached")
+    result = await disc.discover("packaging_disposables", "90024", None)
+
+    katom = result.candidates[0]
+    assert (katom.selected, katom.reason) == (False, "no lane in cached browser mode")
+    added = [c for c in result.candidates if c.reason == discovery.APPROVED_REASON]
+    assert [c.id for c in added] == ["alpha", "bravo", "charlie"]
+    assert all(c.selected for c in added)
+    refs = discovery.selected_suppliers(result)
+    assert [(r.id, r.origin) for r in refs] == [("alpha", "fixture"), ("bravo", "fixture"), ("charlie", "fixture")]
+
+
+async def test_approved_site_fills_a_free_slot_once_its_adapter_is_registered(live_settings, db, decider,
+                                                                               monkeypatch):
+    monkeypatch.setitem(registry._ADAPTERS, "uline", lambda supplier: None)
+    disc = make_discovery(live_settings, db, decider, completed_with(KATOM))
+    result = await disc.discover("packaging_disposables", "90024", None)
+
+    by_id = {c.id: c for c in result.candidates}
+    assert by_id["katom-restaurant-supply"].reason == "unknown site: LLM agent lane"
+    assert (by_id["uline"].selected, by_id["uline"].reason) == (True, discovery.APPROVED_REASON)
+    assert "webstaurant" not in by_id  # not registered: never added
+    refs = {r.id: r.origin for r in discovery.selected_suppliers(result)}
+    assert refs == {"katom-restaurant-supply": "creao", "uline": "manual"}
+
+
+async def test_approved_site_is_not_added_twice_when_creao_returns_it(live_settings, db, decider, monkeypatch):
+    monkeypatch.setitem(registry._ADAPTERS, "katom", lambda supplier: None)
+    disc = make_discovery(live_settings, db, decider, completed_with(KATOM))
+    result = await disc.discover("packaging_disposables", "90024", None)
+
+    katoms = [c for c in result.candidates if c.adapter == "katom"]
+    assert [(c.id, c.reason) for c in katoms] == [("katom-restaurant-supply", "known adapter")]
+
+
+async def test_fixture_mode_selection_is_unchanged(settings, db, decider):
+    disc = Discovery(settings, db, RuntimeModes(settings.initial_modes()), decider)
+    result = await disc.discover("packaging_disposables", "49007", None)
+
+    assert [c.id for c in result.candidates if c.selected] == ["alpha", "bravo", "charlie", "delta"]
+    assert not any(c.reason == discovery.APPROVED_REASON for c in result.candidates)
