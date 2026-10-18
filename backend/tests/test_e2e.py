@@ -617,3 +617,58 @@ def test_replay_streams_every_recorded_event(client):
     mid = at_results[0]
     assert mid["state"] == "results_ready" and mid["results"]["recommendedPlanId"] == plan_id
     assert mid["lanes"] == [] and mid["handoffs"] == [] and mid["approval"] is None
+
+
+def test_finished_and_undecided_lanes_close_their_browsers(settings, monkeypatch):
+    """Live 2026-10-18 (SUPPLIER-AGENT-API-G): lane browsers stayed open until a decision or the
+    cloud's 15-minute timeout, even for failed lanes. After a few test jobs the account had 12
+    cloud browsers open, and Browser Use answered 429 to every lane of the next job."""
+    from app.lanes.fixture import FixtureLane
+
+    closed: list[str] = []
+
+    async def record_close(self, ctx):
+        closed.append(self.supplier.id)
+
+    monkeypatch.setattr(FixtureLane, "close", record_close)
+    fast = settings.model_copy(update={"lane_idle_close_s": 0.5})
+    with TestClient(create_app(fast)) as client:
+        draft = client.get("/shopping-list/draft").json()
+        job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-close-01"}).json()["jobId"]
+        view = wait_for(client, job_id, {"results_ready"})
+        lanes = {lane["supplierId"]: lane["state"] for lane in view["lanes"]}
+        ended = {sid for sid, state in lanes.items() if state in ("failed", "blocked", "idle")}
+        assert ended and ended <= set(closed)  # a finished lane frees its browser at once
+        assert not {sid for sid, state in lanes.items() if state == "cart_ready"} & set(closed)
+        time.sleep(1.0)  # no decision within lane_idle_close_s: every lane browser closes
+        assert set(closed) == set(lanes)
+        assert len(closed) == len(set(closed))  # each browser closes once
+
+        plan_id = view["results"]["recommendedPlanId"]
+        assert client.post(f"/jobs/{job_id}/approve", json={"action": "approve", "planId": plan_id}).status_code == 200
+        done = wait_for(client, job_id, {"at_payment", "partial_handoff"})
+        assert done["state"] == "partial_handoff"
+        assert {h["reason"] for h in done["handoffs"] if h["status"] == "failed"} == {"lane_closed_no_decision"}
+
+
+def test_a_decision_in_time_keeps_the_lane_browsers(settings, monkeypatch):
+    from app.lanes.fixture import FixtureLane
+
+    closed: list[str] = []
+
+    async def record_close(self, ctx):
+        closed.append(self.supplier.id)
+
+    monkeypatch.setattr(FixtureLane, "close", record_close)
+    slow = settings.model_copy(update={"lane_idle_close_s": 1.0})
+    with TestClient(create_app(slow)) as client:
+        draft = client.get("/shopping-list/draft").json()
+        job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-close-02"}).json()["jobId"]
+        view = wait_for(client, job_id, {"results_ready"})
+        plan_id = view["results"]["recommendedPlanId"]
+        assert client.post(f"/jobs/{job_id}/approve", json={"action": "approve", "planId": plan_id}).status_code == 200
+        done = wait_for(client, job_id, {"at_payment", "partial_handoff"})
+        time.sleep(1.5)  # the timer finds a decision and leaves the lanes alone
+        assert done["state"] == "at_payment"
+        kept = {h["supplierId"] for h in done["handoffs"] if h["status"] == "at_payment"}
+        assert kept and not kept & set(closed)  # the payment pages stay open for the live view

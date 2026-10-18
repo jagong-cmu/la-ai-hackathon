@@ -90,6 +90,7 @@ class LaneRuntime:
     quote_key: str | None = None
     quote_handoff: CheckoutHandoff | None = None
     cart_key: str | None = None  # the cart the lane's browser holds now
+    closed: bool = False  # the lane's browser is closed: the lane ended, or no decision came in time
 
     @property
     def is_agent(self) -> bool:
@@ -339,6 +340,7 @@ class Orchestrator:
                 await self.bus.emit(job_id, "deadline_hit", {"pending": len(pending)})
             await self._finalize(rt, deadline_hit=deadline_hit, event="results_ready")
             self._record_job(rt)
+            self._spawn(self._close_if_undecided(rt))
             if pending:
                 self._spawn(self._late(rt, pending))
         except Exception as exc:  # the job must always end in a known state
@@ -346,6 +348,7 @@ class Orchestrator:
             outcome(current(), "internal_error", **{"job.state": "failed", "job.error": type(exc).__name__})
             await self.bus.emit(job_id, "job_failed", {"error": f"{type(exc).__name__}: {exc}"})
             await self._set_job_state(rt, JobState.failed)  # last: a follower's stream ends on it
+            self._spawn(self._close_lanes(rt))
 
     def _record_job(self, rt: JobRuntime) -> None:
         """Put the job result on its transaction: one row per job in Sentry, to compare runs and releases."""
@@ -450,6 +453,8 @@ class Orchestrator:
             lane_span = span("lane.run", f"lane {sid}", supplier=sid)
         with lane_span as s:
             await self._run_lane_steps(rt, lr)
+            if lr.status.state in (LaneState.failed, LaneState.blocked, LaneState.idle):
+                await self._close_lane(lr)  # no later step uses this lane: free its (cloud) browser now
             st = lr.status
             outcome(s, LANE_STATUS.get(st.state, "unknown"), **{
                 "lane.mode": st.mode, "lane.state": st.state.value, "lane.reason": st.reason,
@@ -728,6 +733,8 @@ class Orchestrator:
             lr = rt.lanes.get(sid)
             if lr is None or lr.lane is None or lr.ctx is None or lr.status.state in (LaneState.failed, LaneState.blocked):
                 return CheckoutHandoff(supplier_id=sid, status="failed", reason="lane_unavailable")
+            if lr.closed:
+                return CheckoutHandoff(supplier_id=sid, status="failed", reason="lane_closed_no_decision")
             lane, ctx = lr.lane, lr.ctx
             if lr.quote_handoff is not None and lr.quote_key == cart_plan.cart_key:
                 # The verify phase already stopped this lane at payment with exactly this cart.
@@ -778,9 +785,22 @@ class Orchestrator:
         for sid, lr in rt.lanes.items():
             if keep and sid in keep:
                 continue  # keep the session open for the live view on screen 4
-            if lr.lane is not None and lr.ctx is not None:
-                with contextlib.suppress(Exception):
-                    await asyncio.wait_for(lr.lane.close(lr.ctx), timeout=10)
+            await self._close_lane(lr)
+
+    async def _close_lane(self, lr: LaneRuntime) -> None:
+        if lr.closed or lr.lane is None or lr.ctx is None:
+            return
+        lr.closed = True
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(lr.lane.close(lr.ctx), timeout=10)
+
+    async def _close_if_undecided(self, rt: JobRuntime) -> None:
+        """Close the lane browsers of a job that gets no decision in lane_idle_close_s. Each open
+        cloud browser counts against the account limit until its own 15-minute timeout."""
+        await asyncio.sleep(self.settings.lane_idle_close_s)
+        async with rt.approve_lock:
+            if rt.view.approval is None:
+                await self._close_lanes(rt)
 
     # ------------------------------------------------------------ state helpers
 
