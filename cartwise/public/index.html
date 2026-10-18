@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cartwise</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/lists.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="#" aria-label="Cartwise"><span class="logo">C</span>Cartwise</a>
+      <nav class="steps" aria-label="Comparison steps">
+        <button class="step active" data-go="setup"><span>1</span>Setup</button>
+        <i></i>
+        <button class="step" data-go="agents" disabled><span>2</span>Agents</button>
+        <i></i>
+        <button class="step" data-go="results" disabled><span>3</span>Results</button>
+      </nav>
+      <span id="mode" class="mode">—</span>
+    </header>
+
+    <main>
+      <section id="screen-setup" class="screen active">
+        <div class="screen-title">
+          <p>Step 1 of 3</p>
+          <h1>Build your comparison</h1>
+        </div>
+
+        <form id="comparison-form" class="panel">
+          <fieldset>
+            <div class="list-heading"><legend>Products</legend><button id="add-product" class="add-button" type="button">+ Add product</button></div>
+            <div id="product-list" class="editable-list">
+              <div class="row product-row" data-item-row data-id="item-1">
+                <label>Product 1<input data-role="description" required value="Sharpie black fine-point permanent markers" /></label>
+                <label>Qty<input data-role="quantity" required type="number" min="1" step="1" value="12" /></label>
+                <label>Unit<input data-role="unit" required value="marker" /></label>
+                <button class="remove-button" type="button" data-remove="item" aria-label="Remove product 1">×</button>
+              </div>
+              <div class="row product-row" data-item-row data-id="item-2">
+                <label>Product 2<input data-role="description" required value="Scotch clear shipping tape, 1.88 inches by 38.2 yards" /></label>
+                <label>Qty<input data-role="quantity" required type="number" min="1" step="1" value="2" /></label>
+                <label>Unit<input data-role="unit" required value="roll" /></label>
+                <button class="remove-button" type="button" data-remove="item" aria-label="Remove product 2">×</button>
+              </div>
+              <div class="row product-row" data-item-row data-id="item-3">
+                <label>Product 3<input data-role="description" required value="Post-it Notes, 3 x 3 inches, Canary Yellow, 100 sheets per pad" /></label>
+                <label>Qty<input data-role="quantity" required type="number" min="1" step="1" value="12" /></label>
+                <label>Unit<input data-role="unit" required value="pad" /></label>
+                <button class="remove-button" type="button" data-remove="item" aria-label="Remove product 3">×</button>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <div class="list-heading"><legend>Suppliers</legend><button id="add-supplier" class="add-button" type="button">+ Add supplier</button></div>
+            <div id="supplier-list" class="editable-list">
+              <div class="row supplier-row" data-supplier-row data-id="supplier-1">
+                <label>Name<input data-role="name" required value="Walmart" /></label>
+                <label>Website<input data-role="url" required type="url" value="https://www.walmart.com" /></label>
+                <button class="remove-button" type="button" data-remove="supplier" aria-label="Remove Walmart">×</button>
+              </div>
+              <div class="row supplier-row" data-supplier-row data-id="supplier-2">
+                <label>Name<input data-role="name" required value="Target" /></label>
+                <label>Website<input data-role="url" required type="url" value="https://www.target.com" /></label>
+                <button class="remove-button" type="button" data-remove="supplier" aria-label="Remove Target">×</button>
+              </div>
+              <div class="row supplier-row" data-supplier-row data-id="supplier-3">
+                <label>Name<input data-role="name" required value="Quill" /></label>
+                <label>Website<input data-role="url" required type="url" value="https://www.quill.com" /></label>
+                <button class="remove-button" type="button" data-remove="supplier" aria-label="Remove Quill">×</button>
+              </div>
+              <div class="row supplier-row" data-supplier-row data-id="supplier-4">
+                <label>Name<input data-role="name" required value="Zoro" /></label>
+                <label>Website<input data-role="url" required type="url" value="https://www.zoro.com" /></label>
+                <button class="remove-button" type="button" data-remove="supplier" aria-label="Remove Zoro">×</button>
+              </div>
+              <div class="row supplier-row" data-supplier-row data-id="supplier-5">
+                <label>Name<input data-role="name" required value="Home Depot" /></label>
+                <label>Website<input data-role="url" required type="url" value="https://www.homedepot.com" /></label>
+                <button class="remove-button" type="button" data-remove="supplier" aria-label="Remove Home Depot">×</button>
+              </div>
+              <div class="row supplier-row" data-supplier-row data-id="supplier-6">
+                <label>Name<input data-role="name" required value="Grainger" /></label>
+                <label>Website<input data-role="url" required type="url" value="https://www.grainger.com" /></label>
+                <button class="remove-button" type="button" data-remove="supplier" aria-label="Remove Grainger">×</button>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Checkout</legend>
+            <div class="row address-row">
+              <label>Address<input id="address-line1" required value="200 N Spring St" autocomplete="street-address" /></label>
+              <label>City<input id="address-city" required value="Los Angeles" autocomplete="address-level2" /></label>
+              <label>State<input id="address-state" required minlength="2" maxlength="2" value="CA" autocomplete="address-level1" /></label>
+              <label>ZIP<input id="address-postal-code" required pattern="[0-9]{5}(-[0-9]{4})?" value="90012" autocomplete="postal-code" /></label>
+            </div>
+            <div class="row contact-row">
+              <label>First name<input id="contact-first-name" required value="Cart" autocomplete="given-name" /></label>
+              <label>Last name<input id="contact-last-name" required value="Wise" autocomplete="family-name" /></label>
+              <label>Email<input id="contact-email" required type="email" value="cartwise.demo@example.com" autocomplete="email" /></label>
+              <label>Phone<input id="contact-phone" required type="tel" value="202-555-0147" autocomplete="tel" /></label>
+            </div>
+          </fieldset>
+
+          <div class="form-footer">
+            <span>No order will be placed.</span>
+            <button id="compare" class="primary" type="submit">Run comparison <b>→</b></button>
+          </div>
+          <p id="error" class="error" hidden></p>
+        </form>
+      </section>
+
+      <section id="screen-agents" class="screen">
+        <div class="screen-title split-title">
+          <div><p>Step 2 of 3</p><h1>Agents at work</h1></div>
+          <div class="agent-actions">
+            <div class="job-status"><span id="status-dot"></span><span id="status">Starting</span><small id="progress">0 / 0</small></div>
+            <button id="cancel-job" class="secondary cancel-button" type="button" disabled>Cancel</button>
+          </div>
+        </div>
+        <div class="progress-track"><div id="progress-bar"></div></div>
+        <p id="message" class="message">Preparing the comparison…</p>
+        <div id="browser-empty" class="empty-state">Agent views will appear here.</div>
+        <div id="browser-views" class="browser-grid"></div>
+      </section>
+
+      <section id="screen-results" class="screen">
+        <div class="screen-title split-title">
+          <div><p>Step 3 of 3</p><h1>Best purchase plan</h1></div>
+          <button class="secondary" data-go="setup">New comparison</button>
+        </div>
+
+        <div id="summary" class="result-panel">
+          <div class="total-block"><span id="total-label">Verified total</span><strong id="winning-total">—</strong><em id="savings-pill">—</em></div>
+          <div id="plan" class="plan-block"></div>
+          <div class="metrics">
+            <div><span>One supplier</span><strong id="single-total">—</strong></div>
+            <div><span>Savings</span><strong id="savings-total">—</strong></div>
+            <div><span>Status</span><strong id="scope-value">—</strong></div>
+          </div>
+        </div>
+        <div id="limitations" class="notice" hidden></div>
+        <section id="evidence-section" class="evidence-section" hidden>
+          <h2>Checkout evidence</h2>
+          <div id="evidence-grid" class="evidence-grid"></div>
+        </section>
+        <button class="secondary view-agents" data-go="agents">View agent runs</button>
+        <details id="details"><summary>Raw result</summary><pre id="raw"></pre></details>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

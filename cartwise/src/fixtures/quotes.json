@@ -1,0 +1,62 @@
+[
+  {
+    "key": "cart-b84b71bf7b5a297fc97424349893e3eb9e4dc7855abf734378d9040a5abcb4c6",
+    "supplierId": "supplier-a",
+    "lines": [{ "offerId": "offer-supplier-a-markers", "observedTitle": "Fixture black fine-point permanent markers, 12 pack", "observedSku": "A-MARKERS-12", "packs": 1, "lineTotalCents": 800 }],
+    "costs": { "subtotalCents": 800, "shippingCents": 500, "taxCents": 0, "feesCents": 0, "discountsCents": 0, "totalCents": 1300 },
+    "status": "verified",
+    "evidence": { "runId": null, "checkoutUrl": null, "screenshotUrl": null },
+    "error": null
+  },
+  {
+    "key": "cart-34baea3cc79870d888709a5941817723cb647b364de95e62dfe81b933a0a0800",
+    "supplierId": "supplier-a",
+    "lines": [{ "offerId": "offer-supplier-a-tape", "observedTitle": "Fixture clear shipping tape, 2 rolls", "observedSku": "A-TAPE-2", "packs": 1, "lineTotalCents": 2400 }],
+    "costs": { "subtotalCents": 2400, "shippingCents": 500, "taxCents": 0, "feesCents": 0, "discountsCents": 0, "totalCents": 2900 },
+    "status": "verified",
+    "evidence": { "runId": null, "checkoutUrl": null, "screenshotUrl": null },
+    "error": null
+  },
+  {
+    "key": "cart-e74c647814215dbe8637d2f9f9830c1dccead36a71d40b9f74cd01a03bb66670",
+    "supplierId": "supplier-a",
+    "lines": [
+      { "offerId": "offer-supplier-a-markers", "observedTitle": "Fixture black fine-point permanent markers, 12 pack", "observedSku": "A-MARKERS-12", "packs": 1, "lineTotalCents": 800 },
+      { "offerId": "offer-supplier-a-tape", "observedTitle": "Fixture clear shipping tape, 2 rolls", "observedSku": "A-TAPE-2", "packs": 1, "lineTotalCents": 2400 }
+    ],
+    "costs": { "subtotalCents": 3200, "shippingCents": 500, "taxCents": 0, "feesCents": 0, "discountsCents": 0, "totalCents": 3700 },
+    "status": "verified",
+    "evidence": { "runId": null, "checkoutUrl": null, "screenshotUrl": null },
+    "error": null
+  },
+  {
+    "key": "cart-33c94922f1788dcc52c81163b3135a17d1a1d8c5bb2ff0b2243a429e87f5da51",
+    "supplierId": "supplier-b",
+    "lines": [{ "offerId": "offer-supplier-b-markers", "observedTitle": "Fixture black fine-point permanent markers, 12 pack", "observedSku": "B-MARKERS-12", "packs": 1, "lineTotalCents": 1800 }],
+    "costs": { "subtotalCents": 1800, "shippingCents": 500, "taxCents": 0, "feesCents": 0, "discountsCents": 0, "totalCents": 2300 },
+    "status": "verified",
+    "evidence": { "runId": null, "checkoutUrl": null, "screenshotUrl": null },
+    "error": null
+  },
+  {
+    "key": "cart-65a8d32801e76ae534e92350bceab61c6c3924e81048e5a8f4ef6211ecf8ee51",
+    "supplierId": "supplier-b",
+    "lines": [{ "offerId": "offer-supplier-b-tape", "observedTitle": "Fixture clear shipping tape, 2 rolls", "observedSku": "B-TAPE-2", "packs": 1, "lineTotalCents": 700 }],
+    "costs": { "subtotalCents": 700, "shippingCents": 500, "taxCents": 0, "feesCents": 0, "discountsCents": 0, "totalCents": 1200 },
+    "status": "verified",
+    "evidence": { "runId": null, "checkoutUrl": null, "screenshotUrl": null },
+    "error": null
+  },
+  {
+    "key": "cart-25fb453676c9eccadc58f16f492a7295fbf85c916dad2bb7ead17cf477cb1470",
+    "supplierId": "supplier-b",
+    "lines": [
+      { "offerId": "offer-supplier-b-markers", "observedTitle": "Fixture black fine-point permanent markers, 12 pack", "observedSku": "B-MARKERS-12", "packs": 1, "lineTotalCents": 1800 },
+      { "offerId": "offer-supplier-b-tape", "observedTitle": "Fixture clear shipping tape, 2 rolls", "observedSku": "B-TAPE-2", "packs": 1, "lineTotalCents": 700 }
+    ],
+    "costs": { "subtotalCents": 2500, "shippingCents": 500, "taxCents": 0, "feesCents": 0, "discountsCents": 0, "totalCents": 3000 },
+    "status": "verified",
+    "evidence": { "runId": null, "checkoutUrl": null, "screenshotUrl": null },
+    "error": null
+  }
+]
