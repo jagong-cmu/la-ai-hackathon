@@ -269,6 +269,9 @@ class Planner:
                 status = "needs_confirmation" if previous else "ignored"
         elif kind == "not_a_forecast_change" or item_id is None:
             status = "ignored"
+        elif kind in ("one_time_extra", "lasting_increase") and qty is None:
+            status = "needs_confirmation"  # applied, it would add 0 and look done
+            notes.append("no quantity found; ask the owner how many")
         elif d.band == "act":
             status = "applied"
         else:

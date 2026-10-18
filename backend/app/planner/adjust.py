@@ -15,10 +15,12 @@ MONTHS = ["january", "february", "march", "april", "may", "june", "july", "augus
           "october", "november", "december"]
 MONTH_RX = "|".join(m[:3] + r"[a-z]*\.?" for m in MONTHS)
 
-QTY = re.compile(r"\b\d{1,3}(?:,\d{3})+\b|\b\d+\b")
+# "1,500", "1.5k", "2.5", "300". A "k" multiplies by 1,000 (phrase_quantity).
+QTY = re.compile(r"\b\d+(?:\.\d+)?k\b|\b\d{1,3}(?:,\d{3})+\b|\b\d+(?:\.\d+)?\b", re.I)
 DATE_PATTERNS = [
+    re.compile(r"\b\d{4}-\d{2}-\d{2}\b"),
     re.compile(rf"\b(?:{MONTH_RX})\s+\d{{1,2}}(?:st|nd|rd|th)?\b", re.I),
-    re.compile(r"\b\d{1,2}/\d{1,2}\b"),
+    re.compile(r"\b\d{1,2}/\d{1,2}(?:/\d{2}(?:\d{2})?)?\b"),
     re.compile(rf"\b(?:this|next|on)?\s*{WEEKDAY_RX}(?![a-z])", re.I),
     re.compile(r"\b(?:today|tomorrow|tonight|tmrw|tmr)\b", re.I),
     re.compile(r"\b(?:this|next)\s+weekend\b", re.I),
@@ -57,11 +59,19 @@ def quantity_phrases(text: str, dates: list[str]) -> list[str]:
 
 def phrase_quantity(phrase: str) -> float | None:
     m = QTY.search(phrase)
-    return float(m.group(0).replace(",", "")) if m else None
+    if not m:
+        return None
+    token = m.group(0).replace(",", "").lower()
+    return float(token[:-1]) * 1000 if token.endswith("k") else float(token)
 
 
 def resolve_date(phrase: str, today: date) -> date | None:
     p = phrase.lower().strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", p):
+        try:
+            return date.fromisoformat(p)
+        except ValueError:
+            return None
     if p in ("today", "tonight"):
         return today
     if p in ("tomorrow", "tmrw", "tmr"):
@@ -106,10 +116,12 @@ def resolve_date(phrase: str, today: date) -> date | None:
             return date(year, month, day)
         except ValueError:
             return None
-    m = re.match(r"(\d{1,2})/(\d{1,2})", p)
+    m = re.match(r"(\d{1,2})/(\d{1,2})(?:/(\d{2}(?:\d{2})?))?", p)
     if m:
         month, day = int(m.group(1)), int(m.group(2))
         year = today.year + (1 if month < today.month else 0)
+        if m.group(3):
+            year = int(m.group(3)) + (2000 if len(m.group(3)) == 2 else 0)
         try:
             return date(year, month, day)
         except ValueError:
