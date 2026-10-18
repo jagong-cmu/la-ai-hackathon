@@ -38,6 +38,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bills
+         * @description The supply lines of the past bills (QuickBooks), oldest first: the prices paid before.
+         */
+        get: operations["bills_bills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/suppliers": {
         parameters: {
             query?: never;
@@ -432,6 +452,31 @@ export interface components {
             jevSource: string;
             /** Notes */
             notes: string[];
+        };
+        /**
+         * BillLineView
+         * @description One supply line of a past QuickBooks bill: what the business paid, item by item.
+         */
+        BillLineView: {
+            /** Billid */
+            billId: string;
+            /**
+             * Txndate
+             * Format: date
+             */
+            txnDate: string;
+            /** Vendorname */
+            vendorName: string;
+            /** Itemid */
+            itemId: string;
+            /** Quantity */
+            quantity: number;
+            /** Unitprice */
+            unitPrice: number;
+            /** Amount */
+            amount: number;
+            /** Synthetic */
+            synthetic: boolean;
         };
         /** CartItem */
         CartItem: {
@@ -1542,6 +1587,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpendInsights"];
+                };
+            };
+        };
+    };
+    bills_bills_get: {
+        parameters: {
+            query?: {
+                itemId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillLineView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

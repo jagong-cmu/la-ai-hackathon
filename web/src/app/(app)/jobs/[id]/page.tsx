@@ -34,6 +34,8 @@ export default function WorkingPage() {
   const bestId = ready ? job.results!.recommendedPlanId : s.bestPlan?.planId;
   const best = bestId ? (job.results?.plans ?? job.plans).find((p) => p.planId === bestId) : null;
   const bestTotal = best?.total ?? s.bestPlan?.total ?? null;
+  // The browsers and the call share one grid that fits the screen: 3 stores + the call = 2 x 2.
+  const tiles = Math.max(1, lanes.length) + (job.request.distributor ? 1 : 0);
 
   return (
     <>
@@ -50,8 +52,8 @@ export default function WorkingPage() {
       />
       <ErrorNote error={s.error} />
 
-      <div className="work">
-        <div className="panes">
+      <div className="work fit">
+        <div className="tiles" style={{ "--tile-cols": tiles <= 4 ? 2 : 3 } as React.CSSProperties}>
           {lanes.map((l) => (
             <BrowserPane
               key={l.laneId}
@@ -63,7 +65,8 @@ export default function WorkingPage() {
               onWatch={() => setPicked(l.laneId)}
             />
           ))}
-          {lanes.length === 0 && <div className="skeleton" style={{ minHeight: 320 }} />}
+          {lanes.length === 0 && <div className="skeleton" />}
+          {job.request.distributor && <CallPanel call={call} who={distributor} />}
         </div>
 
         <aside className="work-side">
@@ -76,7 +79,6 @@ export default function WorkingPage() {
               <span className="n">{money(bestTotal)}</span>
             </div>
           )}
-          {job.request.distributor && <CallPanel call={call} who={distributor} />}
           <OrderBasis items={job.request.items} planner={planner} />
         </aside>
       </div>

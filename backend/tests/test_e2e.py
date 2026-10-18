@@ -46,6 +46,17 @@ def test_insights_from_injected_bills(client):
     assert body["disclosure"]
 
 
+def test_bills_give_the_price_history(client):
+    insights = {i["itemId"]: i for i in client.get("/insights").json()["items"]}
+    lines = client.get("/bills", params={"itemId": "syn-gloves"}).json()
+    assert lines and all(x["itemId"] == "syn-gloves" for x in lines)
+    assert [x["txnDate"] for x in lines] == sorted(x["txnDate"] for x in lines)
+    # The past unit price on the insights is the quantity-weighted mean of these lines.
+    qty = sum(x["quantity"] for x in lines)
+    assert abs(sum(x["amount"] for x in lines) / qty - insights["syn-gloves"]["pastUnitPrice"]) < 1e-3
+    assert {x["itemId"] for x in client.get("/bills").json()} == set(insights)
+
+
 def test_discovery_filters_the_directory(client):
     body = client.get("/suppliers").json()
     by_id = {c["id"]: c for c in body["candidates"]}

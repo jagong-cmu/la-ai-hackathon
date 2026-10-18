@@ -22,6 +22,7 @@ import app.lanes.live_setup  # noqa: F401  (agents team registers live lanes the
 from app.config import DEPENDENCIES, Mode, RuntimeModes, Settings, get_settings
 from app.contracts import (
     ApprovalDecision,
+    BillLineView,
     DiscoveryResult,
     DistributorRef,
     JobCreated,
@@ -29,7 +30,7 @@ from app.contracts import (
     ShoppingRequest,
     SpendInsights,
 )
-from app.data.insights import build_insights, draft_request, rules_from_books
+from app.data.insights import build_insights, draft_request, rules_from_books, supply_bill_lines
 from app.data.loader import Books, load_books
 from app.db import Database, stable_hash
 from app.decide import Decider
@@ -195,6 +196,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/insights", response_model=SpendInsights)
     async def insights(s: AppState = Depends(state)) -> SpendInsights:
         return await s.insights()
+
+    @app.get("/bills", response_model=list[BillLineView])
+    async def bills(item_id: str | None = Query(None, alias="itemId"), s: AppState = Depends(state)) -> list[BillLineView]:
+        """The supply lines of the past bills (QuickBooks), oldest first: the prices paid before."""
+        return supply_bill_lines(s.books, await s.insights(), item_id)
 
     @app.get("/suppliers", response_model=DiscoveryResult)
     async def suppliers(category: str = DEFAULT_CATEGORY, zip: str | None = None,

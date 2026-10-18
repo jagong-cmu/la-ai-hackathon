@@ -1,24 +1,17 @@
 "use client";
+// The planner overview: every supply's runway and order, the prices paid on the QuickBooks bills,
+// the best prices the agents found, and the money saved. Each supply opens its own page.
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, errorText, type ForecastAdjustment, type PlannerView, type SupplyPlan } from "@/api/client";
-import { ForecastChart } from "@/components/ForecastChart";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api, errorText, money, type PlannerView, type SupplyPlan } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
 import { ErrorNote, Loading, PageHead } from "@/components/PageHead";
-import { day, daysBetween, int, itemShort, weekday } from "@/lib/format";
+import { useBills, useJobs } from "@/hooks/useData";
+import { day, daysBetween, dollars, each, int, tsDay, weekday } from "@/lib/format";
+import { jobHref, orderTitle } from "@/lib/job";
+import { bestQuote, itemQuotes, meanPaid, pct, planSavings, pricedPlan, savingsTotals } from "@/lib/savings";
 
-// J11 causes (backend app/judgments.py MISS_CAUSES), in the words an owner uses.
-const CAUSES: [string, string][] = [
-  ["customer_lost", "Lost a customer"],
-  ["customer_gained", "New customer"],
-  ["product_substitution", "Customers switched product"],
-  ["one_time_event", "One-time event"],
-  ["supply_shortage", "We ran short"],
-  ["lasting_shift_up", "Lasting rise"],
-  ["lasting_shift_down", "Lasting drop"],
-  ["noise", "Normal ups and downs"],
-];
-const CAUSE_WORD = Object.fromEntries(CAUSES);
 const RUNWAY_DAYS = 42; // a full bar = six weeks of stock
 
 function OrderCell({ s }: { s: SupplyPlan }) {
@@ -27,79 +20,27 @@ function OrderCell({ s }: { s: SupplyPlan }) {
   return <span className="strong">{int(s.recommendedQty)} · {when}</span>;
 }
 
-function adjustmentText(a: ForecastAdjustment, names: Record<string, string>): string {
-  const qty = a.quantity != null ? `${a.quantity > 0 ? "+" : ""}${int(a.quantity)}` : "";
-  const what = a.itemId ? itemShort(names[a.itemId] ?? a.itemId).toLowerCase() : "";
-  const when = a.startDate ? `${weekday(a.startDate)}${a.kind === "one_time_extra" ? " only" : ""}` : "";
-  return [[qty, what].filter(Boolean).join(" "), when].filter(Boolean).join(" · ") || a.message;
-}
-
 export default function PlannerPage() {
+  const router = useRouter();
   const [view, setView] = useState<PlannerView | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState("");
-  const [adj, setAdj] = useState<ForecastAdjustment | null>(null);
-  const [q, setQ] = useState(0);
-  const [chartItem, setChartItem] = useState<string | null>(null);
+  const jobs = useJobs();
+  const bills = useBills();
 
-  const load = useCallback(async () => {
-    try {
-      setView(await api.planner());
-      setError(null);
-    } catch (e) {
-      setError(errorText(e));
-    }
-  }, []);
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
-    setBusy(true);
-    setError(null);
-    try {
-      return await fn();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const names = useMemo(() => Object.fromEntries((view?.products ?? []).map((p) => [p.itemId, p.name])), [view]);
+    api.planner().then(setView).catch((e) => setError(errorText(e)));
+  }, []);
 
   if (!view) return error ? <ErrorNote error={error} /> : <Loading label="Loading the planner" />;
 
-  const waiting = view.misses.filter((m) => m.status === "needs_owner");
-  const miss = waiting[Math.min(q, waiting.length - 1)];
-  const due = view.supplies.filter((s) => s.status !== "ok" && s.recommendedQty > 0);
   const supplies = [...view.supplies].sort((a, b) => (a.runOutDate ?? "9").localeCompare(b.runOutDate ?? "9"));
-  const product = view.products.find((p) => p.itemId === (chartItem ?? miss?.itemId)) ?? view.products[0];
-
-  async function answer(cause: string) {
-    if (!miss) return;
-    const v = await run(() => api.answerMiss(miss.missId, cause));
-    if (v) setView(v);
-  }
-  async function addNote(e: React.FormEvent) {
-    e.preventDefault();
-    if (!note.trim()) return;
-    const a = await run(() => api.ownerMessage(note.trim()));
-    if (a) {
-      setAdj(a);
-      setNote("");
-      await load();
-    }
-  }
-  async function confirm(accept: boolean) {
-    if (!adj) return;
-    const a = await run(() => api.confirmAdjustment(adj.adjustmentId, accept));
-    if (a) {
-      setAdj(a);
-      await load();
-    }
-  }
+  const due = supplies.filter((s) => s.status !== "ok" && s.recommendedQty > 0);
+  const paid = (itemId: string) => meanPaid((bills ?? []).filter((b) => b.itemId === itemId));
+  const dueCost = due.reduce((n, s) => n + s.recommendedQty * (paid(s.itemId) ?? 0), 0);
+  const totals = savingsTotals(jobs ?? []);
+  const yearSpend = (bills ?? []).reduce((n, b) => n + b.amount, 0);
+  const priced = (jobs ?? []).filter((j) => j.results && planSavings(j, pricedPlan(j))).slice(0, 6);
+  const topSaved = Math.max(0.01, ...priced.map((j) => Math.abs(planSavings(j, pricedPlan(j))!.saved)));
 
   return (
     <>
@@ -116,6 +57,29 @@ export default function PlannerPage() {
       />
       <ErrorNote error={error} />
 
+      <div className="kpis">
+        <div className="kpi hero">
+          <span>Saved on approved orders</span>
+          <b>{jobs ? dollars(totals.approved) : "–"}</b>
+          <em>{totals.approvedCount} {totals.approvedCount === 1 ? "order" : "orders"} against your bill prices</em>
+        </div>
+        <div className="kpi">
+          <span>Found in quotes</span>
+          <b>{jobs ? dollars(totals.found) : "–"}</b>
+          <em>{totals.foundCount > 0 ? `${pct(totals.pct)} under your bills · ${totals.foundCount} priced` : "No priced orders yet"}</em>
+        </div>
+        <div className="kpi">
+          <span>Due to order</span>
+          <b>{due.length} of {supplies.length}</b>
+          <em>{dueCost > 0 ? `~${dollars(dueCost)} at your bill prices` : "Nothing due"}</em>
+        </div>
+        <div className="kpi">
+          <span>Supply spend on bills</span>
+          <b>{bills ? dollars(yearSpend) : "–"}</b>
+          <em>{bills ? `${new Set(bills.map((b) => b.billId)).size} QuickBooks bills` : ""}</em>
+        </div>
+      </div>
+
       <div className="tbl-wrap">
         <table className="tbl wide">
           <thead>
@@ -123,22 +87,30 @@ export default function PlannerPage() {
               <th>Supply</th>
               <th>On hand</th>
               <th>Use a week</th>
-              <th className="l" style={{ width: 240 }}>Runs out</th>
+              <th className="l" style={{ width: 200 }}>Runs out</th>
               <th>Order</th>
+              <th>Paid each</th>
+              <th>Best found</th>
+              <th><span className="sr-only">Open</span></th>
             </tr>
           </thead>
           <tbody>
             {supplies.map((s) => {
               const left = s.runOutDate ? daysBetween(view.asOf, s.runOutDate) : RUNWAY_DAYS;
               const ok = s.status === "ok";
+              const before = paid(s.itemId);
+              const best = bestQuote(itemQuotes(jobs ?? [], s.itemId));
+              const href = `/planner/${encodeURIComponent(s.itemId)}`;
               return (
-                <tr key={s.itemId} className={ok ? "dim" : undefined}>
-                  <td style={{ color: ok ? "var(--color-ink-2)" : undefined }}>{s.name}</td>
+                <tr key={s.itemId} className={`click${ok ? " dim" : ""}`} onClick={() => router.push(href)}>
+                  <td>
+                    <Link href={href} style={{ textDecoration: "none", color: ok ? "var(--color-ink-2)" : undefined }}>{s.name}</Link>
+                  </td>
                   <td>{int(s.onHand)}</td>
                   <td>~{int(s.weeklyUseForecast[0]?.mean)}</td>
                   <td className="l">
                     <span className="row" style={{ gap: 12, flexWrap: "nowrap" }}>
-                      <span className={`bar${ok ? " soft" : ""}`} style={{ width: 100, flexShrink: 0 }}>
+                      <span className={`bar${ok ? " soft" : ""}`} style={{ width: 80, flexShrink: 0 }}>
                         <i style={{ width: `${Math.max(4, Math.min(100, (left / RUNWAY_DAYS) * 100))}%` }} />
                       </span>
                       <span className={ok ? undefined : "strong"} style={{ color: ok ? "var(--color-muted)" : undefined }}>
@@ -147,6 +119,22 @@ export default function PlannerPage() {
                     </span>
                   </td>
                   <td><OrderCell s={s} /></td>
+                  <td className="muted">{each(before)}</td>
+                  <td>
+                    {best ? (
+                      <>
+                        <span className="strong">{each(best.unit)}</span>
+                        {before != null && (
+                          <span className={`sub ${best.unit <= before ? "save" : ""}`}>
+                            {best.unit <= before ? `${pct(1 - best.unit / before)} less` : `${pct(best.unit / before - 1)} more`}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="muted">{jobs ? "Not priced" : ""}</span>
+                    )}
+                  </td>
+                  <td className="chev" aria-hidden="true"><ArrowRight /></td>
                 </tr>
               );
             })}
@@ -154,107 +142,52 @@ export default function PlannerPage() {
         </table>
       </div>
 
-      <div className="split">
-        {miss ? (
-          <section className="card pad" aria-label="Forecast question">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="label">Forecast question</span>
-              {waiting.length > 1 && (
-                <span className="row small muted" style={{ gap: 4 }}>
-                  <button className="btn btn-ghost sm" disabled={q === 0} onClick={() => setQ(q - 1)} aria-label="Previous question">‹</button>
-                  {Math.min(q, waiting.length - 1) + 1} of {waiting.length}
-                  <button className="btn btn-ghost sm" disabled={q >= waiting.length - 1} onClick={() => setQ(q + 1)} aria-label="Next question">›</button>
-                </span>
-              )}
-            </div>
-            <div>
-              <p style={{ fontWeight: 600, fontSize: 18, lineHeight: "24px" }}>
-                Week of {day(miss.weekStart)} · {itemShort(miss.itemName).toLowerCase()}
-              </p>
-              <p className="ink-2 tnum" style={{ marginTop: 4 }}>
-                {int(miss.actual)} sold · expected {int(miss.low)}–{int(miss.high)}
-              </p>
-            </div>
-            {miss.facts.length > 0 && (
-              <ul className="small ink-2" style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "grid", gap: 4 }}>
-                {miss.facts.map((f, i) => <li key={i}>{f}</li>)}
-              </ul>
+      <section className="tbl-wrap" aria-label="Recent quotes">
+        <div className="tbl-caption">
+          <b>Recent quotes against your bills</b>
+          <Link href="/orders" className="link small">All orders</Link>
+        </div>
+        <table className="tbl wide">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Date</th>
+              <th>Paid before</th>
+              <th>Best plan</th>
+              <th className="l" style={{ width: 220 }}>Saved</th>
+            </tr>
+          </thead>
+          <tbody>
+            {priced.map((j) => {
+              const s = planSavings(j, pricedPlan(j))!;
+              const href = jobHref(j);
+              return (
+                <tr key={j.jobId} className="click" onClick={() => router.push(href)}>
+                  <td><Link href={href} style={{ textDecoration: "none" }}>{orderTitle(j)}</Link></td>
+                  <td className="muted">{tsDay(j.createdAt)}</td>
+                  <td className="muted">{money(s.paidBefore)}</td>
+                  <td>{money(s.now)}</td>
+                  <td className="l">
+                    <span className="row" style={{ gap: 12, flexWrap: "nowrap" }}>
+                      <span className={`bar${s.saved >= 0 ? " mint" : ""}`} style={{ width: 80, flexShrink: 0 }}>
+                        <i style={{ width: `${Math.max(4, (Math.abs(s.saved) / topSaved) * 100)}%`, background: s.saved < 0 ? "var(--color-failed)" : undefined }} />
+                      </span>
+                      <span className={s.saved >= 0 ? "strong save" : "strong error-text"}>
+                        {s.saved >= 0 ? "" : "−"}{money(Math.abs(s.saved))} · {pct(s.pct)}
+                      </span>
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+            {jobs && priced.length === 0 && (
+              <tr><td colSpan={5} className="empty">No priced orders yet. Start one to compare prices with your bills.</td></tr>
             )}
-            {miss.cause && <p className="small muted">Best guess: {(CAUSE_WORD[miss.cause] ?? miss.cause).toLowerCase()}</p>}
-            <div className="row" style={{ gap: 8 }} role="group" aria-label="Your answer">
-              {CAUSES.map(([c, label]) => (
-                <button key={c} className="chip-btn" disabled={busy} onClick={() => answer(c)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : (
-          <section className="card pad">
-            <span className="label">Forecast questions</span>
-            <p className="ink-2">None open</p>
-          </section>
-        )}
+          </tbody>
+        </table>
+      </section>
 
-        <section className="card pad" aria-label="Add a note">
-          <span className="label">Add a note</span>
-          <form className="row" style={{ gap: 8, flexWrap: "nowrap" }} onSubmit={addNote}>
-            <label className="sr-only" htmlFor="note">Note</label>
-            <input
-              id="note"
-              className="input"
-              style={{ flex: 1 }}
-              placeholder="Wedding Saturday, 300 extra buns"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-            <button className="btn btn-secondary" type="submit" disabled={busy || !note.trim()}>Add</button>
-          </form>
-          {adj && (
-            <div className="panel" aria-live="polite">
-              <p className="strong">{adjustmentText(adj, names)}</p>
-              {adj.status === "needs_confirmation" ? (
-                <div className="row" style={{ gap: 8, marginTop: 12 }}>
-                  <button className="btn btn-secondary sm" disabled={busy} onClick={() => confirm(true)}>Use it</button>
-                  <button className="btn btn-ghost sm" disabled={busy} onClick={() => confirm(false)}>Not right</button>
-                </div>
-              ) : (
-                <p className="small muted" style={{ marginTop: 4 }}>
-                  {adj.status === "applied" ? "Added to the forecast" : adj.status === "rejected" ? "Not used" : "No change to the forecast"}
-                </p>
-              )}
-            </div>
-          )}
-          {view.adjustments.length > 0 && (
-            <ul className="small ink-2" style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
-              {view.adjustments.filter((a) => a.status === "applied").map((a) => (
-                <li key={a.adjustmentId}>{adjustmentText(a, names)}</li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      {product && (
-        <section className="card pad" aria-label="Weekly sales">
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <label className="row" style={{ gap: 8 }}>
-              <span className="sr-only">Product</span>
-              <select
-                className="input"
-                style={{ height: 36, fontWeight: 600 }}
-                value={product.itemId}
-                onChange={(e) => setChartItem(e.target.value)}
-              >
-                {view.products.map((p) => <option key={p.itemId} value={p.itemId}>{p.name}</option>)}
-              </select>
-              <span className="small muted">weekly sales</span>
-            </label>
-            <span className="small muted">Actual · Expected range · Miss</span>
-          </div>
-          <ForecastChart product={product} />
-        </section>
-      )}
+      {view.disclosure && <p className="small muted">{view.disclosure}</p>}
     </>
   );
 }

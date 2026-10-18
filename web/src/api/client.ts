@@ -15,6 +15,8 @@ export type LaneStatus = Schemas["LaneStatus"];
 export type ApprovalDecision = Schemas["ApprovalDecision"];
 export type PlannerView = Schemas["PlannerView"];
 export type ProductForecast = Schemas["ProductForecast"];
+export type HistoryPoint = Schemas["HistoryPoint"];
+export type ForecastPoint = Schemas["ForecastPoint"];
 export type SupplyPlan = Schemas["SupplyPlan"];
 export type MissView = Schemas["MissView"];
 export type ForecastAdjustment = Schemas["ForecastAdjustment"];
@@ -23,6 +25,7 @@ export type PreflightReport = Schemas["PreflightReport"];
 export type JobCreated = Schemas["JobCreated"];
 export type ModeChange = Schemas["ModeChange"];
 export type SpendingRules = Schemas["SpendingRules"];
+export type BillLine = Schemas["BillLineView"];
 
 /** One SSE event (docs/DATA_FLOW.md §8). Not in OpenAPI because it is streamed. */
 export interface JobEvent {
@@ -107,6 +110,8 @@ export const api = {
   insights: (businessId?: string) => request<SpendInsights>("GET", "/insights", { query: { businessId } }),
   suppliers: (category?: string, zip?: string) =>
     request<DiscoveryResult>("GET", "/suppliers", { query: { category, zip } }),
+  /** Supply lines of the past QuickBooks bills, oldest first. */
+  bills: (itemId?: string) => request<BillLine[]>("GET", "/bills", { query: { itemId } }),
   shoppingDraft: (category?: string) => request<ShoppingRequest>("GET", "/shopping-list/draft", { query: { category } }),
 
   planner: () => request<PlannerView>("GET", "/planner"),

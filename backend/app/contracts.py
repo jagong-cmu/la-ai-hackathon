@@ -6,7 +6,7 @@ JSON Schema that the frontend turns into TypeScript types.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -95,6 +95,19 @@ class SpendInsights(Model):
     items: list[SpendInsightItem]
     other_lines: int
     disclosure: str | None = None
+
+
+class BillLineView(Model):
+    """One supply line of a past QuickBooks bill: what the business paid, item by item."""
+
+    bill_id: str
+    txn_date: date  # QuickBooks TxnDate
+    vendor_name: str
+    item_id: str
+    quantity: float
+    unit_price: float
+    amount: float
+    synthetic: bool
 
 
 class SupplierCandidate(Model):

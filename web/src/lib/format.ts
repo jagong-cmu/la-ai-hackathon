@@ -26,6 +26,7 @@ export function host(url: string | null | undefined): string {
 
 const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const WEEKDAY = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+const MONTH = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 const TIME = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
 
 function parse(d: string): Date {
@@ -35,6 +36,8 @@ function parse(d: string): Date {
 
 /** "Oct 17" */
 export const day = (d: string | null | undefined) => (d ? DAY.format(parse(d)) : "");
+/** "Oct 2025" */
+export const month = (d: string | null | undefined) => (d ? MONTH.format(parse(d)) : "");
 /** "Mon, Oct 5" */
 export const weekday = (d: string | null | undefined) => (d ? WEEKDAY.format(parse(d)) : "");
 /** "9:13 AM" in the viewer's time zone (timestamps only). */
@@ -67,3 +70,6 @@ export function each(n: number | null | undefined): string {
   if (n == null) return "";
   return n < 1 ? `$${n.toFixed(3)}` : `$${n.toFixed(2)}`;
 }
+
+/** "$1,234" (no cents), for headline sums. */
+export const dollars = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
