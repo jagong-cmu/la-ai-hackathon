@@ -1,7 +1,8 @@
-"""Supplier discovery: CREAO agent (API Trigger, polled) -> J3 filter -> lane selection.
+"""Supplier discovery: CREAO agent (API Trigger, polled) -> prices filter -> J3 filter -> lane selection.
 
 CREAO runs take minutes, so the result is cached per (category, zip) and the UI starts
-discovery when screen 0 loads. Fallback order: live run -> cache -> fixture list.
+discovery when screen 0 loads. Fallback order: live run -> cache -> saved real run
+(RUN_MODE=live only, fixtures/creao/) -> fixture list.
 
 CREAO contract (app-scoped API Trigger, docs.creao.ai/pro/api-trigger, checked 2026-10-16):
 - Auth: `Authorization: Bearer capi_...` (a key made on the agent page; it runs only that agent).
@@ -26,6 +27,7 @@ import asyncio
 import json
 import re
 import time
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -38,6 +40,22 @@ from app.judgments import j3_supplier
 
 MAX_ADAPTER_LANES = 3
 MAX_AGENT_LANES = 1
+
+# Supplier domain -> adapter name. CREAO never sets an adapter, so discovery maps by domain.
+# A mapping takes effect only once that adapter is registered (app/lanes/live_setup.py);
+# until then the site stays an unknown site for the LLM agent lane. Register adapters
+# under exactly these names.
+ADAPTER_DOMAINS: dict[str, str] = {
+    "webstaurantstore.com": "webstaurant",
+    "katom.com": "katom",
+    "uline.com": "uline",
+    "restaurantware.com": "restaurantware",
+    "wasserstrom.com": "wasserstrom",
+}
+
+# Real CREAO results saved per (category, zip): fixtures/creao/<category>-<zip>.json.
+# Live runs use one when CREAO fails and the database has no cached result.
+CREAO_SEED_DIR = FIXTURES_DIR / "creao"
 
 TERMINAL_OK = "completed"
 TERMINAL_FAIL = ("failed", "cancelled", "canceled")
@@ -102,18 +120,35 @@ def _find_json(text: str) -> Any:
     raise CreaoError("no supplier JSON in CREAO output")
 
 
-def _run_output(run: dict[str, Any]) -> Any:
-    """The agent's final output from a polled run (`result.text`, then older shapes)."""
+def _run_outputs(run: dict[str, Any]) -> list[Any]:
+    """The agent's outputs from a polled run, in the order to try them.
+
+    `result.text` can hold the agent's structured session record (for example
+    {"category", "zipCode", "supplier_count"}) while the supplier JSON is only in
+    `result.chatText`, so every field is a candidate.
+    """
     result = run.get("result")
+    outputs: list[Any] = []
     if isinstance(result, dict):
-        for key in ("text", "chatText", "output"):
-            if result.get(key):
-                return result[key]
+        outputs += [result[key] for key in ("text", "chatText", "output") if result.get(key)]
         if "suppliers" in result:
-            return result
-    if result:
-        return result
-    return run.get("output")
+            outputs.append(result)
+    elif result:
+        outputs.append(result)
+    if run.get("output"):
+        outputs.append(run["output"])
+    return outputs
+
+
+def _parse_run(run: dict[str, Any]) -> list[dict[str, Any]]:
+    """Suppliers from the first output that has them. Raises the last parse error if none do."""
+    error = CreaoError("empty CREAO output")
+    for output in _run_outputs(run):
+        try:
+            return _parse_creao_output(output)
+        except CreaoError as exc:
+            error = exc
+    raise error
 
 
 def _parse_creao_output(output: Any) -> list[dict[str, Any]]:
@@ -140,6 +175,42 @@ def _parse_creao_output(output: Any) -> list[dict[str, Any]]:
     if not suppliers:
         raise CreaoError("CREAO output has no usable suppliers")
     return suppliers
+
+
+def adapter_for_url(url: str) -> str | None:
+    """The adapter name for a supplier URL by domain (subdomains match), or None."""
+    host = (httpx.URL(url).host or "").lower().removeprefix("www.")
+    for domain, adapter in ADAPTER_DOMAINS.items():
+        if host == domain or host.endswith("." + domain):
+            return adapter
+    return None
+
+
+def _resolve_adapter(row: dict[str, Any], known: set[str]) -> str | None:
+    """A row's own adapter, else its domain's; None (LLM agent lane) unless it is registered."""
+    for adapter in (row.get("adapter"), adapter_for_url(row["url"])):
+        if adapter and adapter in known:
+            return adapter
+    return None
+
+
+def _prices_hidden(row: dict[str, Any]) -> bool:
+    """True only when the source says prices need an account. A missing flag is not a no."""
+    flag = row.get("pricesPublic", row.get("prices_public"))
+    return flag is False
+
+
+def _load_seed(category: str, zip_code: str) -> tuple[str | None, list[dict[str, Any]], float | None] | None:
+    """A saved real CREAO result: (run id, rows, age in seconds), or None if there is none."""
+    path = CREAO_SEED_DIR / f"{category}-{zip_code}.json"
+    if not path.exists():
+        return None
+    seed = json.loads(path.read_text())
+    age = None
+    if seed.get("fetchedAt"):
+        fetched = datetime.fromisoformat(seed["fetchedAt"].replace("Z", "+00:00"))
+        age = (utcnow() - fetched).total_seconds()
+    return seed.get("creaoRunId"), _parse_creao_output(seed), age
 
 
 class Discovery:
@@ -173,16 +244,21 @@ class Discovery:
             except (CreaoError, httpx.HTTPError, TimeoutError, ValueError):
                 raw = None
                 source = "fallback"
-        used_cache = False
+        age: float | None = None
         if raw is None:
             raw = self.db.cache_get(key)
-            if raw is None:
-                raw = json.loads((FIXTURES_DIR / "discovery.json").read_text())["candidates"]
-                source = "fixture" if source == "cache" else "fallback"
-            else:
-                used_cache = True
-        age = self.db.cache_age_s(key) if used_cache else None
+            if raw is not None:
+                age = self.db.cache_age_s(key)
+        if raw is None and self.settings.run_mode == "live":
+            # Fixture mode keeps the fake list: its lanes replay fixtures/suppliers/<id>.json.
+            seed = _load_seed(category, zip_code)
+            if seed is not None:
+                run_id, raw, age = seed
+        if raw is None:
+            raw = json.loads((FIXTURES_DIR / "discovery.json").read_text())["candidates"]
+            source = "fixture" if source == "cache" else "fallback"
 
+        known = self.known_adapters
         candidates = [
             SupplierCandidate(
                 id=c.get("id") or _slug(c.get("name") or c["url"]),
@@ -190,24 +266,32 @@ class Discovery:
                 url=c["url"],
                 phone=c.get("phone") or None,
                 email=c.get("email") or None,
-                adapter=c.get("adapter"),
+                adapter=_resolve_adapter(c, known),
                 creao_run_id=run_id,
                 cached_at=utcnow() if source == "creao" else None,
             )
             for c in raw
         ]
         notes = {c.get("id") or _slug(c.get("name") or c["url"]): c.get("notes") or "" for c in raw}
-        decisions = await asyncio.gather(
-            *(j3_supplier(self.decider, c, category, notes.get(c.id, "")) for c in candidates)
-        )
+        # Code filter before J3: a supplier without public prices cannot be priced by a lane.
+        hidden = {cand.id for cand, c in zip(candidates, raw, strict=True) if _prices_hidden(c)}
+        judged = [c for c in candidates if c.id not in hidden]
+        decisions = dict(zip(
+            (c.id for c in judged),
+            await asyncio.gather(*(j3_supplier(self.decider, c, category, notes.get(c.id, "")) for c in judged)),
+            strict=True,
+        ))
         adapter_lanes = agent_lanes = 0
-        for cand, decision in zip(candidates, decisions, strict=True):
-            cand.jev = {k: float(v.get("noul", 0.0)) for k, v in decision.answers.items()}
+        for cand in candidates:
+            if cand.id in hidden:
+                cand.reason = "filtered: prices not public"
+                continue
+            cand.jev = {k: float(v.get("noul", 0.0)) for k, v in decisions[cand.id].answers.items()}
             failed = [k for k, v in cand.jev.items() if v < 0.5]
             if failed:
                 cand.reason = "filtered: " + ", ".join(failed)
                 continue
-            if cand.adapter in self.known_adapters and adapter_lanes < MAX_ADAPTER_LANES:
+            if cand.adapter is not None and adapter_lanes < MAX_ADAPTER_LANES:  # registered (resolved above)
                 cand.selected, cand.reason = True, "known adapter"
                 adapter_lanes += 1
             elif cand.adapter is None and agent_lanes < MAX_AGENT_LANES:
@@ -260,7 +344,7 @@ class Discovery:
                 status = _json_body(resp)
                 state = str(status.get("status", "")).lower()
                 if state == TERMINAL_OK:
-                    return run_id, _parse_creao_output(_run_output(status))
+                    return run_id, _parse_run(status)
                 if state in TERMINAL_FAIL:
                     err = status.get("error")
                     code = status.get("errorCode") or (err.get("code") if isinstance(err, dict) else err)

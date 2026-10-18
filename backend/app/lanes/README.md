@@ -18,6 +18,8 @@ The interface is `SupplierLane` in `base.py`. `fixture.py` is a complete working
 
 Register the lanes in `registry.py` (`register_adapter`, `register_llm_agent`), and import your module from `live_setup.py`.
 
+CREAO results have no adapter field, so discovery maps each supplier URL to an adapter by domain (`ADAPTER_DOMAINS` in `app/discovery.py`: `webstaurant`, `katom`, `uline`, `restaurantware`, `wasserstrom`). Register your adapter under exactly that name and the site moves from the LLM agent lane to your adapter with no other change. For a new site, add its domain to the table.
+
 ## Rules
 
 - **Call `await ctx.guard(snapshot)` after every navigation, and before every click or type.** If `verdict.stop` is true, stop at once. If `verdict.blocked` is set, raise `LaneBlocked(verdict.blocked)`.

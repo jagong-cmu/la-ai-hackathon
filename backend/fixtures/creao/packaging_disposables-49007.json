@@ -1,0 +1,89 @@
+{
+  "category": "packaging_disposables",
+  "zipCode": "49007",
+  "items": "9 in hinged to-go box, kraft paper bag, nitrile gloves",
+  "creaoRunId": "13698a75-83cc-4346-90c2-1f0e0777a4f5",
+  "fetchedAt": "2026-10-17T23:47:55.773Z",
+  "suppliers": [
+    {
+      "name": "KaTom Restaurant Supply",
+      "url": "https://www.katom.com",
+      "phone": "(800) 541-8683",
+      "email": "sales@katom.com",
+      "notes": "National wholesale restaurant supplier carrying hinged/clamshell to-go containers, takeout bags and nitrile gloves with prices shown publicly. Ships nationwide (free shipping on qualifying orders over $500), so it delivers to 49007.",
+      "pricesPublic": true
+    },
+    {
+      "name": "Wasserstrom",
+      "url": "https://www.wasserstrom.com",
+      "phone": "(866) 634-8927",
+      "email": null,
+      "notes": "Century-old restaurant supply distributor selling takeout containers, paper bags and disposable nitrile gloves with public pricing. Fulfills nationwide from five US distribution centers, covering ZIP 49007.",
+      "pricesPublic": true
+    },
+    {
+      "name": "Gordon Food Service Store",
+      "url": "https://www.gfsstore.com",
+      "phone": "(269) 373-3000",
+      "email": null,
+      "notes": "Local Gordon Food Service store at 827 N. Drake Rd, Kalamazoo serves 49007 with foodservice disposables including takeout containers, bags and gloves; prices are public online with in-store pickup, curbside and same-day delivery.",
+      "pricesPublic": true
+    },
+    {
+      "name": "Wees Express",
+      "url": "https://wees-express.com",
+      "phone": "313-429-3160",
+      "email": null,
+      "notes": "B2B foodservice supplier carrying hinged takeout containers, foodservice bags and disposable gloves with prices shown publicly. Offers local Midwest delivery plus nationwide commercial shipping.",
+      "pricesPublic": true
+    },
+    {
+      "name": "Restaurantware",
+      "url": "https://www.restaurantware.com",
+      "phone": "1-800-851-9273",
+      "email": null,
+      "notes": "Online foodservice disposables seller offering to-go/takeout boxes, paper bags and disposable gloves with public pricing. Ships nationwide to 49007.",
+      "pricesPublic": true
+    },
+    {
+      "name": "EcoQuality",
+      "url": "https://ecoqualityinc.com",
+      "phone": "1-877-888-0326",
+      "email": "info@ecoqualityinc.com",
+      "notes": "Online wholesale restaurant supply carrying takeout containers, bags and janitorial/glove products with public prices. Ships nationwide, and publishes a Kalamazoo County service page confirming delivery to 49007.",
+      "pricesPublic": true
+    },
+    {
+      "name": "MrTakeOutBags",
+      "url": "https://www.mrtakeoutbags.com",
+      "phone": "888-321-2248",
+      "email": "sales@mrtakeoutbags.com",
+      "notes": "Wholesale takeout packaging specialist carrying hinged takeout boxes and kraft paper bags with public prices and nationwide shipping. Packaging-only assortment, so it does not stock nitrile gloves.",
+      "pricesPublic": true
+    },
+    {
+      "name": "Highland Supply",
+      "url": "https://highlandsupply.net",
+      "phone": "(248) 714-8355",
+      "email": "sales@highlandsupply.net",
+      "notes": "Michigan disposables distributor (Highland, Gaylord and Grand Rapids locations) delivering next-day statewide with its own fleet; carries takeout containers, paper bags and foodservice gloves. Pricing is provided through an account/order guide rather than public list prices.",
+      "pricesPublic": false
+    },
+    {
+      "name": "KSS Enterprises",
+      "url": "https://kssenterprises.com",
+      "phone": "(269) 349-6637",
+      "email": "info@kssenterprises.com",
+      "notes": "Kalamazoo-headquartered distributor (part of BradyPLUS) serving the Great Lakes region since 1945; its food service catalog includes carryout containers and its JanSan line covers gloves. Local delivery around Kalamazoo, account-based pricing.",
+      "pricesPublic": false
+    },
+    {
+      "name": "BBC Distributing (BradyPLUS)",
+      "url": "https://www.bradyplus.com/bbc-distributing",
+      "phone": "616-698-8828",
+      "email": null,
+      "notes": "Grand Rapids-based food service and janitorial distributor offering disposables, packaging solutions and cleaning products including gloves. Regional Midwest delivery; pricing requires an online account.",
+      "pricesPublic": false
+    }
+  ]
+}
