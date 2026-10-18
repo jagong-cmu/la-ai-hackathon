@@ -37,6 +37,8 @@ expectation in the harness was wrong).
 | S-020 | planner | The owner message "about 99999999999999999999 extra hamburger buns" was applied. `/planner/check` then asked to order 100,000,000,010,000,000,000 gloves. | J12 applied any quantity with band `act`. | fixed (4cc1bac): a quantity above 10x the product's best week needs confirmation |
 | S-021 | cart totals | A correct cart with a "Delivery fee" shipping row or a "Taxes and fees" tax row failed the sum check (`sum_mismatch:-12.95`) and was marked failed. | `resolve_costs()` added every row with "fee" in its label to `other_fees`, also the rows that J7 picked as shipping or tax. | fixed (694f47a) |
 | S-022 | cart totals | A cart with "Shipping: FREE" could never be verified, so its plan could not be approved. | `money_candidates()` made no candidate for a line with no amount, so the cart was `shipping_not_shown`. | fixed (cbd8929): a $0.00 candidate; banners with an amount are not counted |
+| S-023 | distributor | `delivery_fee("Delivery is $1,250.00")` gave 1.0, and `"No free delivery, delivery $15"` gave 0.0. | The fee pattern had no thousands separator; `FREE_DELIVERY` matched inside "No free delivery". | fixed (03cb2a2) |
+| S-024 | distributor | A spoken call quote "395 dollars and 20 cents" was read as $395. | `normalize_spoken_money()` made two amounts. | fixed (aefb24d) |
 
 Open questions for the team (not changed by the loop):
 - `POST /admin/replay?speed=0` or a negative speed replays at once. The route could refuse them with 422.
