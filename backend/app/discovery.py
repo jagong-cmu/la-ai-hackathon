@@ -1,5 +1,9 @@
 """Supplier discovery: CREAO agent (API Trigger, polled) -> prices filter -> J3 filter -> lane selection.
 
+Lane selection keeps only suppliers that a lane can run in the current browser mode, then fills
+the free adapter slots with approved sites (fixtures/approved_sites.json, and the fixture
+suppliers when browsers are cached). A weak CREAO answer then still gives the job prices.
+
 CREAO runs take minutes, so the result is cached per (category, zip) and the UI starts
 discovery when screen 0 loads. Fallback order: live run -> cache -> saved real run
 (RUN_MODE=live only, fixtures/creao/) -> fixture list.
@@ -53,6 +57,10 @@ ADAPTER_DOMAINS: dict[str, str] = {
     "restaurantware.com": "restaurantware",
     "wasserstrom.com": "wasserstrom",
 }
+
+# Team-approved adapter sites. Discovery adds them to free adapter slots (they skip J3).
+APPROVED_SITES = FIXTURES_DIR / "approved_sites.json"
+APPROVED_REASON = "approved site: added by code"
 
 # Real CREAO results saved per (category, zip): fixtures/creao/<category>-<zip>.json.
 # Live runs use one when CREAO fails and the database has no cached result.
@@ -212,6 +220,13 @@ def _load_seed(category: str, zip_code: str) -> tuple[str | None, list[dict[str,
     return seed.get("creaoRunId"), _parse_creao_output(seed), age
 
 
+def _approved_rows() -> list[dict[str, Any]]:
+    """Approved real sites, then the fixture suppliers that have an adapter (their lanes replay)."""
+    rows = list(json.loads(APPROVED_SITES.read_text())["sites"])
+    fixtures = json.loads((FIXTURES_DIR / "discovery.json").read_text())["candidates"]
+    return rows + [c for c in fixtures if c.get("adapter") == "fixture"]
+
+
 class Discovery:
     def __init__(self, settings: Settings, db: Database, modes: RuntimeModes, decider: Decider,
                  transport: httpx.AsyncBaseTransport | None = None):
@@ -290,6 +305,9 @@ class Discovery:
             if failed:
                 cand.reason = "filtered: " + ", ".join(failed)
                 continue
+            if not self._can_run(cand):
+                cand.reason = f"no lane in {self.modes.get('browser')} browser mode"
+                continue
             if cand.adapter is not None and adapter_lanes < MAX_ADAPTER_LANES:  # registered (resolved above)
                 cand.selected, cand.reason = True, "known adapter"
                 adapter_lanes += 1
@@ -298,8 +316,30 @@ class Discovery:
                 agent_lanes += 1
             else:
                 cand.reason = "not needed (lane limit)"
+        candidates += self._approved_fill(candidates, MAX_ADAPTER_LANES - adapter_lanes)
         return DiscoveryResult(category=category, zip_code=zip_code, candidates=candidates,
                                distributor=distributor, source=source, age_s=age)
+
+    def _can_run(self, cand: SupplierCandidate) -> bool:
+        from app.lanes.registry import can_run
+
+        return can_run(SupplierRef(id=cand.id, name=cand.name, url=cand.url, adapter=cand.adapter), self.modes)
+
+    def _approved_fill(self, candidates: list[SupplierCandidate], free: int) -> list[SupplierCandidate]:
+        """Approved sites for the free adapter slots, skipping sites already in the candidates."""
+        taken = {c.id for c in candidates} | {c.adapter for c in candidates if c.selected and c.adapter}
+        added: list[SupplierCandidate] = []
+        for row in _approved_rows():
+            if len(added) >= free:
+                break
+            if row["id"] in taken or (row["adapter"] != "fixture" and row["adapter"] in taken):
+                continue
+            cand = SupplierCandidate(id=row["id"], name=row["name"], url=row["url"], adapter=row["adapter"],
+                                     selected=True, reason=APPROVED_REASON)
+            if self._can_run(cand):
+                added.append(cand)
+                taken |= {cand.id, cand.adapter}
+        return added
 
     async def _run_creao(
         self, category: str, zip_code: str, items: list[str] | None = None
@@ -351,9 +391,12 @@ class Discovery:
 
 
 def selected_suppliers(result: DiscoveryResult) -> list[SupplierRef]:
+    def origin(c: SupplierCandidate) -> str:
+        if c.reason == APPROVED_REASON:
+            return "fixture" if c.adapter == "fixture" else "manual"
+        return {"creao": "creao", "fixture": "fixture"}.get(result.source, "cache")
+
     return [
-        SupplierRef(id=c.id, name=c.name, url=c.url, adapter=c.adapter,
-                    origin="creao" if result.source == "creao" else
-                    ("fixture" if result.source == "fixture" else "cache"))
+        SupplierRef(id=c.id, name=c.name, url=c.url, adapter=c.adapter, origin=origin(c))  # type: ignore[arg-type]
         for c in result.candidates if c.selected
     ]

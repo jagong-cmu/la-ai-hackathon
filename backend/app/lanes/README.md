@@ -20,6 +20,8 @@ Register the lanes in `registry.py` (`register_adapter`, `register_llm_agent`), 
 
 CREAO results have no adapter field, so discovery maps each supplier URL to an adapter by domain (`ADAPTER_DOMAINS` in `app/discovery.py`: `webstaurant`, `katom`, `uline`, `restaurantware`, `wasserstrom`). Register your adapter under exactly that name and the site moves from the LLM agent lane to your adapter with no other change. For a new site, add its domain to the table.
 
+Discovery gives a lane only to a supplier that a lane can run now (`can_run` in `registry.py`): cached browsers need `fixtures/suppliers/<id>.json`, and live browsers need a registered adapter or the LLM agent. When CREAO does not return an approved site, discovery adds it to a free adapter slot from `fixtures/approved_sites.json`, but only after its adapter is registered. For a new approved site, add it to that file and to `ADAPTER_DOMAINS`.
+
 ## Rules
 
 - **Call `await ctx.guard(snapshot)` after every navigation, and before every click or type.** If `verdict.stop` is true, stop at once. If `verdict.blocked` is set, raise `LaneBlocked(verdict.blocked)`.
