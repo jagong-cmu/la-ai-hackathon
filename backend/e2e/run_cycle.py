@@ -1,7 +1,7 @@
 """Run one soak cycle against a fresh fixture-mode server.
 
     uv run python -m e2e.run_cycle --out <dir> [--port 8100] [--only name,name] [--time-scale 0.1]
-                                   [--profile default|deadline]
+                                   [--profile default|deadline|sms_first]
 
 The server runs from this checkout on its own port with its own VAR_DIR, so it never touches the
 live server on port 8000. Every dependency stays cached: the harness refuses to set a live mode.
@@ -86,7 +86,7 @@ async def run_all(ctx: Ctx, only: set[str] | None, timeout: float, results: list
     for sc in scenarios.SCENARIOS:
         if only and sc.name not in only:
             continue
-        if sc.profile != ctx.profile:
+        if ctx.profile not in sc.profiles:
             continue
         ctx.failures = []
         started = time.monotonic()

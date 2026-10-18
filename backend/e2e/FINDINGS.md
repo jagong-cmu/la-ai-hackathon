@@ -74,3 +74,5 @@ The full flow passed in a headless browser with no console errors: planner, owne
 | 006 | 1.0 | 19 + 2 deadline | 5 | S-018 (the restart in `restart_mid_job` could not start the server); the deadline profile passed |
 | 007 | 0.1 | 19 | 1 | S-019 (fuzzer); then 10 more fuzz seeds and a new `fuzz_other_bodies` scenario (3 seeds) passed |
 | 008 | 0.1 | 20 | 0 | none (also a UI pass; see above) |
+| 009 | 1.0 | 20 + 2 deadline | 0 | none in the cycle; in-process probes in the same period found S-020 to S-027 |
+| 010 | 0.1 | 22 + 5 sms_first | 0 | none; new `sms_first` profile (SMS, no reply, then the call) passed |

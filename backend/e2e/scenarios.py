@@ -68,7 +68,7 @@ class Scenario:
     name: str
     area: str
     fn: Callable[[Ctx], Awaitable[None]]
-    profile: str = "default"
+    profiles: tuple[str, ...] = ("default",)
 
 
 SCENARIOS: list[Scenario] = []
@@ -78,12 +78,14 @@ PROFILES: dict[str, dict[str, str]] = {
     # At time-scale 1.0: alpha/bravo carts are verified by ~47 s, the delta lane searches for 125 s.
     # Run this profile with --time-scale 1.0 --scenario-timeout 240.
     "deadline": {"JOB_DEADLINE_S": "50"},
+    # The distributor texts first, waits for a reply (none in the fixture), then calls.
+    "sms_first": {"DISTRIBUTOR_FLOW": "sms_first", "DISTRIBUTOR_REPLY_WAIT_S": "20"},
 }
 
 
-def scenario(name: str, area: str, profile: str = "default"):
+def scenario(name: str, area: str, profile: str | tuple[str, ...] = "default"):
     def wrap(fn):
-        SCENARIOS.append(Scenario(name, area, fn, profile))
+        SCENARIOS.append(Scenario(name, area, fn, (profile,) if isinstance(profile, str) else profile))
         return fn
     return wrap
 
@@ -300,7 +302,7 @@ async def reads_ok(ctx: Ctx) -> None:
 # ---------------------------------------------------------------- job lifecycle
 
 
-@scenario("happy_approve", "job")
+@scenario("happy_approve", "job", profile=("default", "sms_first"))
 async def happy_approve(ctx: Ctx) -> None:
     view = await run_to_results(ctx)
     jid = view["jobId"]
@@ -325,7 +327,7 @@ async def happy_approve(ctx: Ctx) -> None:
     await ctx.req("GET", f"/jobs/{jid}/rules", expect={200, 404})
 
 
-@scenario("reject_then_approve", "job")
+@scenario("reject_then_approve", "job", profile=("default", "sms_first"))
 async def reject_then_approve(ctx: Ctx) -> None:
     view = await run_to_results(ctx)
     jid = view["jobId"]
@@ -415,7 +417,7 @@ async def idempotency(ctx: Ctx) -> None:
         await full_check(ctx, jid)
 
 
-@scenario("concurrent_jobs", "job")
+@scenario("concurrent_jobs", "job", profile=("default", "sms_first"))
 async def concurrent_jobs(ctx: Ctx) -> None:
     body = await draft(ctx)
     rs = await asyncio.gather(*(create(ctx, body) for _ in range(8)))
@@ -516,7 +518,7 @@ async def odd_but_valid_requests(ctx: Ctx) -> None:
 # ---------------------------------------------------------------- events
 
 
-@scenario("sse_resume", "events")
+@scenario("sse_resume", "events", profile=("default", "sms_first"))
 async def sse_resume(ctx: Ctx) -> None:
     body = await draft(ctx)
     jid = (await create(ctx, body)).json()["jobId"]
@@ -719,7 +721,7 @@ async def create_race_new_key(ctx: Ctx) -> None:
 # ---------------------------------------------------------------- distributor (fixture call)
 
 
-@scenario("quoted_plan", "distributor")
+@scenario("quoted_plan", "distributor", profile=("default", "sms_first"))
 async def quoted_plan(ctx: Ctx) -> None:
     view = await run_to_results(ctx)
     jid = view["jobId"]
