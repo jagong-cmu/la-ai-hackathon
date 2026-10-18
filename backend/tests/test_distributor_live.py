@@ -463,3 +463,16 @@ def test_allocate_total_never_gives_a_negative_part():
         assert round(sum(parts.values()), 2) == round(total, 2)
     assert allocate_total(100, {"a": 0.0, "b": 80.0, "c": 20.0})["a"] > 0  # no free item
     assert allocate_total(12.0, {}) == {}
+
+
+def test_delivery_fee_reads_thousands_and_a_negated_free():
+    """Soak S-023: 'Delivery is $1,250.00' gave 1.0 (no thousands separator in the pattern), and
+    'No free delivery, delivery $15' gave 0.0 (the 'free delivery' inside 'No free delivery')."""
+    from app.distributor.live import delivery_fee
+
+    assert delivery_fee("Delivery is $1,250.00 for this order") == 1250.0
+    assert delivery_fee("delivery 1,000 dollars") == 1000.0
+    assert delivery_fee("No free delivery, delivery $15") == 15.0
+    assert delivery_fee("Sorry, not free shipping. Shipping is $9.50") == 9.5
+    assert delivery_fee("Free delivery on Thursday") == 0.0
+    assert delivery_fee("Delivery is $35") == 35.0
