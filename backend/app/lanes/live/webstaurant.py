@@ -23,6 +23,7 @@ from playwright.async_api import Page
 
 from app.config import CheckoutContact
 from app.lanes.live.adapter_base import (
+    US_STATES,
     AdapterStepError,
     CartRow,
     PlaywrightAdapterLane,
@@ -37,7 +38,7 @@ ZIP_INPUT = "[data-testid=zip-code-input]:visible"
 LINE = "tbody[data-cart-item-id]"
 GUEST_EMAIL = "input[name=email]:not(#email-login)"  # the first email box is the sign-in form
 CONTINUE = "[data-testid=guestcheckout-continue-button]"
-COMPANY_TYPE = "Restaurant"  # a required select on the shipping step
+COMPANY_TYPE = "Cafés & Bakery"  # required on the shipping step; the site's list, seen 2026-10-18
 # The pack price on a search card: "ITEM NUMBER #394EN403LCASE $48.49/Case $0.05/Ea".
 PRICE_ON_CARD = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})\s*/")
 # Freight options are <button role="radio">; the selected one has aria-checked="true".
@@ -200,8 +201,12 @@ class WebstaurantLane(PlaywrightAdapterLane):
         # The street box suggests addresses; Escape closes the list and keeps the typed text.
         await self.fill(page, "input[autocomplete='shipping address-line1']", contact.address1)
         await page.keyboard.press("Escape")
-        await self.choose(page, "[data-testid=company-type-select] input[role=combobox]", COMPANY_TYPE)
-        await self.choose(page, "input[autocomplete='shipping address-level1']", contact.state)
+        await self.choose(page, "[data-testid=company-type-select]", COMPANY_TYPE)
+        await self.choose(page, "input[autocomplete='shipping address-level1']",
+                          US_STATES.get(contact.state.upper(), contact.state))
+        coupons = page.locator("input[name=receiveCoupons]")
+        if await coupons.count() and await coupons.is_checked():  # ticked by default: no marketing email
+            await self.click(page, coupons, js=True)  # the site draws its own box over the input
         return ["email", "name", "company", "company_type", "address1", "city", "state", "zip", "phone"]
 
     async def next_checkout_step(self, page: Page) -> bool:
@@ -211,10 +216,16 @@ class WebstaurantLane(PlaywrightAdapterLane):
         await self.click(page, button, wait_nav=True)
         return True
 
-    async def choose(self, page: Page, selector: str, value: str) -> None:
-        """Pick an option in a searchable select: type it, then Enter takes the first match."""
-        await self.fill(page, selector, value)
-        await page.keyboard.press("Enter")
+    async def choose(self, page: Page, selector: str, option: str) -> None:
+        """Pick an option in a dropdown: open it, then click the option with exactly that name.
+        Typing and Enter picked the first partial match ("CA" -> "Armed Forces Americas")."""
+        await self.click(page, page.locator(selector).first)
+        target = page.get_by_role("option", name=option, exact=True)
+        try:
+            await target.first.wait_for(timeout=5000)
+        except PlaywrightError as exc:
+            raise AdapterStepError(f"no option {option!r} in {selector}") from exc
+        await self.click(page, target)
 
 
 def search_slug(query: str) -> str:
