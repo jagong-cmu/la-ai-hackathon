@@ -26,6 +26,7 @@ Discovery gives a lane only to a supplier that a lane can run now (`can_run` in 
 
 | Adapter | Site | File | Notes |
 |---|---|---|---|
+| `restaurantware` | restaurantware.com | `live/shopify.py` | The same Shopify adapter. Its search page does not render in the Browser Use cloud browser (2026-10-18), so the JSON adapter is the only lane that works there. Cart is `estimated` (no shipping or tax before checkout). |
 | `webstaurant` | webstaurantstore.com | `live/webstaurant.py` | Needs a visible browser (`BROWSER_HEADLESS=false`) or the cloud browser: add to cart fails headless. Cart shows the subtotal and the ZIP freight, so the cart is `estimated`. The checkout contact step refuses to run until `CHECKOUT_CONTACT__*` is set. |
 | `wees_express` | wees-express.com | `live/shopify.py` | Generic Shopify adapter: reads `/products/<handle>.js` and `/cart.js`, so it works with any theme. One-page checkout: the guard stops on the card fields, which is the handoff. |
 

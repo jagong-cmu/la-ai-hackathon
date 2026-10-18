@@ -498,7 +498,10 @@ class PlaywrightAdapterLane:
 
     async def _checkout(self, ctx: LaneContext, contact: CheckoutContact) -> CheckoutHandoff:
         if (direct := self.checkout_url()) is not None:
-            page = await self.goto(direct)  # one load instead of cart page + checkout click
+            # One load instead of cart page + checkout click. Not goto(): its guard raises on a payment
+            # page, and a one-page checkout (Restaurantware, 2026-10-18) is one at once. The guard runs
+            # just below with the stop allowed, as after the checkout click.
+            page = await self.browser.goto(direct, None, settle_ms=self.nav_settle_ms)
         else:
             page = await self.goto(self.cart_url())
             await self.checkout_entry(page)

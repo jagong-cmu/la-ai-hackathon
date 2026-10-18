@@ -49,7 +49,7 @@ MAX_AGENT_LANES = 1
 # Supplier domain -> adapter name. CREAO never sets an adapter, so discovery maps by domain.
 # A mapping takes effect only once that adapter is registered (app/lanes/live_setup.py);
 # until then the site stays an unknown site for the LLM agent lane. Register adapters
-# under exactly these names. Registered now: webstaurant, wees_express. The site preflight
+# under exactly these names. Registered now: webstaurant, wees_express, restaurantware. The site preflight
 # (scripts/site_preflight.py, 2026-10-17) found katom.com and uline.com blocking the browser.
 ADAPTER_DOMAINS: dict[str, str] = {
     "webstaurantstore.com": "webstaurant",

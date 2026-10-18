@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from app.config import CheckoutContact
-from app.contracts import CartLine, ShoppingItem, SupplierRef
+from app.contracts import CartLine, SearchSpec, ShoppingItem, SupplierRef
 from app.lanes.base import LaneBlocked, LaneContext, LaneGuardStopped
 from app.lanes.live.config import LiveLaneSettings
 from app.lanes.live.hosted_agent import (
@@ -128,6 +128,55 @@ def test_run_body_never_sends_a_way_to_pay():
     assert follow_up["sessionId"] == "sess-1" and "maxCostUsd" not in follow_up
 
 
+def test_run_body_asks_for_low_reasoning_on_the_default_model():
+    assert run_body(cfg(), "task", {}, None)["modelParams"] == {"reasoning": {"effort": "low"}}
+    other = LiveLaneSettings(_env_file=None, browser_use_api_key="bu-test", hosted_agent_model="gemini-3.6-flash")
+    body = run_body(other, "task", {}, None)
+    assert body["model"] == "gemini-3.6-flash" and "modelParams" not in body
+
+
+def test_cart_prompt_has_no_screenshot_step_by_default():
+    from app.lanes.live.hosted_agent import cart_prompt, search_prompt
+
+    assert "screenshot" not in cart_prompt(SUPPLIER, LINES, None).lower()
+    assert "screenshot" in cart_prompt(SUPPLIER, LINES, None, screenshot=True).lower()
+    spec = {"gloves": SearchSpec(item_id="gloves", query="nitrile gloves", unit="box")}
+    assert "https://www.acme-supply.com/search?q=" in search_prompt(SUPPLIER, ITEMS, spec)
+
+
+async def test_different_listings_are_dropped_and_differences_reach_j5(settings, decider, tmp_path):
+    fake = FakeBrowserUse([OPEN, {
+        "listings": [
+            {"item_id": "gloves", "title": "Vinyl gloves, large, 100 per box", "sku": "V-1",
+             "product_url": "https://www.acme-supply.com/p/v-1", "pack_price_cents": 900, "in_stock": True,
+             "listing_text": "Box of 100 vinyl gloves.", "match_status": "different",
+             "differences": ["vinyl, not nitrile"]},
+            {"item_id": "gloves", "title": "Nitrile gloves, large, 100 per box", "sku": "G-100",
+             "product_url": "https://www.acme-supply.com/p/g-100", "pack_price_cents": 1250, "in_stock": True,
+             "listing_text": "Box of 100 gloves.", "match_status": "uncertain",
+             "differences": ["color not shown"]},
+        ],
+        "final_page": CART_PAGE,
+    }])
+    lane = make_lane(fake)
+    ctx, _ = make_ctx(settings, decider, tmp_path)
+    await lane.open(ctx)
+    offers = await lane.search(ctx, ITEMS)
+    assert [p.sku for p in offers.products] == ["G-100"]
+    assert "rejected Vinyl gloves" in (offers.error or "")
+    saved = json.loads((tmp_path / "evidence" / "job_h" / "acme" / "listing_gloves_G-100.json").read_text())
+    assert saved["matchStatus"] == "uncertain" and saved["differences"] == ["color not shown"]
+
+
+async def test_no_matching_listing_is_not_found(settings, decider, tmp_path):
+    fake = FakeBrowserUse([OPEN, {"listings": [], "missing_item_ids": ["gloves"], "final_page": CART_PAGE}])
+    lane = make_lane(fake)
+    ctx, _ = make_ctx(settings, decider, tmp_path)
+    await lane.open(ctx)
+    offers = await lane.search(ctx, ITEMS)
+    assert offers.status == "not_found" and offers.products == []
+
+
 def test_output_schema_has_no_refs():
     assert "$ref" not in json.dumps(output_schema(HostedCartOutput))
 
@@ -147,10 +196,10 @@ async def test_open_and_search_judge_listings_in_code(settings, decider, tmp_pat
         "listings": [
             {"item_id": "gloves", "title": "Nitrile gloves, large, 100 per box", "sku": "G-100",
              "product_url": "https://www.acme-supply.com/p/g-100", "pack_price_cents": 1250, "in_stock": True,
-             "listing_text": "Box of 100 gloves. Size large."},
+             "listing_text": "Box of 100 gloves. Size large.", "match_status": "exact"},
             {"item_id": "gloves", "title": "Gloves elsewhere", "sku": "X",
              "product_url": "https://other-shop.com/p/x", "pack_price_cents": 1, "in_stock": True,
-             "listing_text": "1 box"},
+             "listing_text": "1 box", "match_status": "exact"},
         ],
         "missing_item_ids": [], "errors": [], "final_page": CART_PAGE,
     }])
@@ -176,8 +225,20 @@ async def test_cart_with_full_totals_is_verified(settings, decider, tmp_path):
     cart = await lane.set_cart(ctx, LINES)
     assert cart.verification_status == "verified", cart.reason
     assert cart.costs is not None and (cart.costs.subtotal, cart.costs.total) == (25.0, 32.0)
-    assert cart.screenshot_url and ("screenshot", {"url": cart.screenshot_url}) in events
+    assert cart.screenshot_url is None and "screenshot" not in fake.bodies[1]["task"].lower()  # off by default
     assert "1 Team Way" in fake.bodies[1]["task"]
+
+
+async def test_cart_screenshot_when_turned_on(settings, decider, tmp_path):
+    settings.checkout_contact = CheckoutContact(address1="1 Team Way")
+    fake = FakeBrowserUse([OPEN, cart_out()])
+    c = LiveLaneSettings(_env_file=None, browser_use_api_key="bu-test", hosted_agent_poll_s=0,
+                         hosted_agent_screenshot=True)
+    lane = HostedAgentLane(SUPPLIER, c, client=HostedAgentClient(c, transport=httpx.MockTransport(fake)))
+    ctx, events = make_ctx(settings, decider, tmp_path)
+    await lane.open(ctx)
+    cart = await lane.set_cart(ctx, LINES)
+    assert cart.screenshot_url and ("screenshot", {"url": cart.screenshot_url}) in events
 
 
 async def test_cart_without_team_address_stays_on_cart_and_is_estimated(settings, decider, tmp_path):
@@ -329,3 +390,54 @@ def test_the_lane_sets_its_own_step_budget(settings, db, decider):
     assert Orchestrator._budget(orch, lr, 45) == 45 * 8
     lr.lane = None
     assert Orchestrator._budget(orch, lr, 45) == 45 * settings.lane_agent_budget_factor
+
+
+async def test_a_search_that_could_not_run_is_failed_not_missing(settings, decider, tmp_path):
+    broken = {"listings": [], "missing_item_ids": ["gloves"],
+              "errors": ["The search results did not render."], "final_page": CART_PAGE}
+    fake = FakeBrowserUse([OPEN, broken, broken])
+    lane = make_lane(fake)
+    ctx, _ = make_ctx(settings, decider, tmp_path)
+    await lane.open(ctx)
+    offers = await lane.search(ctx, ITEMS)
+    assert offers.status == "failed" and "did not render" in (offers.error or "")
+
+
+
+async def test_a_failed_search_runs_once_more_with_high_reasoning(settings, decider, tmp_path):
+    broken = {"listings": [], "errors": ["The search results did not render."], "final_page": CART_PAGE}
+    found = {"listings": [{"item_id": "gloves", "title": "Nitrile gloves, large, 100 per box", "sku": "G-100",
+                           "product_url": "https://www.acme-supply.com/p/g-100", "pack_price_cents": 1250,
+                           "in_stock": True, "listing_text": "Box of 100 gloves.", "match_status": "exact"}],
+             "final_page": CART_PAGE}
+    fake = FakeBrowserUse([OPEN, broken, found])
+    lane = make_lane(fake)
+    ctx, events = make_ctx(settings, decider, tmp_path)
+    await lane.open(ctx)
+    offers = await lane.search(ctx, ITEMS)
+    assert offers.status == "ok" and [p.sku for p in offers.products] == ["G-100"]
+    assert fake.bodies[1]["modelParams"]["reasoning"]["effort"] == "low"
+    assert fake.bodies[2]["modelParams"]["reasoning"]["effort"] == "high"
+    assert any(kind == "hosted_retry" for kind, _ in events)
+
+
+async def test_j5_sees_the_stock_state_that_the_agent_read(settings, decider, tmp_path, monkeypatch):
+    from app.lanes.live import hosted_agent
+
+    seen: list[str] = []
+    real = hosted_agent.j5_listing
+
+    async def spy(d, spec, title, text, job_id=None):
+        seen.append(text)
+        return await real(d, spec, title, text, job_id=job_id)
+
+    monkeypatch.setattr(hosted_agent, "j5_listing", spy)
+    fake = FakeBrowserUse([OPEN, {"listings": [
+        {"item_id": "gloves", "title": "Nitrile gloves, large, 100 per box", "sku": "G-100",
+         "product_url": "https://www.acme-supply.com/p/g-100", "pack_price_cents": 1250, "in_stock": True,
+         "listing_text": "Box of 100 gloves.", "match_status": "exact"}], "final_page": CART_PAGE}])
+    lane = make_lane(fake)
+    ctx, _ = make_ctx(settings, decider, tmp_path)
+    await lane.open(ctx)
+    await lane.search(ctx, ITEMS)
+    assert seen and "Availability on the page: in stock" in seen[0]
