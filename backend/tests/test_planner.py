@@ -186,6 +186,15 @@ def test_full_dates_and_short_quantities():
     assert phrase_quantity("2.5 cases") == 2.5
 
 
+async def test_an_absurd_quantity_needs_confirmation(planner):
+    """Soak S-020: "about 99999999999999999999 extra hamburger buns" was applied, and the daily
+    check then asked to order 1e20 gloves. A quantity far above the product's history needs a yes."""
+    adj = await planner.owner_message("Catering a wedding Saturday, about 99999999999999999999 extra hamburger buns")
+    assert adj.status == "needs_confirmation" and any("history" in n for n in adj.notes)
+    normal = await planner.owner_message("Catering a wedding Saturday, about 300 extra hamburger buns")
+    assert normal.status == "applied"
+
+
 async def test_an_extra_with_no_quantity_needs_confirmation(planner):
     adj = await planner.owner_message("We need three hundred extra hamburger buns next Friday")
     assert adj.kind == "one_time_extra" and adj.quantity is None

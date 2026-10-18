@@ -43,6 +43,8 @@ DISCLOSURE = (
     "Supply bills are synthetic. The data covers one year, so the model learns no seasonality."
 )
 
+ABSURD_FACTOR = 10  # owner-message quantity above this many times the best week needs a confirmation
+
 
 class Planner:
     def __init__(self, settings: Settings, db: Database, decider: Decider, sales: SalesData, books: Books):
@@ -272,6 +274,10 @@ class Planner:
         elif kind in ("one_time_extra", "lasting_increase") and qty is None:
             status = "needs_confirmation"  # applied, it would add 0 and look done
             notes.append("no quantity found; ask the owner how many")
+        elif qty is not None and item_id is not None and qty > ABSURD_FACTOR * max(self.sales.series(item_id), default=0):
+            status = "needs_confirmation"  # a typo or a joke must not reach the daily order
+            notes.append(f"{qty:,.0f} is more than {ABSURD_FACTOR}x the most this product ever sold in a week "
+                         "(sales history); ask the owner to confirm")
         elif d.band == "act":
             status = "applied"
         else:
