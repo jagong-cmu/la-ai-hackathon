@@ -523,3 +523,18 @@ def test_discovery_skips_a_candidate_with_a_bad_url():
         SupplierCandidate(id="none", name="None", url="", selected=True),
     ])
     assert [(s.id, s.url) for s in selected_suppliers(found)] == [("ok", "https://www.ok.example")]
+
+
+def test_huge_numbers_are_refused_not_overflowed(client):
+    """Soak S-014: after=10**25 (or Last-Event-ID) overflowed SQLite's 64-bit integer and broke the
+    stream (200 with an empty body). quantity=10**25 gave totals like 8.799999999999999e+24."""
+    draft = client.get("/shopping-list/draft").json()
+    job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-big-0001"}).json()["jobId"]
+    wait_for(client, job_id, {"results_ready"})
+    big = "9" * 25
+    assert client.get(f"/jobs/{job_id}/events", params={"follow": "false", "after": big}).status_code == 422
+    r = client.get(f"/jobs/{job_id}/events", params={"follow": "false"}, headers={"Last-Event-ID": big})
+    assert r.status_code == 200 and r.text.startswith("retry:")  # an id past the end: no events, a clean stream
+    body = json.loads(json.dumps(draft))
+    body["items"][0]["quantity"] = 10**25
+    assert client.post("/jobs", json=body, headers={"Idempotency-Key": "test-big-0002"}).status_code == 422

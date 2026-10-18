@@ -66,6 +66,9 @@ def due_supplies(view: PlannerView) -> list[SupplyPlan]:
     return [p for p in view.supplies if p.status != "ok" and p.recommended_qty > 0]
 
 
+MAX_SEQ = 2**62  # event seqs are SQLite integers (64-bit); a larger "after" would overflow
+
+
 class ModeChange(BaseModel):
     dependency: str
     mode: Mode
@@ -311,13 +314,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return rules
 
     @app.get("/jobs/{job_id}/events")
-    async def job_events(job_id: str, request: Request, after: int = Query(0, ge=0),
+    async def job_events(job_id: str, request: Request, after: int = Query(0, ge=0, le=MAX_SEQ),
                          follow: bool = Query(True, description="false: send the events so far, then close"),
                          last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
                          s: AppState = Depends(state)) -> StreamingResponse:
         if s.orchestrator.get_view(job_id) is None:
             raise HTTPException(404, "job not found")
-        start = int(last_event_id) if last_event_id and last_event_id.isdigit() else after
+        start = min(int(last_event_id), MAX_SEQ) if last_event_id and last_event_id.isdigit() else after
 
         def frame(event) -> str:
             return f"id: {event.seq}\nevent: {event.type}\ndata: {event.model_dump_json(by_alias=True)}\n\n"

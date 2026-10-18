@@ -40,7 +40,7 @@ class SearchSpec(Model):
 class ShoppingItem(Model):
     id: str
     name: str
-    quantity: int = Field(gt=0)
+    quantity: int = Field(gt=0, le=1_000_000_000)  # keeps every money value exact to the cent
     unit: str
     past_unit_price: float | None = Field(default=None, ge=0)  # anchors the distributor call
     order_cadence_days: float | None = Field(default=None, ge=0)
