@@ -115,6 +115,18 @@ class ShopifyStore:
 WEES_EXPRESS = ShopifyStore(name="wees_express")
 # Checked 2026-10-18: /search/suggest.json, /products/<handle>.js and /cart.js answer for a guest.
 RESTAURANTWARE = ShopifyStore(name="restaurantware")
+# Checked 2026-10-18: /cart.js, /search/suggest.json and /products/<handle>.js answer for a guest, and
+# adapter_gate passed (search and cart) on each. Rejected: Zesco and Global Sugar Art (wrong matches:
+# mesh gloves, a gift card), Carryout Supplies (no predictive search results), Paper Mart
+# (its cart shows a PayPal button frame, so the payment guard stops the lane there: job_84dc4a938f).
+LOLLICUP = ShopifyStore(name="lollicup")
+RESTAURANT_SUPPLY_DROP = ShopifyStore(name="restaurant_supply_drop")
+PACKAGING_SUPPLIES = ShopifyStore(name="packaging_supplies")
+BOX_AND_WRAP = ShopifyStore(name="box_and_wrap")
+NYCAKE = ShopifyStore(name="nycake")  # bakery boxes and cake supplies
+# Adapter name -> store, for every Shopify store above. live_setup registers each one.
+SHOPIFY_STORES = {s.name: s for s in (WEES_EXPRESS, RESTAURANTWARE, LOLLICUP, RESTAURANT_SUPPLY_DROP,
+                                      PACKAGING_SUPPLIES, BOX_AND_WRAP, NYCAKE)}
 
 
 class ShopifyAdapterLane(PlaywrightAdapterLane):
@@ -152,8 +164,16 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
                "&resources[type]=product&resources[limit]=10&resources[options][unavailable_products]=last")
         data = await self._get_json(page, url)
         found = ((data or {}).get("resources") or {}).get("results", {}).get("products") or []
-        if not found:  # predictive search off or empty: the search page
-            cards = await super().search_cards(page, query)
+        if not found:
+            # Predictive search off or empty: the search page, in its own tab. All items search at
+            # once on one page, and a page load there destroyed the other items' in-page reads
+            # ("Execution context was destroyed": Paper Mart, NY Cake, 2026-10-18).
+            tab = await self.browser.new_tab()
+            try:
+                cards = await super().search_cards(tab, query)
+            finally:
+                with contextlib.suppress(PlaywrightError):
+                    await tab.close()
         else:
             cards = [ResultCard(title=r["title"], url=f"{self._base()}/products/{r['handle']}",
                                 snippet=f"{r['title']} ${r.get('price', '')} {r.get('vendor', '')}".strip())

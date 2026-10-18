@@ -11,7 +11,7 @@ import { CallPanel, callFromEvents } from "@/components/job/CallStrip";
 import { OrderBasis, usePlanner } from "@/components/job/OrderBasis";
 import { useJobEvents } from "@/hooks/useJobEvents";
 import { shortName } from "@/lib/format";
-import { jobHref, orderTitle, planShort, supplierNames, supplierUrls } from "@/lib/job";
+import { jobHref, orderTitle, planShort, supplierNames, supplierUrls, tileCols } from "@/lib/job";
 
 export default function WorkingPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,7 +35,7 @@ export default function WorkingPage() {
   const bestId = ready ? job.results!.recommendedPlanId : s.bestPlan?.planId;
   const best = bestId ? (job.results?.plans ?? job.plans).find((p) => p.planId === bestId) : null;
   const bestTotal = best?.total ?? s.bestPlan?.total ?? null;
-  // The browsers and the call share one grid that fits the screen: 3 stores + the call = 2 x 2.
+  // The browsers and the call share one grid that fits the screen: 8 stores + the call = 3 x 3.
   const tiles = Math.max(1, lanes.length) + (job.request.distributor ? 1 : 0);
 
   return (
@@ -54,7 +54,7 @@ export default function WorkingPage() {
       <ErrorNote error={s.error} />
 
       <div className="work fit">
-        <div className="tiles" style={{ "--tile-cols": tiles <= 4 ? 2 : 3 } as React.CSSProperties}>
+        <div className="tiles" style={{ "--tile-cols": tileCols(tiles) } as React.CSSProperties}>
           {lanes.map((l) => (
             <BrowserPane
               key={l.laneId}

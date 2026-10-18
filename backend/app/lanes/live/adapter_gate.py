@@ -35,6 +35,12 @@ from app.llm import Step5Client
 SITES = {
     "webstaurant": ("WebstaurantStore", "https://www.webstaurantstore.com/"),
     "wees_express": ("Wees Express", "https://wees-express.com/"),
+    "restaurantware": ("Restaurantware", "https://www.restaurantware.com/"),
+    "lollicup": ("Lollicup", "https://lollicupstore.com/"),
+    "restaurant_supply_drop": ("Restaurant Supply Drop", "https://www.restaurantsupplydrop.com/"),
+    "packaging_supplies": ("PackagingSupplies.com", "https://www.packagingsupplies.com/"),
+    "box_and_wrap": ("Box and Wrap", "https://www.boxandwrap.com/"),
+    "nycake": ("NY Cake", "https://nycake.com/"),
 }
 ITEMS = [
     ShoppingItem(id="gloves", name="nitrile gloves medium", quantity=1000, unit="glove"),
@@ -47,9 +53,9 @@ def make_lane(name: str, supplier: SupplierRef, cfg: LiveLaneSettings):
         from app.lanes.live.webstaurant import WebstaurantLane
 
         return WebstaurantLane(supplier, cfg)
-    from app.lanes.live.shopify import WEES_EXPRESS, ShopifyAdapterLane
+    from app.lanes.live.shopify import SHOPIFY_STORES, ShopifyAdapterLane
 
-    return ShopifyAdapterLane(supplier, WEES_EXPRESS, cfg)
+    return ShopifyAdapterLane(supplier, SHOPIFY_STORES[name], cfg)
 
 
 async def run(name: str, headless: bool, checkout: bool, cloud: bool = False, warm: bool = False,

@@ -8,7 +8,7 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono"
 
 export const metadata: Metadata = {
   title: { default: "sourn", template: "%s · sourn" },
-  description: "Restock planner and supplier price comparison",
+  description: "End-to-end procurement for bakeries: forecast, supplier quotes and ordering",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -54,13 +54,16 @@ from app.judgments import j3_supplier
 
 log = logging.getLogger(__name__)
 
-MAX_ADAPTER_LANES = 3
+# One browser per lane, all at once. 8 lanes and the distributor call fill a 3 x 3 grid on the job
+# page. MAX_LANES counts every lane; at most MAX_AGENT_LANES of them are LLM agent lanes.
+MAX_LANES = 8
 MAX_AGENT_LANES = 1
 
 # Supplier domain -> adapter name. CREAO never sets an adapter, so discovery maps by domain.
 # A mapping takes effect only once that adapter is registered (app/lanes/live_setup.py);
 # until then the site stays an unknown site for the LLM agent lane. Register adapters
-# under exactly these names. Registered now: webstaurant, wees_express, restaurantware. The site preflight
+# under exactly these names. Registered now: webstaurant and the Shopify stores in
+# live_setup.SHOPIFY_ADAPTERS. The site preflight
 # (scripts/site_preflight.py, 2026-10-17) found katom.com and uline.com blocking the browser.
 ADAPTER_DOMAINS: dict[str, str] = {
     "webstaurantstore.com": "webstaurant",
@@ -69,6 +72,11 @@ ADAPTER_DOMAINS: dict[str, str] = {
     "restaurantware.com": "restaurantware",
     "wasserstrom.com": "wasserstrom",
     "wees-express.com": "wees_express",
+    "lollicupstore.com": "lollicup",
+    "restaurantsupplydrop.com": "restaurant_supply_drop",
+    "packagingsupplies.com": "packaging_supplies",
+    "boxandwrap.com": "box_and_wrap",
+    "nycake.com": "nycake",
 }
 
 # Team-approved adapter sites. Discovery adds them to free adapter slots (they skip J3).
@@ -319,7 +327,7 @@ class Discovery:
             await asyncio.gather(*(j3_supplier(self.decider, c, category, notes.get(c.id, "")) for c in judged)),
             strict=True,
         ))
-        adapter_lanes = agent_lanes = 0
+        runnable: list[SupplierCandidate] = []
         for cand in candidates:
             if cand.id in hidden:
                 cand.reason = "filtered: prices not public"
@@ -332,15 +340,19 @@ class Discovery:
             if not self._can_run(cand):
                 cand.reason = f"no lane in {self.modes.get('browser')} browser mode"
                 continue
-            if cand.adapter is not None and adapter_lanes < MAX_ADAPTER_LANES:  # registered (resolved above)
-                cand.selected, cand.reason = True, "known adapter"
-                adapter_lanes += 1
-            elif cand.adapter is None and agent_lanes < MAX_AGENT_LANES:
+            runnable.append(cand)
+        # Agent lanes first, so a long list of adapter sites never takes the unknown site's slot.
+        agents = [c for c in runnable if c.adapter is None][:MAX_AGENT_LANES]
+        adapter_slots = MAX_LANES - len(agents)
+        for cand in runnable:
+            if cand in agents:
                 cand.selected, cand.reason = True, "unknown site: LLM agent lane"
-                agent_lanes += 1
+            elif cand.adapter is not None and adapter_slots > 0:  # registered (resolved above)
+                cand.selected, cand.reason = True, "known adapter"
+                adapter_slots -= 1
             else:
                 cand.reason = "not needed (lane limit)"
-        candidates += self._approved_fill(candidates, MAX_ADAPTER_LANES - adapter_lanes)
+        candidates += self._approved_fill(candidates, adapter_slots)
         return DiscoveryResult(category=category, zip_code=zip_code, candidates=candidates,
                                distributor=distributor, source=source, age_s=age)
 

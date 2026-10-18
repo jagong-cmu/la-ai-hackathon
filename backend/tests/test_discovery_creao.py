@@ -395,6 +395,21 @@ async def test_approved_site_is_not_added_twice_when_creao_returns_it(live_setti
     assert [(c.id, c.reason) for c in katoms] == [("katom-restaurant-supply", "known adapter")]
 
 
+async def test_eight_lanes_and_the_agent_slot_is_kept(live_settings, db, decider, monkeypatch):
+    # Every approved site registered: approved sites fill the slots up to MAX_LANES, and the
+    # unknown site keeps its agent lane though it comes after the adapter sites.
+    for site in json.loads(discovery.APPROVED_SITES.read_text())["sites"]:
+        monkeypatch.setitem(registry._ADAPTERS, site["adapter"], lambda supplier: None)
+    unknown = {**KATOM, "name": "Mystery Supply", "url": "https://mystery-supply.example"}
+    disc = make_discovery(live_settings, db, decider, completed_with(KATOM, unknown))
+    result = await disc.discover("packaging_disposables", "90024", None)
+
+    selected = [c for c in result.candidates if c.selected]
+    assert len(selected) == discovery.MAX_LANES == 8
+    assert [c.adapter for c in selected].count(None) == 1
+    assert next(c for c in selected if c.adapter is None).name == "Mystery Supply"
+
+
 async def test_fixture_mode_selection_is_unchanged(settings, db, decider):
     disc = Discovery(settings, db, RuntimeModes(settings.initial_modes()), decider)
     result = await disc.discover("packaging_disposables", "49007", None)
