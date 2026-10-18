@@ -448,3 +448,18 @@ async def test_real_call_j9_answers_confirm_both_item_prices(settings: Settings,
     assert [o["confirmed"] for o in offers] == [True, True]
     assert result is not None
     assert sorted((p.item_id, p.pack_price) for p in result.products) == [("boxes", 750.0), ("gloves", 500.0)]
+
+
+def test_allocate_total_never_gives_a_negative_part():
+    """Soak S-010: an item with no web line cost (weight 0) got weight 1.0 in its share but not in
+    the base, so the last item took a negative price ({'a': 200.0, 'b': -100.0})."""
+    from app.distributor.base import allocate_total
+
+    for total, weights in ((100, {"a": 0.0, "b": 0.5}), (100, {"a": 0.0, "b": 80.0, "c": 20.0}),
+                           (0.05, {"a": 3.0, "b": 3.0, "c": 3.0}), (10, {"a": 0.0, "b": 0.0})):
+        parts = allocate_total(total, weights)
+        assert set(parts) == set(weights)
+        assert all(v >= 0 for v in parts.values()), parts
+        assert round(sum(parts.values()), 2) == round(total, 2)
+    assert allocate_total(100, {"a": 0.0, "b": 80.0, "c": 20.0})["a"] > 0  # no free item
+    assert allocate_total(12.0, {}) == {}
