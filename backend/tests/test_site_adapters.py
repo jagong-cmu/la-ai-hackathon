@@ -204,3 +204,19 @@ async def test_shopify_payment_page_fill_types_only_shipping_fields(postal, ok):
             assert await page.input_value("input[name=postalCode]") == ""  # nothing typed into it
         assert await page.evaluate("document.body.dataset.paid") is None  # never clicked
         await browser.close()
+
+
+def test_stub_j6_treats_the_review_and_pay_page_as_payment():
+    """WebstaurantStore step 2 shows no card field until a payment method is picked, so the
+    guard's DOM check cannot stop there; the stub J6 must (step 1's progress bar names step 2)."""
+    import re
+
+    from app.stub_rules import PAGE_RULES
+
+    payment = dict(PAGE_RULES)["payment_step"]
+    step1 = re.sub(r"<[^>]+>", " ", (SITES / "webstaurant" / "checkout.html").read_text())
+    step2 = ("Shipping & Billing step 1 of 3 Review & Payment step 2 of 3 Order Confirmation step 3 of 3\n"
+             "Review & Payment\nINFORMATION\nBilling Address\nEdit Billing Address\nShipping Address\n"
+             "Change Shipping Address\nCART\nEdit")
+    assert not payment.search(step1)
+    assert payment.search(step2)
