@@ -31,6 +31,7 @@ Open questions for the team (not changed by the loop):
 - `create_job` checks the key, then awaits, then inserts. Two concurrent creates with one new key can race. The soak sends 20 concurrent creates with one new key each cycle (`create_race_new_key`); it has not failed yet.
 - A replay that runs during a restart keeps its copied state, and its stream can stay open. S-006 does not change replays, because a replay is a recording.
 - After a deadline, `results_updated` comes only when all the late work ends (`_late()` waits for every pending task). In a deadline run, verified plans existed at 47 s, but the owner's results showed "no recommendation" until the slow `delta` lane ended at 125 s. With live hosted-agent lanes, this wait can be minutes. The team must decide if each late plan change must update the results.
+- Sentry drops job traces under load. Cycle 004 sent 20 `job` spans for 39 jobs. Sentry client reports show more than 40,000 spans dropped with `queue_overflow` and `backpressure` in 3 hours. The soak's 10/s polling caused most of it (now 2/s). But each `GET /jobs/{id}`, `/health` and SSE reconnect is a transaction at `traces_sample_rate=1.0`, so a busy web client can push the job and AI traces out too. A `traces_sampler` that samples these reads low would protect them. This needs a team decision.
 - Live lead, not reproducible in fixture mode: Sentry SUPPLIER-AGENT-API-3, "All 3 reconnection attempts failed" from the `browser_use` `BrowserSession` logger, during a live Wees Express lane (4 events, last at 10:25 UTC).
 
 ## Cycle log
@@ -41,3 +42,4 @@ Open questions for the team (not changed by the loop):
 | 002 | 0.1 | 14 | 3 | S-003, S-004, S-005; S-002 from Sentry |
 | 003 | 0.1 | 14 | 0 | none (S-003 to S-005 fixes hold) |
 | 004 | 0.1 | 16 | 1 | S-006 (new scenario `restart_mid_job`); `create_race_new_key` passed |
+| 005 | 1.0 | 16 | 10 | none: harness timeouts (a fixture job takes ~125 s at real time); fixed in 29a8cd2. S-007 to S-010 came from new tests this cycle |

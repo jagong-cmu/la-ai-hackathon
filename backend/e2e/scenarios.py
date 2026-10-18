@@ -115,7 +115,7 @@ async def wait_state(ctx: Ctx, job_id: str, states: set[str], timeout: float = 1
             return view
         if view["state"] in FINAL and not (states & FINAL):
             raise AssertionError(f"{job_id} ended in {view['state']} while waiting for {sorted(states)}")
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)  # each poll is a Sentry transaction; 10/s per job overflowed the SDK queue
     raise AssertionError(f"{job_id} stayed in {view.get('state')} for {timeout}s (wanted {sorted(states)})")
 
 
