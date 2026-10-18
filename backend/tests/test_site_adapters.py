@@ -252,7 +252,7 @@ def test_tax_rows_for_j7():
 
 
 @pytest.fixture
-def broken_fetch_store() -> AsyncIterator[str]:
+def broken_fetch_store() -> AsyncIterator:
     """A local Shopify-like store whose page fetch() always fails, like Wees Express in the cloud
     browser on 2026-10-18. The JSON URLs themselves answer."""
     import json
@@ -270,20 +270,41 @@ def broken_fetch_store() -> AsyncIterator[str]:
         "/products/bakery-box.js": ("application/json", json.dumps(product)),
     }
 
+    carts: dict[str, list] = {}  # cart cookie -> lines
+    cart_cookies: list[str] = []  # the Cookie header of each GET /cart
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            kind, body = pages.get(self.path.split("?")[0], ("text/plain", ""))
+            path = self.path.split("?")[0]
+            if path == "/cart":
+                cart_cookies.append(self.headers.get("Cookie") or "")
+            if path == "/cart.js":
+                token = (self.headers.get("Cookie") or "").partition("cart=")[2].split(";")[0]
+                pages[path] = ("application/json", json.dumps({"items": carts.get(token, [])}))
+            kind, body = pages.get(path, ("text/plain", ""))
             self.send_response(200 if body else 404)
             self.send_header("Content-Type", kind)
             self.end_headers()
             self.wfile.write(body.encode())
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            lines = [{"sku": "BB-10", "variant_id": i["id"], "quantity": i["quantity"], "final_price": 4599}
+                     for i in body["items"]]
+            carts["tok1"] = lines
+            self.send_response(200 if self.path == "/cart/add.js" else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie", "cart=tok1; Path=/")
+            self.end_headers()
+            self.wfile.write(b"{}")
 
         def log_message(self, *args):
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield f"http://127.0.0.1:{server.server_port}"
+    server.cart_cookies = cart_cookies
+    yield server
     server.shutdown()
 
 
@@ -293,13 +314,21 @@ async def test_shopify_reads_json_when_the_page_fetch_fails(broken_fetch_store):
 
     from app.lanes.live.shopify import WEES_EXPRESS, ShopifyAdapterLane
 
-    lane = ShopifyAdapterLane(SupplierRef(id="w", name="W", url=f"{broken_fetch_store}/"), WEES_EXPRESS)
+    store = f"http://127.0.0.1:{broken_fetch_store.server_port}"
+    lane = ShopifyAdapterLane(SupplierRef(id="w", name="W", url=f"{store}/"), WEES_EXPRESS)
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()
         page = await browser.new_page()
-        await page.goto(f"{broken_fetch_store}/cart")
+        await page.goto(f"{store}/cart")
         cards = await lane.search_cards(page, "white bakery box")
-        assert [c.url for c in cards] == [f"{broken_fetch_store}/products/bakery-box"]
+        assert [c.url for c in cards] == [f"{store}/products/bakery-box"]
         listing = await lane.card_listing(page, cards[0])
+        assert listing is not None and listing.sku == "BB-10" and listing.price == 45.99
+
+        # The cart failed the same way in the next live run (job_8ec7d51952): POST /cart/add.js.
+        assert await lane._post(page, f"{store}/cart/add.js", {"items": [{"id": 7, "quantity": 5}]}) == 200
+        rows = await lane.cart_rows(page)
+        assert [(r.sku, r.pack_quantity) for r in rows] == [("BB-10", 5)]
+        await page.goto(f"{store}/cart")  # the browser's own cart page sees the same cart
         await browser.close()
-    assert listing is not None and listing.sku == "BB-10" and listing.price == 45.99
+    assert "cart=tok1" in broken_fetch_store.cart_cookies[-1]

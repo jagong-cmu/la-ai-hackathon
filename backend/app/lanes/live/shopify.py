@@ -213,7 +213,7 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
                 return False  # no variant in the URL: add from each product page instead
             items.append({"id": variant, "quantity": line.pack_quantity})
         await self.after_nav(page)  # the guard on the current page before the cart changes
-        status = await page.evaluate(POST_JS, [f"{self._base()}/cart/add.js", {"items": items}])
+        status = await self._post(page, f"{self._base()}/cart/add.js", {"items": items})
         if status != 200:
             raise AdapterStepError(f"cart add refused (HTTP {status})")
         return True
@@ -234,7 +234,7 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         if variant is None:
             raise AdapterStepError(f"no cart line for {sku}")
         await self.after_nav(page)
-        status = await page.evaluate(POST_JS, [f"{self._base()}/cart/change.js", {"id": str(variant), "quantity": 0}])
+        status = await self._post(page, f"{self._base()}/cart/change.js", {"id": str(variant), "quantity": 0})
         if status != 200:
             raise AdapterStepError(f"cart remove refused (HTTP {status})")
 
@@ -313,14 +313,25 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
     async def next_checkout_step(self, page: Page) -> bool:
         return False
 
+    async def _post(self, page: Page, url: str, body: dict) -> int:
+        """A cart POST in the page; if the page's fetch fails, the same POST from the browser context.
+        The cart cookie it sets goes into the context, so the cart page shows the same lines."""
+        try:
+            return await page.evaluate(POST_JS, [url, body])
+        except PlaywrightError as exc:
+            if "Failed to fetch" not in str(exc):
+                raise
+        response = await page.context.request.post(url, data=body, headers={"Accept": "application/json"})
+        return response.status
+
     async def _json(self, page: Page, path: str) -> dict | None:
         return await self._get_json(page, f"{self._base()}{path}")
 
     async def _get_json(self, page: Page, url: str) -> dict | None:
         """A JSON read in the page; if the page's fetch fails, the same GET from the browser context.
-        Wees Express (2026-10-18, cloud browser): every in-page read raised 'TypeError: Failed to
-        fetch' inside the store's fetch wrapper, while the URL answered. The context request uses the
-        same cookies, so /cart.js still reads this browser's cart."""
+        Wees Express (2026-10-18, cloud browser): every in-page fetch raised 'TypeError: Failed to
+        fetch' inside the store's fetch wrapper, while the URL answered. The context request shares
+        the context's cookies both ways, so /cart.js reads this browser's cart (see _post)."""
         try:
             return await page.evaluate(JSON_JS, url)
         except PlaywrightError as exc:
