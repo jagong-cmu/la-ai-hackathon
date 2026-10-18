@@ -6,6 +6,7 @@ JSON Schema that the frontend turns into TypeScript types.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -194,7 +195,10 @@ class Product(Model):
 def path_segment(value: str) -> str:
     """A safe file or folder name for an id from a request (supplier, distributor, item): no "/",
     no "..". Evidence files, their /evidence/... URLs and fixture paths use it."""
-    return re.sub(r"[^A-Za-z0-9._-]", "_", value).lstrip(".") or "_"
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", value).lstrip(".") or "_"
+    if len(safe) > 80:  # a file name has at most 255 bytes; keep long ids distinct with a hash
+        safe = safe[:64] + "-" + hashlib.sha256(value.encode()).hexdigest()[:12]
+    return safe
 
 
 class Evidence(Model):

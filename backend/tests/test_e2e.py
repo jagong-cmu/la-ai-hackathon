@@ -561,3 +561,16 @@ def test_a_stored_job_that_breaks_a_newer_rule_does_not_stop_the_server(settings
         assert c.get("/jobs/job_legacy0002").status_code == 404  # unreadable now, not a 500
     db = Database(settings.db_path)
     assert db._conn.execute("SELECT state FROM jobs WHERE job_id = 'job_legacy0001'").fetchone()[0] == "failed"
+
+
+def test_a_very_long_supplier_id_does_not_crash_the_job(client):
+    """Soak S-019 (found by the fuzzer): a 5,000-character supplier id made fixture_path().exists()
+    raise OSError 'File name too long', and the whole job failed."""
+    from app.contracts import path_segment
+
+    assert len(path_segment("x" * 5000)) <= 80 and path_segment("x" * 5000) != path_segment("x" * 4999)
+    draft = client.get("/shopping-list/draft").json()
+    draft["suppliers"][0]["id"] = "x" * 5000
+    jid = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-long-0001"}).json()["jobId"]
+    view = wait_for(client, jid, {"results_ready", "failed"})
+    assert view["state"] == "results_ready"
