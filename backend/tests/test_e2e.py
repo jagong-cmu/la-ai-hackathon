@@ -241,3 +241,33 @@ def test_verify_phase_checks_the_best_plan_at_checkout(settings, monkeypatch):
         verified = {e["data"]["cartKey"] for e in events if e["type"] == "cart_verified"}
         assert {c["cartKey"] for c in best["carts"]} <= verified  # a later round may check runner-ups too
         assert types.index("cart_verified") < types.index("results_ready")
+
+
+def test_verify_phase_skips_sites_without_checkout_quotes(settings, monkeypatch):
+    """A site marked quote_at_checkout=False (WebstaurantStore) keeps its cart estimate."""
+    from app.config import CheckoutContact
+    from app.lanes.fixture import FixtureLane
+
+    quotes: list[str] = []
+
+    async def quote(self, ctx, contact, lines):
+        quotes.append(self.supplier.id)
+        raise AssertionError("must not be called")
+
+    real_set_cart = FixtureLane.set_cart
+
+    async def estimated_cart(self, ctx, lines):
+        cart = await real_set_cart(self, ctx, lines)
+        return cart.model_copy(update={"verification_status": "estimated", "reason": "tax_not_shown; total_not_shown"})
+
+    monkeypatch.setattr(FixtureLane, "set_cart", estimated_cart)
+    monkeypatch.setattr(FixtureLane, "quote", quote, raising=False)
+    monkeypatch.setattr(FixtureLane, "quote_at_checkout", False, raising=False)
+    live = settings.model_copy(update={"checkout_contact": CheckoutContact(address1="325 Westwood Plaza")})
+    with TestClient(create_app(live)) as client:
+        draft = client.get("/shopping-list/draft").json()
+        job_id = client.post("/jobs", json=draft, headers={"Idempotency-Key": "test-no-quote"}).json()["jobId"]
+        results = wait_for(client, job_id, {"results_ready"})["results"]
+        web = [p for p in results["plans"] if p["kind"] != "quoted_bundle"]
+        assert quotes == []
+        assert web and all(p["status"] != "verified" for p in web if not any(c["status"] == "quoted" for c in p["carts"]))
