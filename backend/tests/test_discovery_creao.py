@@ -421,3 +421,18 @@ async def test_model_output_with_odd_field_types_does_not_break_discovery(live_s
     assert all(isinstance(c.name, str) and c.name for c in result.candidates)
     again = await disc.discover("packaging_disposables", "90024", None)  # the cached rows work too
     assert len(again.candidates) == 3
+
+
+def test_seed_path_stays_in_the_seed_folder(tmp_path, monkeypatch):
+    """Soak S-027 (security): GET /suppliers?category=../..&zip=... picked the seed file by joining the
+    raw query values, so live mode read any '*-<zip>.json' file and returned its rows."""
+    secret = tmp_path / "outside-1.json"
+    secret.write_text(json.dumps({"suppliers": [{"name": "Leak", "url": "https://leak.example"}]}))
+    seeds = tmp_path / "seeds"
+    seeds.mkdir()
+    monkeypatch.setattr(discovery, "CREAO_SEED_DIR", seeds)
+    assert discovery._load_seed("../outside", "1") is None
+    assert discovery._load_seed("x" * 5000, "1") is None  # no OSError for a long name
+    (seeds / "packaging_disposables-49007.json").write_text(json.dumps(
+        {"suppliers": [{"name": "Real", "url": "https://real.example"}]}))
+    assert discovery._load_seed("packaging_disposables", "49007")[1][0]["name"] == "Real"

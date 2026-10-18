@@ -40,7 +40,14 @@ import httpx
 from pydantic import ValidationError
 
 from app.config import FIXTURES_DIR, RuntimeModes, Settings
-from app.contracts import DiscoveryResult, DistributorRef, SupplierCandidate, SupplierRef, utcnow
+from app.contracts import (
+    DiscoveryResult,
+    DistributorRef,
+    SupplierCandidate,
+    SupplierRef,
+    path_segment,
+    utcnow,
+)
 from app.db import Database, stable_hash
 from app.decide import Decider
 from app.judgments import j3_supplier
@@ -226,7 +233,7 @@ def _prices_hidden(row: dict[str, Any]) -> bool:
 
 def _load_seed(category: str, zip_code: str) -> tuple[str | None, list[dict[str, Any]], float | None] | None:
     """A saved real CREAO result: (run id, rows, age in seconds), or None if there is none."""
-    path = CREAO_SEED_DIR / f"{category}-{zip_code}.json"
+    path = CREAO_SEED_DIR / f"{path_segment(category)}-{path_segment(zip_code)}.json"  # query values
     if not path.exists():
         return None
     seed = json.loads(path.read_text())
