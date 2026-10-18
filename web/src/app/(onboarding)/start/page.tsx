@@ -2,9 +2,9 @@
 // Onboarding steps 1 and 2: connect the books, then choose what to price.
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { api, errorText, money, type PlannerView, type ShoppingRequest, type SpendInsights } from "@/api/client";
+import { api, errorText, money, type BillLine, type PlannerView, type ShoppingRequest, type SpendInsights } from "@/api/client";
 import { ArrowRight } from "@/components/Icons";
-import { day, each, int, itemShort } from "@/lib/format";
+import { day, each, int, itemShort, shortName } from "@/lib/format";
 import { Claim, exitPause, In, Steps } from "../steps";
 
 type Books = { insights: SpendInsights; planner: PlannerView | null; draft: ShoppingRequest };
@@ -18,37 +18,153 @@ const Check = () => (
   </svg>
 );
 
+// Reading the books: the real bill lines stream in, then the supplies they form, then the forecast.
+const ROW_MS = 45; // 58 bill lines take about 2.6 s
+const FEED_ROWS = 6;
+const PLANNER_WAIT_MS = 6000; // the first planner build can take a minute; the forecast is optional here
+const CATEGORY: Record<string, string> = {
+  food_ingredient: "Ingredient", packaging_disposables: "Packaging", cleaning_safety: "Cleaning",
+  smallwares: "Smallwares", equipment: "Equipment", service: "Service", other: "Other",
+};
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+type Read = { insights: SpendInsights; bills: BillLine[]; shown: number; stage: "bills" | "supplies" | "forecast"; forecast: string };
+
 function Connect({ onDone }: { onDone: (b: Books) => void }) {
-  const [phase, setPhase] = useState<"idle" | "loading" | "leaving">("idle");
+  const [phase, setPhase] = useState<"idle" | "loading" | "reading" | "leaving">("idle");
+  const [read, setRead] = useState<Read | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function connect() {
     setPhase("loading");
     setError(null);
     try {
-      const [insights, planner, draft] = await Promise.all([api.insights(), api.planner().catch(() => null), api.shoppingDraft()]);
+      const plannerP = api.planner().catch(() => null);
+      const draftP = api.shoppingDraft();
+      const [insights, bills] = await Promise.all([api.insights(), api.bills()]);
+      const fast = reducedMotion();
+      setRead({ insights, bills, shown: fast ? bills.length : 0, stage: "bills", forecast: "" });
+      setPhase("reading");
+      for (let k = 1; !fast && k <= bills.length; k++) {
+        await wait(ROW_MS);
+        setRead((r) => r && { ...r, shown: k });
+      }
+      setRead((r) => r && { ...r, stage: "supplies" });
+      await wait(fast ? 0 : 400 + insights.items.length * 250);
+      const [planner, draft] = await Promise.all([Promise.race([plannerP, wait(PLANNER_WAIT_MS).then(() => null)]), draftP]);
+      const due = planner?.supplies.filter((s) => s.status !== "ok" && s.recommendedQty > 0) ?? [];
+      const first = due.map((s) => s.runOutDate).filter(Boolean).sort()[0];
+      const forecast = !planner ? "Forecast not ready yet" : due.length ? `${due.length} run low · first on ${day(first)}` : "Nothing runs low soon";
+      setRead((r) => r && { ...r, stage: "forecast", forecast });
+      await wait(fast ? 300 : 1400);
       setPhase("leaving");
       await exitPause();
       onDone({ insights, planner, draft });
     } catch (e) {
       setError(errorText(e));
       setPhase("idle");
+      setRead(null);
     }
   }
 
-  const busy = phase !== "idle";
   return (
     <main className={`ob-stage${phase === "leaving" ? " ob-out" : ""}`}>
       <In i={0}><Steps at={0} /></In>
       <Claim text="Connect your books" start={100} />
-      <In i={5} className="ob-row">
-        <button className="btn btn-primary has-icon" onClick={connect} disabled={busy} aria-live="polite">
-          {busy ? "Reading your bills" : "Connect QuickBooks"} <ArrowRight />
-        </button>
-        <button className="btn btn-on-black" onClick={connect} disabled={busy}>Connect other books</button>
-      </In>
+      {read ? (
+        <Reading read={read} />
+      ) : (
+        <In i={5} className="ob-row">
+          <button className="btn btn-primary has-icon" onClick={connect} disabled={phase !== "idle"} aria-live="polite">
+            {phase === "idle" ? "Connect QuickBooks" : "Connecting to QuickBooks"} <ArrowRight />
+          </button>
+          <button className="btn btn-on-black" onClick={connect} disabled={phase !== "idle"}>Connect other books</button>
+        </In>
+      )}
       {error && <p className="alert" role="alert">{error}</p>}
     </main>
+  );
+}
+
+function Reading({ read }: { read: Read }) {
+  const { insights, bills, shown, stage } = read;
+  const names = Object.fromEntries(insights.items.map((i) => [i.itemId, i.billItemName]));
+  const done = bills.slice(0, shown);
+  const spend = done.reduce((n, l) => n + l.amount, 0);
+  const billCount = new Set(done.map((l) => l.billId)).size;
+  const feed = done.slice(-FEED_ROWS);
+  const status = stage === "bills"
+    ? (shown < bills.length ? `Reading ${bills[shown]?.billId ?? ""}` : "All bills read")
+    : stage === "supplies" ? `Sorting ${int(bills.length)} lines into ${insights.items.length} supplies` : read.forecast;
+  return (
+    <>
+      <In i={0} className="ob-device ob-read">
+        <div className="ob-screen">
+          <div className="ob-screen-head">
+            <h2>QuickBooks bills</h2>
+            <dl className="ob-read-stats" aria-live="off">
+              <div><dt>Bills</dt><dd>{int(billCount)} / {int(insights.supplyOrders)}</dd></div>
+              <div><dt>Supply spend</dt><dd>{money(spend)}</dd></div>
+              <div><dt>Dates</dt><dd>{done.length ? `${day(done[0].txnDate)} – ${day(done[done.length - 1].txnDate)}` : "–"}</dd></div>
+            </dl>
+          </div>
+          {stage === "bills" ? (
+            <div className="ob-feed">
+              <table className="tbl wide">
+                <thead>
+                  <tr><th className="l">Date</th><th className="l wide-only">Bill</th><th className="l wide-only">Vendor</th><th className="l">Supply</th><th>Qty · each</th><th>Total</th></tr>
+                </thead>
+                <tbody>
+                  {feed.map((l, k) => (
+                    <tr key={`${l.billId}-${l.itemId}`} className={k === feed.length - 1 ? "ob-in ob-new" : undefined}>
+                      <td className="l">{day(l.txnDate)}</td>
+                      <td className="l muted wide-only">{l.billId}</td>
+                      <td className="l wide-only">{shortName(l.vendorName)}</td>
+                      <td className="l strong">{itemShort(names[l.itemId] ?? l.itemId)}</td>
+                      <td>{int(l.quantity)} · {each(l.unitPrice)}</td>
+                      <td>{money(l.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="ob-feed">
+              <table className="tbl wide">
+                <thead>
+                  <tr><th className="l">Supply</th><th className="l">Category</th><th>Orders</th><th>Paid each</th><th>Year spend</th></tr>
+                </thead>
+                <tbody>
+                  {insights.items.map((it, k) => {
+                    const p = (it.jev as { categoryProbs?: Record<string, number> }).categoryProbs?.[it.category];
+                    return (
+                      <tr key={it.itemId} className="ob-in" style={{ "--d": `${k * 250}ms` } as React.CSSProperties}>
+                        <td className="l strong">{itemShort(it.billItemName)}</td>
+                        <td className="l">
+                          <span className="ob-chip">{CATEGORY[it.category] ?? it.category}</span>
+                          {p != null && <span className="muted"> Jev {Math.round(p * 100)}%</span>}
+                        </td>
+                        <td>{int(it.orders)}</td>
+                        <td className="muted">{each(it.pastUnitPrice)}</td>
+                        <td className="best">{money(it.yearSpend)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="ob-screen-foot">
+            <p className="sum" aria-live="polite">{status}</p>
+            <span className="ob-bar" aria-hidden="true">
+              <i style={{ transform: `scaleX(${stage === "bills" ? shown / Math.max(1, bills.length) : 1})` }} />
+            </span>
+          </div>
+        </div>
+      </In>
+      {insights.disclosure && <In i={2} as="p" className="ob-note">{insights.disclosure}</In>}
+    </>
   );
 }
 
