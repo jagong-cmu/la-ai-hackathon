@@ -423,6 +423,8 @@ class Orchestrator:
                 with span("lane.open", f"open {sid}", supplier=sid):
                     await self._timed(lambda: lane.open(ctx), self._budget(lr, self.settings.lane_search_budget_s))
                 lr.status.session_id, lr.status.live_url = ctx.session_id, ctx.live_url
+                if ctx.live_url:  # the "searching" event went out before open(): send the live view now
+                    await self._lane_state(rt, lr, LaneState.searching)
                 with span("lane.search", f"search {sid}", supplier=sid) as s:
                     offers = await self._timed(lambda: lane.search(ctx, self._lane_items(rt, lr)),
                                                self._budget(lr, self.settings.lane_search_budget_s))
