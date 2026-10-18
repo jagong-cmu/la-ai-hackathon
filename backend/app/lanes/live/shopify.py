@@ -143,7 +143,7 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         self._query = query
         url = (f"{self._base()}/search/suggest.json?q={quote_plus(query)}"
                "&resources[type]=product&resources[limit]=10&resources[options][unavailable_products]=last")
-        data = await page.evaluate(JSON_JS, url)
+        data = await self._get_json(page, url)
         found = ((data or {}).get("resources") or {}).get("results", {}).get("products") or []
         if not found:  # predictive search off or empty: the search page
             cards = await super().search_cards(page, query)
@@ -314,7 +314,25 @@ class ShopifyAdapterLane(PlaywrightAdapterLane):
         return False
 
     async def _json(self, page: Page, path: str) -> dict | None:
-        return await page.evaluate(JSON_JS, f"{self._base()}{path}")
+        return await self._get_json(page, f"{self._base()}{path}")
+
+    async def _get_json(self, page: Page, url: str) -> dict | None:
+        """A JSON read in the page; if the page's fetch fails, the same GET from the browser context.
+        Wees Express (2026-10-18, cloud browser): every in-page read raised 'TypeError: Failed to
+        fetch' inside the store's fetch wrapper, while the URL answered. The context request uses the
+        same cookies, so /cart.js still reads this browser's cart."""
+        try:
+            return await page.evaluate(JSON_JS, url)
+        except PlaywrightError as exc:
+            if "Failed to fetch" not in str(exc):
+                raise
+        response = await page.context.request.get(url, headers={"Accept": "application/json"})
+        if not response.ok:
+            return None
+        try:
+            return await response.json()
+        except (PlaywrightError, ValueError):
+            return None
 
 
 def pick_variant(variants: list[dict], query: str, wanted: int | None) -> dict:
