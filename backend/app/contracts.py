@@ -269,7 +269,7 @@ class VerifiedCart(Model):
     totals_check: Literal["consistent", "mismatch", "not_checked"] = "not_checked"
     minimum_order_met: bool = True
     verification_status: Literal[
-        "verified", "quoted", "price_changed", "out_of_stock", "blocked", "failed"
+        "verified", "estimated", "quoted", "price_changed", "out_of_stock", "blocked", "failed"
     ] = "failed"
     reason: str | None = None
     price_changes: list[dict[str, Any]] = []
