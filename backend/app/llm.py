@@ -18,7 +18,7 @@ import httpx
 from app.config import RuntimeModes, Settings
 from app.contracts import SearchSpec, ShoppingItem
 from app.db import Database, stable_hash
-from app.observability import span
+from app.observability import ai_span, set_data
 
 
 class LLMError(Exception):
@@ -76,7 +76,7 @@ class Step5Client:
             "Authorization": f"Bearer {self.settings.openrouter_api_key.get_secret_value()}"
         }
         last_error: Exception | None = None
-        with span("llm", purpose, model=self.settings.step5_model):
+        with ai_span("stepfun", self.settings.step5_model, purpose) as s:
             for attempt in range(3):
                 try:
                     async with self._sem:
@@ -88,7 +88,13 @@ class Step5Client:
                         await asyncio.sleep(0.5 * 2**attempt)
                         continue
                     resp.raise_for_status()
-                    choice = resp.json()["choices"][0]
+                    data = resp.json()
+                    usage = data.get("usage") or {}
+                    set_data(s, **{"gen_ai.usage.input_tokens": usage.get("prompt_tokens"),
+                                   "gen_ai.usage.output_tokens": usage.get("completion_tokens"),
+                                   "gen_ai.usage.total_tokens": usage.get("total_tokens"),
+                                   "gen_ai.response.model": data.get("model")})
+                    choice = data["choices"][0]
                     text = choice["message"]["content"] or ""
                     if not text.strip():
                         # Do not cache it: the reasoning used all the tokens (finish_reason "length").

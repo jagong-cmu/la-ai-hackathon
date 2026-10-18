@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
@@ -44,7 +44,7 @@ from app.events import EventBus
 from app.lanes.base import LaneBlocked, LaneContext, LaneGuardStopped, SupplierLane
 from app.lanes.registry import NoLaneAvailable, lane_for
 from app.llm import Step5Client
-from app.observability import capture, span
+from app.observability import capture, forked, in_transaction, span
 from app.stages.cards import mint_cards
 from app.stages.normalize import NormalizeResult, normalize
 from app.stages.optimize import optimize
@@ -154,7 +154,7 @@ class Orchestrator:
         rt = JobRuntime(view=view, rules=rules, names=names, urls=urls)
         self.jobs[job_id] = rt
         self.db.save_job(view, idempotency_key=idempotency_key)
-        self._spawn(self._run(rt))
+        self._spawn(in_transaction("job", "restock job", self._run(rt), job_id=job_id))
         return JobCreated(job_id=job_id, state=view.state)
 
     def get_view(self, job_id: str) -> JobView | None:
@@ -212,7 +212,7 @@ class Orchestrator:
             await self._set_job_state(rt, JobState.approved)
             await self.bus.emit(job_id, "approved", {"planId": plan.plan_id, "total": plan.total})
             await self._set_job_state(rt, JobState.handing_off)
-            self._spawn(self._handoff(rt, plan))
+            self._spawn(in_transaction("job.handoff", "checkout handoff", self._handoff(rt, plan), job_id=job_id))
             return rt.view
 
     async def replay(self, source_job_id: str, speed: float = 1.0) -> JobCreated:
@@ -245,8 +245,8 @@ class Orchestrator:
 
     # ------------------------------------------------------------ job run
 
-    def _spawn(self, coro: Awaitable[Any]) -> asyncio.Task:
-        task = asyncio.ensure_future(coro)
+    def _spawn(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task:
+        task = asyncio.ensure_future(forked(coro))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return task
@@ -283,7 +283,7 @@ class Orchestrator:
 
     async def _make_specs(self, rt: JobRuntime) -> None:
         items = rt.request.items
-        specs = await asyncio.gather(*(self.llm.make_spec(item) for item in items))
+        specs = await asyncio.gather(*(forked(self.llm.make_spec(item)) for item in items))
         for item, spec in zip(items, specs, strict=True):
             item.spec = spec
             rt.specs[item.id] = spec
@@ -349,6 +349,16 @@ class Orchestrator:
         raise RuntimeError("unreachable")
 
     async def _run_lane(self, rt: JobRuntime, lr: LaneRuntime) -> None:
+        if not lr.is_agent:
+            await self._run_lane_steps(rt, lr)
+            return
+        # The browser agent lane is an AI agent run: Sentry's AI Agents view groups it with its model calls.
+        sid = lr.status.supplier_id
+        with span("gen_ai.invoke_agent", f"invoke_agent browser lane {sid}", **{
+                "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": "browser-use lane", "supplier": sid}):
+            await self._run_lane_steps(rt, lr)
+
+    async def _run_lane_steps(self, rt: JobRuntime, lr: LaneRuntime) -> None:
         assert lr.lane is not None and lr.ctx is not None
         lane, ctx, sid = lr.lane, lr.ctx, lr.status.supplier_id
         try:
@@ -436,7 +446,7 @@ class Orchestrator:
                     await self._lane_state(rt, lr, LaneState.cart_ready, "subset_failed")
                 await self._replan(rt, f"subset:{sid}")
 
-        await asyncio.gather(*(price(sid, reqs) for sid, reqs in by_supplier.items()))
+        await asyncio.gather(*(forked(price(sid, reqs)) for sid, reqs in by_supplier.items()))
 
     async def _run_distributor(self, rt: JobRuntime) -> None:
         dist = rt.request.distributor
@@ -574,7 +584,7 @@ class Orchestrator:
                 await self._lane_state(rt, lr, LaneState.failed, "checkout_error")
                 return CheckoutHandoff(supplier_id=sid, status="failed", reason=type(exc).__name__)
 
-        handoffs = await asyncio.gather(*(one(c) for c in plan.carts))
+        handoffs = await asyncio.gather(*(forked(one(c)) for c in plan.carts))
         rt.view.handoffs = list(handoffs)
         for h in handoffs:
             await self.bus.emit(rt.job_id, "handoff_ready", h.model_dump(by_alias=True, mode="json"))
