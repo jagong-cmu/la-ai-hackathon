@@ -81,7 +81,6 @@ function Connect({ onDone }: { onDone: (b: Books) => void }) {
         </ul>
       )}
       {error && <p className="alert" role="alert">{error}</p>}
-      <In i={6} as="p" className="ob-fine">Demo books · Hearthloaf Bakeries · QuickBooks sample data</In>
     </main>
   );
 }
@@ -165,7 +164,6 @@ function Choose({ books }: { books: Books }) {
                       </td>
                       <td className="l">
                         <span className="strong">{itemShort(it.name)}</span>
-                        <span className="sub">{it.name.split(",").slice(1).join(",").trim()}</span>
                       </td>
                       <td className="l">{s?.runOutDate ? day(s.runOutDate) : "–"}</td>
                       <td>{int(it.quantity)} {plural(it.unit, it.quantity)}</td>
@@ -179,8 +177,7 @@ function Choose({ books }: { books: Books }) {
           </div>
           <div className="ob-screen-foot">
             <p className="sum">
-              {chosen.length} of {items.length} at bill prices
-              <b>{money(atBills)}</b>
+              At bill prices <b>{money(atBills)}</b>
             </p>
             <button className="btn btn-primary has-icon" disabled={busy || chosen.length === 0} onClick={start}>
               {busy ? "Starting" : `Get quotes for ${chosen.length} ${chosen.length === 1 ? "supply" : "supplies"}`} <ArrowRight />

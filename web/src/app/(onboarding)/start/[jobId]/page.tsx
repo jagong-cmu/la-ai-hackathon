@@ -80,12 +80,9 @@ function Result({ job }: { job: JobView }) {
                   const before = it.pastUnitPrice != null ? it.quantity * it.pastUnitPrice : null;
                   return (
                     <tr key={it.id} className="ob-in" style={{ "--d": `${500 + k * 100}ms` } as React.CSSProperties}>
-                      <td>{itemShort(it.name)}<span className="sub">{int(it.quantity)}</span></td>
+                      <td>{itemShort(it.name)} × {int(it.quantity)}</td>
                       <td className="l ink-2">{a ? `${cleanName(names[a.supplierId] ?? a.supplierId)}${a.source === "web" ? "" : " · phone"}` : "–"}</td>
-                      <td className="muted">
-                        {before != null ? money(before) : "–"}
-                        {!a && before != null && <span className="sub">not in the total</span>}
-                      </td>
+                      <td className="muted">{a && before != null ? money(before) : "–"}</td>
                       <td className={a ? "plan best" : "plan dim"}>{a ? money(a.lineCost) : "No price"}</td>
                     </tr>
                   );
