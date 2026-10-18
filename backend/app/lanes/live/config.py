@@ -46,6 +46,14 @@ class LiveLaneSettings(BaseSettings):
     browser_use_vision: bool = False  # Step 5 gets DOM text; turn on only for a vision model
     agent_max_steps: int = 40
 
+    # Speed (2026-10-18 profile: page loads were 90% of a lane's time). Blocked requests never
+    # load: ad and analytics trackers, fonts and video. Images stay on by default because the
+    # live view on the demo screen looks broken without them.
+    block_trackers: bool = True
+    block_media: bool = True
+    block_images: bool = False
+    nav_settle_ms: int = 3000  # after DOMContentLoaded, wait up to this long for network idle
+
     # Text limits for page snapshots sent to Jev.
     snapshot_text_chars: int = 6000
 

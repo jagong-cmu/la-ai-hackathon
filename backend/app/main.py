@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 import json
 from collections.abc import AsyncIterator
@@ -114,9 +115,29 @@ class AppState:
             item.quantity = plan[item.id].recommended_qty
         if due:
             request.items = due
+        self._prewarm(request)
         return request
 
+    def _prewarm(self, request: ShoppingRequest) -> None:
+        """Start the adapter lanes' browsers while the owner reviews the list (live browsers only)."""
+        if self.modes.get("browser") != "live":
+            return
+        from app.lanes.registry import registered
+
+        adapters = set(registered()["adapters"])  # type: ignore[arg-type]
+        suppliers = [s for s in request.suppliers if s.adapter in adapters]
+        if not suppliers:
+            return
+        with contextlib.suppress(ImportError):  # the browser extra is optional
+            from app.lanes.live.warm import prewarm
+
+            asyncio.get_running_loop().create_task(prewarm(suppliers))
+
     async def aclose(self) -> None:
+        with contextlib.suppress(ImportError):
+            from app.lanes.live.warm import close_all
+
+            await close_all()
         await self.orchestrator.shutdown()
         await self.jev.aclose()
         await self.llm.aclose()

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 from urllib.parse import quote, urlparse
 
@@ -37,6 +38,8 @@ LINE = "tbody[data-cart-item-id]"
 GUEST_EMAIL = "input[name=email]:not(#email-login)"  # the first email box is the sign-in form
 CONTINUE = "[data-testid=guestcheckout-continue-button]"
 COMPANY_TYPE = "Restaurant"  # a required select on the shipping step
+# The pack price on a search card: "ITEM NUMBER #394EN403LCASE $48.49/Case $0.05/Ea".
+PRICE_ON_CARD = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*\.\d{2})\s*/")
 # Freight options are <button role="radio">; the selected one has aria-checked="true".
 PICKED_SHIPPING = "[role=radio][aria-checked=true]"
 
@@ -71,6 +74,14 @@ SUMMARY_JS = """() => {
 
 class WebstaurantLane(PlaywrightAdapterLane):
     max_results_opened = 3
+    # Speed (2026-10-18): no home page, J5 judges the search card first (title, item number,
+    # pack and price are on it), and each step waits for its own elements instead of a fixed
+    # network-idle wait. A product page opens only when J5 is not sure from the card.
+    nav_settle_ms = 0
+    parallel_cart_adds = True  # the cart is server-side; checked live with two adds on 2026-10-18
+
+    def open_url(self) -> None:
+        return None
 
     def _base(self) -> str:
         u = urlparse(self.supplier.url)
@@ -90,8 +101,18 @@ class WebstaurantLane(PlaywrightAdapterLane):
         rows = await page.eval_on_selector_all(CARD, RESULTS_JS)
         return [ResultCard(title=r["title"], snippet=r["snippet"], url=r["url"]) for r in rows]
 
+    async def card_listing(self, page: Page, card: ResultCard) -> ProductPage | None:
+        sku = item_number(card.url)
+        price = PRICE_ON_CARD.search(card.snippet)
+        if sku is None or price is None:
+            return None
+        return ProductPage(title=card.title, sku=sku, price=float(price.group(1).replace(",", "")),
+                           text=card.snippet, url=card.url)
+
     async def product_extract(self, page: Page) -> ProductPage:
         sku = item_number(page.url)
+        with contextlib.suppress(PlaywrightError):
+            await page.wait_for_selector(BUY_QTY, state="attached", timeout=15000)
         if sku is None or await page.locator(BUY_QTY).count() == 0:
             raise AdapterStepError("not a product page")
         price_box = await page.inner_text("#priceBox")
@@ -114,7 +135,7 @@ class WebstaurantLane(PlaywrightAdapterLane):
             async with page.expect_response(
                 lambda r: "/cart/" in r.url and r.request.method == "POST", timeout=15000
             ) as resp:
-                await self.click(page, "#buyButton")
+                await self.click(page, "#buyButton", js=True)  # adds run in parallel background tabs
             status = (await resp.value).status
         except PlaywrightError as exc:
             raise AdapterStepError(f"add to cart sent no cart request: {exc}") from exc
@@ -122,6 +143,9 @@ class WebstaurantLane(PlaywrightAdapterLane):
             raise AdapterStepError(f"add to cart refused (HTTP {status}); run with a visible browser")
 
     async def cart_rows(self, page: Page) -> list[CartRow]:
+        with contextlib.suppress(PlaywrightError):  # lines render after load; an empty cart has none
+            await page.wait_for_selector(f"{LINE}, [data-testid=empty-cart-ad-wrapper]", state="attached",
+                                         timeout=10000)
         rows: list[CartRow] = []
         for line in await page.locator(LINE).all():
             sku = await line.locator("tr[data-itemnumber]").first.get_attribute("data-itemnumber")
@@ -138,9 +162,13 @@ class WebstaurantLane(PlaywrightAdapterLane):
 
     async def cart_summary(self, page: Page, skus: list[str]) -> str:
         # Freight shows only after a ZIP code. It is the shipping cost this cart really pays.
+        zip_code = self._need_ctx().settings.checkout_contact.zip
+        shown = await page.evaluate(SUMMARY_JS)
+        if f"Shipping to {zip_code}" in shown:  # the site kept the ZIP from an earlier cart view
+            return shown
         zip_box = page.locator(ZIP_INPUT)
         if await zip_box.count():
-            await self.fill(page, ZIP_INPUT, self._need_ctx().settings.checkout_contact.zip)
+            await self.fill(page, ZIP_INPUT, zip_code)
             await self.click(page, page.get_by_role("button", name="Calculate"))
             await page.locator(PICKED_SHIPPING).first.wait_for(state="attached", timeout=10000)
         return await page.evaluate(SUMMARY_JS)

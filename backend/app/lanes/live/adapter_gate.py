@@ -52,7 +52,7 @@ def make_lane(name: str, supplier: SupplierRef, cfg: LiveLaneSettings):
     return ShopifyAdapterLane(supplier, WEES_EXPRESS, cfg)
 
 
-async def run(name: str, headless: bool, checkout: bool, cloud: bool = False) -> int:
+async def run(name: str, headless: bool, checkout: bool, cloud: bool = False, warm: bool = False) -> int:
     cfg = LiveLaneSettings(browser_mode="cloud" if cloud else "local", browser_headless=headless).model_copy(
         update={"openrouter_api_key": None})  # no agent fallback: the gate tests the adapter alone
     tmp = Path(tempfile.mkdtemp(prefix=f"gate-{name}-"))
@@ -77,7 +77,13 @@ async def run(name: str, headless: bool, checkout: bool, cloud: bool = False) ->
     ctx = LaneContext(job_id="gate", lane_id=f"gate-{name}", supplier=supplier, settings=settings,
                       decider=decider, emit=emit, evidence_dir=settings.evidence_dir)
     lane = make_lane(name, supplier, cfg)
-    print(f"gate {name}: browser={cfg.browser_mode} headless={headless} jev={modes.get('jev')} evidence={tmp}")
+    print(f"gate {name}: browser={cfg.browser_mode} headless={headless} warm={warm} jev={modes.get('jev')} "
+          f"evidence={tmp}")
+    if warm:  # as the shopping-list screen does: the browser starts before the job
+        from app.lanes.live import warm as pool
+
+        await pool.prewarm([supplier], cfg)
+        await asyncio.gather(*pool._pending.values())
     t0 = time.monotonic()
     try:
         await lane.open(ctx)
@@ -115,9 +121,11 @@ def main() -> None:
     parser.add_argument("--headed", action="store_true", help="show the browser (WebstaurantStore needs it)")
     parser.add_argument("--checkout", action="store_true", help="also open checkout, where the guard stops")
     parser.add_argument("--cloud", action="store_true", help="use the Browser Use cloud browser (BROWSER_USE_API_KEY)")
+    parser.add_argument("--warm", action="store_true", help="start the browser before timing (as prewarm does)")
     args = parser.parse_args()
     sys.stdout.reconfigure(line_buffering=True)
-    sys.exit(asyncio.run(run(args.site, headless=not args.headed, checkout=args.checkout, cloud=args.cloud)))
+    sys.exit(asyncio.run(run(args.site, headless=not args.headed, checkout=args.checkout, cloud=args.cloud,
+                             warm=args.warm)))
 
 
 if __name__ == "__main__":
